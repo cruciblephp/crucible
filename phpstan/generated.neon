@@ -1,0 +1,33 @@
+# The code Crucible writes at runtime, type-checked.
+#
+# Driven by phpstan/generated.php, which produces the sources fresh
+# every run — nothing here is committed, so this tier cannot analyse a
+# generator that has since changed. See that file for why.
+
+parameters:
+    level: max
+    paths:
+        - ../.phpstan.cache/generated
+    tmpDir: ../.phpstan.cache/generated-cache
+    # The corpora are require'd, not autoloaded, so the generated code's
+    # own parents are unknown symbols without this.
+    scanDirectories:
+        - ../tests/_fixtures/double-shapes
+        - ../tests/_fixtures/trait-shapes
+        - ../tests/_fixtures/mockery-shapes
+        - ../tests/_fixtures/snapshot-shapes
+    # Generated code is not written by a person and does not carry
+    # docblocks; requiring them would report every file for something
+    # no author can fix.
+    treatPhpDocTypesAsCertain: false
+    # A generated method declares the mocked signature's return type
+    # and returns dispatch(), which is honestly mixed. PHP enforces the
+    # declared type at the boundary, so this reports a gap the checker
+    # has rather than a defect the code has — and narrowing it in
+    # generated text would be a type claim nothing verifies, which is
+    # the blind spot this tier exists to remove. Left reported when it
+    # stops matching: an unmatched ignore says the exception is stale.
+    ignoreErrors:
+        -
+            identifier: return.type
+            path: ../.phpstan.cache/generated/*

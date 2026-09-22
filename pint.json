@@ -1,0 +1,43 @@
+{
+    "preset": "per",
+    "exclude": [
+        "browser-oracle",
+        "examples",
+        "inertia-oracle",
+        "livewire-oracle",
+        "mockery-main",
+        "pest-oracle",
+        "phpcpd-main",
+        "phpunit-main",
+        "tests/_fixtures",
+        "conformance/probes/28-pest-matchers/arch-fixture"
+    ],
+    "rules": {
+        "declare_strict_types": true,
+        "global_namespace_import": {
+            "import_classes": true,
+            "import_constants": true,
+            "import_functions": true
+        },
+        "native_function_invocation": {
+            "include": [
+                "@all"
+            ]
+        },
+        "no_unused_imports": true,
+        "ordered_imports": {
+            "imports_order": [
+                "class",
+                "function",
+                "const"
+            ],
+            "sort_algorithm": "alpha"
+        },
+        "binary_operator_spaces": {
+            "operators": {
+                "=": "align_single_space_minimal",
+                "=>": "align_single_space_minimal"
+            }
+        }
+    }
+}

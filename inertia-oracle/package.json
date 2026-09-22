@@ -1,0 +1,18 @@
+{
+  "name": "crucible-inertia-oracle",
+  "version": "1.0.0",
+  "description": "A real @inertiajs/core, bundled for the browser tests to execute.",
+  "main": "index.js",
+  "scripts": {
+    "build": "esbuild entry.mjs --bundle --format=iife --outfile=inertia.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@inertiajs/core": "^3.6.1",
+    "esbuild": "^0.28.1"
+  },
+  "private": true
+}

@@ -1,0 +1,31 @@
+# The duplication check, analysed against the real phpcpd-next
+# (ORACLES.md). It compiles against phpcpd-next/phpcpd, which is
+# deliberately not a dependency — a test framework that dragged a
+# duplication detector into every install would charge everyone for a
+# tool most projects do not run — so the default phpstan.neon excludes
+# it and this config analyses it instead, with the oracle checkout as
+# the symbol source.
+#
+# Run through phpstan/oracles.php, which skips when the oracle is absent
+# rather than failing. Never included by phpstan.neon; a fresh clone is
+# unaffected.
+
+includes:
+    - ../vendor/phpstan/phpstan-strict-rules/rules.neon
+    - ../vendor/phpstan/phpstan-deprecation-rules/rules.neon
+
+parameters:
+    level: max
+    paths:
+        - ../src/Extension/Duplication/DuplicationCheck.php
+        - ../tests/unit/Extension/DuplicationCheckTest.php
+    # Registered, not analysed: phpcpd's own source is read for types,
+    # never checked as if it were ours.
+    scanDirectories:
+        - ../phpcpd-main/src
+    tmpDir: ../.phpstan.cache/oracles-duplication
+    strictRules:
+        dynamicCallOnStaticMethod: false
+        noVariableVariables: false
+        disallowedEmpty: false
+        disallowedLooseComparison: false

@@ -1,0 +1,88 @@
+# Crucible's PHPStan extension (DESIGN.md D-049).
+#
+# Wire it with one line in your project's phpstan.neon —
+#
+#     includes:
+#         - vendor/cruciblephp/crucible/phpstan/extension.neon
+#
+# or let `crucible phpstan-init` write that line for you. It registers:
+#
+# - assert narrowing: assertNotNull(), assertInstanceOf(), the whole
+#   is-family and friends narrow types exactly like the equivalent
+#   if-condition would;
+# - the analysis-time compatibility aliases: when phpunit/phpunit is
+#   absent (Crucible's drop-in mode), PHPUnit-shaped names resolve to
+#   Crucible's classes for PHPStan too — so a Laravel test suite whose
+#   TestCase chain crosses PHPUnit\Framework\TestCase analyses clean,
+#   Larastan and friends untouched.
+
+parameters:
+    bootstrapFiles:
+        - bootstrap.php
+    # The dialect globals (test/it/expect/...) load lazily at runtime;
+    # scanning makes the symbols known without analyzing vendor code.
+    scanFiles:
+        - ../src/Dialect/Pest/functions.php
+    # Dynamic $this state is the pest idiom (the runtime says so with
+    # #[AllowDynamicProperties] on PestTestCase); the crate declaration
+    # is the same statement to the analyzer.
+    universalObjectCratesClasses:
+        - LucianoPereira\Crucible\Dialect\Pest\PestTestCase
+
+services:
+    -
+        class: LucianoPereira\Crucible\PHPStan\AssertStaticMethodTypeSpecifyingExtension
+        tags:
+            - phpstan.typeSpecifier.staticMethodTypeSpecifyingExtension
+    -
+        class: LucianoPereira\Crucible\PHPStan\AssertMethodTypeSpecifyingExtension
+        tags:
+            - phpstan.typeSpecifier.methodTypeSpecifyingExtension
+    # $this inside dialect closures follows the file's uses() — the
+    # runtime Closure::bind story told to the analyzer (D-050). One
+    # shared per-file resolver feeds the function-level surface
+    # (test/it/check/beforeEach/afterEach/property) and the
+    # method-level one (TestCall higher-order steps and closure
+    # skips, pest()->beforeEach hooks).
+    -
+        class: LucianoPereira\Crucible\PHPStan\DialectThisResolver
+    -
+        class: LucianoPereira\Crucible\PHPStan\DialectClosureThisExtension
+        tags:
+            - phpstan.functionParameterClosureThisExtension
+    -
+        class: LucianoPereira\Crucible\PHPStan\DialectMethodClosureThisExtension
+        tags:
+            - phpstan.methodParameterClosureThisExtension
+    # Higher-order chains: any member on Expectation/TestCall continues
+    # the chain in kind — the __get/__call grammar as reflection.
+    -
+        class: LucianoPereira\Crucible\PHPStan\DialectMagicReflectionExtension
+        tags:
+            - phpstan.broker.propertiesClassReflectionExtension
+            - phpstan.broker.methodsClassReflectionExtension
+    # Property::forAll(Gen<int>, Gen<string>)->check(fn) — the closure
+    # gets its real per-position parameter types from the chain, the
+    # signature variadic generics cannot express (D-051).
+    -
+        class: LucianoPereira\Crucible\PHPStan\PropertyClosureTypeExtension
+        tags:
+            - phpstan.methodParameterClosureTypeExtension
+    # The dialect sugar's twin: property('name', Gen..., fn) types the
+    # closure from the generator arguments of the same call (D-067).
+    -
+        class: LucianoPereira\Crucible\PHPStan\PropertyFunctionClosureTypeExtension
+        tags:
+            - phpstan.functionParameterClosureTypeExtension
+    # Mockery-surface mocks accept any method (the runtime contract);
+    # the four verbs open an expectation chain (D-060).
+    -
+        class: LucianoPereira\Crucible\PHPStan\MockeryMockReflectionExtension
+        tags:
+            - phpstan.broker.methodsClassReflectionExtension
+
+rules:
+    # Declared check-closure parameters must accept what their
+    # generators produce — the acceptance half the closure-type
+    # extension point cannot do (D-067).
+    - LucianoPereira\Crucible\PHPStan\PropertyParameterRule

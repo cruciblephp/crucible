@@ -1,0 +1,4 @@
+{
+    "args": ["--order-by=reverse"],
+    "compareSequence": true
+}

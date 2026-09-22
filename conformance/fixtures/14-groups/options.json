@@ -1,0 +1,3 @@
+{
+    "args": ["--group=wanted", "--exclude-group=unwanted"]
+}

@@ -1,0 +1,26 @@
+--- crucible snapshots ---
+
+>>> a receipt keeps its shape » #1
+  [
+      'items' => [
+          'espresso' => 2,
+          'cornetto' => 1,
+      ],
+      'total' => '7.40',
+      'paid' => true,
+  ]
+<<<
+
+>>> several snapshots number themselves » #1
+  'first'
+<<<
+
+>>> several snapshots number themselves » #2
+  'second'
+<<<
+
+>>> several snapshots number themselves » the named one
+  [
+      'named' => true,
+  ]
+<<<

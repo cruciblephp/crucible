@@ -1,0 +1,91 @@
+{
+    "name": "cruciblephp/crucible",
+    "description": "Crucible PHP — an independent, XML-free testing framework for PHP 8.3+, drop-in compatible with PHPUnit suites and built for Laravel.",
+    "type": "library",
+    "keywords": [
+        "crucible",
+        "testing",
+        "xunit",
+        "phpunit-compatible",
+        "laravel",
+        "test-framework"
+    ],
+    "homepage": "https://cruciblephp.com",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Luciano Federico Pereira",
+            "role": "Author and maintainer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/cruciblephp/crucible/issues",
+        "source": "https://github.com/cruciblephp/crucible"
+    },
+    "config": {
+        "platform": {
+            "php": "8.3.0"
+        },
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "require": {
+        "php": ">=8.3",
+        "ext-dom": "*",
+        "ext-mbstring": "*",
+        "ext-simplexml": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "LucianoPereira\\Crucible\\": "src/"
+        },
+        "files": [
+            "src/Polyfill/Php84/ArrayFunctions.php",
+            "src/Polyfill/Php85/ArrayFunctions.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "LucianoPereira\\Crucible\\Tests\\": "tests/unit/"
+        }
+    },
+    "bin": [
+        "crucible"
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [
+                "LucianoPereira\\Crucible\\Bridge\\Laravel\\CrucibleServiceProvider"
+            ]
+        }
+    },
+    "require-dev": {
+        "justinrainbow/json-schema": "^6.0",
+        "laravel/pint": "^1.29",
+        "phpstan/phpstan": "^2.2",
+        "phpstan/phpstan-deprecation-rules": "^2.0",
+        "phpstan/phpstan-strict-rules": "^2.0",
+        "rector/rector": "^2.5"
+    },
+    "scripts": {
+        "lint": "pint --test",
+        "lint:fix": "pint",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "analyse:oracles": "php phpstan/oracles.php",
+        "analyse:generated": "php phpstan/generated.php",
+        "refactor": "rector",
+        "refactor:check": "rector --dry-run",
+        "test": "php crucible",
+        "conformance": "php conformance/run.php",
+        "analyse:matchers": "php conformance/probes/28-pest-matchers/ownership.php",
+        "analyse:arch": "php conformance/probes/28-pest-matchers/compare-arch.php",
+        "check": [
+            "@lint",
+            "@refactor:check",
+            "@analyse",
+            "@test"
+        ]
+    }
+}

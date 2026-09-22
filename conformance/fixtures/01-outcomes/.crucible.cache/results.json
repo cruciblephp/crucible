@@ -1,0 +1,54 @@
+{
+    "version": 1,
+    "tests": {
+        "tests/OutcomesTest.php::testPasses": {
+            "outcomes": [
+                "pass",
+                "pass"
+            ],
+            "duration": 0.030639675
+        },
+        "tests/OutcomesTest.php::testFails": {
+            "outcomes": [
+                "fail",
+                "fail"
+            ],
+            "duration": 0.007093746
+        },
+        "tests/OutcomesTest.php::testErrors": {
+            "outcomes": [
+                "error",
+                "error"
+            ],
+            "duration": 0.001256961
+        },
+        "tests/OutcomesTest.php::testSkips": {
+            "outcomes": [
+                "skip",
+                "skip"
+            ],
+            "duration": 0.001329849
+        },
+        "tests/OutcomesTest.php::testIncomplete": {
+            "outcomes": [
+                "incomplete",
+                "incomplete"
+            ],
+            "duration": 0.001339845
+        },
+        "tests/OutcomesTest.php::testRiskyNoAssertions": {
+            "outcomes": [
+                "risky",
+                "risky"
+            ],
+            "duration": 0.001161657
+        },
+        "tests/OutcomesTest.php::testDeclaredQuiet": {
+            "outcomes": [
+                "pass",
+                "pass"
+            ],
+            "duration": 0.001111067
+        }
+    }
+}

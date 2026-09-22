@@ -1,0 +1,8 @@
+{
+    "version": 1,
+    "edges": {
+        "tests/OutcomesTest.php": [
+            "tests/OutcomesTest.php"
+        ]
+    }
+}

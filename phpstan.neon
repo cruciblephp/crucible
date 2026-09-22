@@ -1,0 +1,228 @@
+includes:
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - vendor/phpstan/phpstan-deprecation-rules/rules.neon
+    # Dogfood: Crucible's own extension (D-049) — assert narrowing and
+    # the analysis-time compatibility aliases.
+    - phpstan/extension.neon
+
+parameters:
+    level: max
+    paths:
+        - src
+        - tests/unit
+        # The drift code. It is the largest body of PHP in the repo and
+        # every parity claim rests on it, and until now no type or clone
+        # gate scanned it — which is how five copies of one verdict
+        # classification accumulated while the bug that duplication had
+        # caused was being fixed. Analysed here so the next copy is
+        # caught by a gate rather than by reading.
+        - conformance/probes/28-pest-matchers
+    excludePaths:
+        # Everything excluded here compiles against something Crucible
+        # deliberately does not depend on, so this config — the one that
+        # must run on a fresh clone — cannot analyse it. It is analysed
+        # instead by `composer analyse:oracles`, which points PHPStan at
+        # the ORACLES.md reference installs and skips by name when they
+        # are absent. Excluded here means "needs an oracle", not
+        # "unanalysable".
+        #
+        # The Laravel bridge compiles against illuminate/* classes that
+        # are deliberately not dev-dependencies of the engine; it is
+        # exercised inside a real Laravel application (DESIGN.md D-029).
+        - src/Bridge/Laravel
+        # Runs inside the INCUMBENT's process, never Crucible's: it is
+        # required by the suites the probe writes into pest-oracle's
+        # tests/, and it names PHPUnit\Framework\ExpectationFailedException,
+        # which Crucible does not depend on. Analysed by
+        # `composer analyse:oracles` against the real pest-oracle.
+        - conformance/probes/28-pest-matchers/cell.php
+        # driver.php is the same case: the loops that drive cell(), also
+        # running inside the incumbent, also reaching pest's own
+        # vocabulary. Excluded here and checked by the same oracles tier.
+        - conformance/probes/28-pest-matchers/driver.php
+        # The arch fixture is the SUBJECT of the arch grid, not code that
+        # serves it. Its shapes are chosen to make matchers say no — a
+        # file without declare(strict_types=1), a class compared with
+        # `==`, undocumented members, a trait composed by nothing, a
+        # class whose declared casing is not the one its path implies.
+        # Analysing it would push exactly those shapes back toward the
+        # ones the grid has no failing target for, and the fixture is
+        # proven by the grid it feeds rather than by this tier.
+        - conformance/probes/28-pest-matchers/arch-fixture
+        # phpcpd-next is an optional extension's tool, not a dependency;
+        # analysed by `composer analyse:oracles` against the real thing.
+        - src/Extension/Duplication
+        - tests/unit/Extension/DuplicationCheckTest.php
+        # Names src/Bridge/Laravel's class in #[CoversClass], and that
+        # path is excluded above, so its symbol is unknown here (same
+        # scanDirectories limitation documented below). The test itself
+        # drives a subprocess against the Laravel oracle and is analysed
+        # by `composer analyse:oracles`.
+        - tests/unit/Bridge/Laravel
+        # Same reasoning: the Pest\Laravel/Pest\Livewire proxy
+        # surfaces (growth G2 follow-up) compile against illuminate/*,
+        # livewire/* and mockery/* classes that are, likewise,
+        # deliberately not dev-dependencies of the engine — exercised
+        # inside a real Laravel+Livewire application (spatie/laravel-data
+        # benchmark), not statically. scanDirectories/scanFiles cannot
+        # register a path's symbols while that same path is also
+        # excludePaths'd (tried both, PHPStan 2.2.6: still
+        # function.notFound at the call site) — so the one test that
+        # calls these functions directly is excluded below too, same
+        # as src/Bridge/Laravel has zero unit tests for the same
+        # reason.
+        - src/Bridge/PestLaravel
+        - src/Bridge/PestLivewire
+        - src/Bridge/PestSnapshots
+        # Same reasoning: compiles against phpunit/phpunit's own
+        # internal TextUI classes (deliberately not a dependency —
+        # D-019's whole point is working with or without it installed).
+        # Reachable only when a Pest uses() class turns out to be a
+        # real PHPUnit\Framework\TestCase, guarded by class_exists()
+        # and best-effort at runtime; exercised against a real
+        # phpunit/phpunit install (spatie/laravel-data benchmark), not
+        # statically.
+        - src/Dialect/Pest/RealPhpUnitBootstrap.php
+        # Same reasoning: compiles against PHPUnit\Framework\Attributes\*
+        # classes, guarded by PhpUnitCompatibility::isLoaded();
+        # exercised against a real phpunit/phpunit install, not statically.
+        - src/Metadata/RealPhpUnitHookAttributes.php
+        # Same reasoning: compiles against PHPUnit\Framework\Attributes\*
+        # classes, guarded by PhpUnitCompatibility::isLoaded();
+        # exercised against a real phpunit/phpunit install, not statically.
+        - src/Metadata/RealPhpUnitAttributes.php
+        # Same reasoning: compiles against PHPUnit\Framework\Skipped
+        # Test/IncompleteTest, guarded by nothing more than a plain
+        # instanceof (safe against an unresolvable class name);
+        # exercised against a real phpunit/phpunit install, not
+        # statically.
+        - src/Runner/RealPhpUnitOutcomes.php
+        # Consumed only by the runtime-composed test case (TraitComposer
+        # via pest()->use() in tests/unit/Pest.php) — invisible statically.
+        - tests/unit/Dialect/BrewsCoffee.php
+        # Calls Pest\Laravel\* directly (see src/Bridge/PestLaravel
+        # above) — verified by execution, not statically.
+        - tests/unit/Bridge/PestLaravel/FunctionsTest.php
+        # Same reasoning: calls Spatie\Snapshots\* directly (see
+        # src/Bridge/PestSnapshots above).
+        - tests/unit/Bridge/PestSnapshots/FunctionsTest.php
+        # Consumed only through its class_alias name by user suites
+        # (Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration, D-066) —
+        # statically it is used zero times, by design.
+        - src/Double/Mockery/MockeryPHPUnitIntegration.php
+    scanFiles:
+        # SkipReasonsTest require_once's this at runtime, and conformance/
+        # is not an analysed path — without it the helper is an unknown
+        # class and the test that guards every skip reason cannot be analysed.
+        - conformance/drift.php
+    scanDirectories:
+        - tests/_fixtures/framework
+        # The generated-code shape corpus. GeneratedShapesTest
+        # require_once's it at runtime rather than autoloading it: one
+        # shape in it kills the process it is doubled in, so it is
+        # reached from a subprocess. Registered here so the sweep's own
+        # calls are analysed rather than unknown.
+        - tests/_fixtures/double-shapes
+        # Same reason: the trait-composition corpus is require_once'd,
+        # and two of its shapes end the process they are composed in.
+        - tests/_fixtures/trait-shapes
+        # And the snapshot corpus, which declares a stand-in for a trait
+        # the engine does not depend on so the wrapper's real path can
+        # be reached at all.
+        - tests/_fixtures/snapshot-shapes
+        - tests/_fixtures/mockery-shapes
+    tmpDir: .phpstan.cache
+    ignoreErrors:
+        # FakeRealPhpUnitCase duck-types real PHPUnit\Framework\TestCase's
+        # own 4 private expectException()-family properties exactly, so
+        # RealPhpUnitExceptionExpectationsTest can exercise
+        # RealPhpUnitExceptionExpectations::read() (real reflection,
+        # by property name, cross-file) without phpunit/phpunit
+        # installed. The properties are genuinely read — just via
+        # reflection phpstan can't trace statically, the same
+        # limitation that would apply to real PHPUnit's own identical
+        # properties if they were ever analysed this way.
+        -
+            identifier: property.onlyWritten
+            path: tests/unit/Dialect/Pest/RealPhpUnitExceptionExpectationsTest.php
+        # The two D-067 limits, line-anchored instead of a whole-file
+        # exclusion (the scoped uses()->in() class itself resolves
+        # now): a scoped trait's members cannot ride a PHP type
+        # (brew() composes at runtime via TraitComposer), and a
+        # dataset-row closure inside with([...]) has no closure-this
+        # extension point upstream. Both verified by execution.
+        -
+            message: '#Call to an undefined method .*HigherOrderCase::brew\(\)#'
+            path: tests/unit/Dialect/PestDialectConfig.pest.php
+        -
+            message: '#Undefined variable: \$this#'
+            path: tests/unit/Dialect/PestDialectConfig.pest.php
+        -
+            message: '#Cannot access property \$fromSuiteConfig on mixed#'
+            path: tests/unit/Dialect/PestDialectConfig.pest.php
+        # Self-hosting circularity (D-049): the suite pins the engine's
+        # runtime behavior with constant inputs — assertTrue(true) IS
+        # the assertTrue spec, assertInstanceOf on a generated double
+        # verifies codegen the analyzer takes on faith. Static proof of
+        # those assertions derives from the very code under test, so
+        # "already narrowed" is circular here, not redundant. Scoped to
+        # the suite only; user projects keep these reports — there they
+        # are the feature.
+        -
+            identifier: staticMethod.alreadyNarrowedType
+            path: tests/unit
+        -
+            identifier: staticMethod.impossibleType
+            path: tests/unit
+        -
+            identifier: method.alreadyNarrowedType
+            path: tests/unit
+        # PHPStan's own MbFunctionsReturnTypeExtension strips `false` from
+        # mb_ord()'s return type whenever the encoding argument is omitted,
+        # reasoning that the internal encoding can't itself be "unsupported".
+        # That only covers failure from a bad encoding *name* — mb_ord()
+        # genuinely still returns false on malformed bytes in the *string*
+        # argument (verified: `php -r 'var_dump(mb_ord("\xFF"));'` -> false),
+        # and charWidth() is a public method callable with arbitrary input,
+        # not just mb_str_split()'s own output.
+        -
+            identifier: identical.alwaysFalse
+            path: src/Console/Support/Str.php
+        # A confirmed self-contradiction in PHPStan 2.2.7's own
+        # NullsafePropertyFetchRule, not a real issue: `$x?->prop ?? y`
+        # on a genuinely nullable property (e.g. TestFinished::$failure)
+        # is flagged "unnecessary, use -> instead" — but plain `->`
+        # access on that identical property, in the identical scope, is
+        # separately (and correctly) flagged `property.nonObject`
+        # ("Cannot access property on X|null"), proving the type really
+        # is nullable and the "never null" claim is wrong. Verified by
+        # isolating the pattern in an unrelated throwaway class outside
+        # this codebase's own types — reproduces regardless of
+        # TestFinished/Failure specifically.
+        -
+            identifier: nullsafe.neverNull
+            path: src/Reporting/Document/Renderers
+    strictRules:
+        # Spec idiom: $this->assertSame() calls static Assert methods
+        # dynamically — the xUnit surface Crucible implements on purpose.
+        dynamicCallOnStaticMethod: false
+        # $this->{$hook}() / $this->{$method}(...) dynamic dispatch is
+        # how the test lifecycle and doubles work.
+        noVariableVariables: false
+        # IsEmpty implements the spec's empty() semantics; IsEqual
+        # implements the spec's loose-equality semantics.
+        disallowedEmpty: false
+        disallowedLooseComparison: false
+
+rules:
+    # eval() only where it has been argued for. Generated code is the
+    # one region no instrument reads — no type check, no clone check,
+    # no mutation — so the number of such places is held still by a
+    # gate rather than by a grep. The grep was wrong: it reported six
+    # sites, four of them docblocks.
+    #
+    # Registered here and NOT in phpstan/extension.neon: this is
+    # Crucible's rule for Crucible, not an opinion shipped to projects
+    # that use the extension.
+    - LucianoPereira\Crucible\PHPStan\ApprovedEvalRule
+    - LucianoPereira\Crucible\PHPStan\ApprovedGeneratorRule

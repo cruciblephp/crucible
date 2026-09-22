@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 232" width="700" height="232" role="img" aria-label="Wall time for the same 1,926 tests of spatie/schema-org's Pest 5 suite, median of three alternated runs: Crucible 1.0, 13.51 seconds; Pest 5.2.1, 15.25 seconds. Crucible is 11.4% faster. Every run passed all 1,926 tests on both engines.">
+  <!-- Measured 2026-09-22; method, commands and raw times in benchmarks/manifest.json (schema-org.speed).
+       One series, so one hue: both bars ember, the engines named in text. Bars start at zero —
+       a cut axis would draw an 11% gap as a much larger one. -->
+  <style>
+    :root { color-scheme: light dark; }
+    .screen { fill: #fbfbfa; stroke: #d8d6d1; }
+    .grid { stroke: #d8d6d1; stroke-width: 1; }
+    .bar { fill: #e80c08; }
+    text { font-family: ui-sans-serif, -apple-system, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; fill: #24292f; }
+    .title { font-size: 16px; font-weight: 600; }
+    .muted { fill: #57606a; font-size: 12px; }
+    .tick { fill: #57606a; font-size: 11px; font-variant-numeric: tabular-nums; }
+    .name { font-size: 13px; font-weight: 600; }
+    .value { font-size: 13px; font-variant-numeric: tabular-nums; }
+    @media (prefers-color-scheme: dark) {
+      .screen { fill: #0d1117; stroke: #30363d; }
+      .grid { stroke: #30363d; }
+      text { fill: #c9d1d9; }
+      .muted, .tick { fill: #8b949e; }
+    }
+  </style>
+  <rect class="screen" x="0.5" y="0.5" width="699" height="231" rx="6"/>
+
+  <text class="title" x="24" y="38">Same 1,926 tests, one Pest 5 suite — lower is faster</text>
+  <text class="muted" x="24" y="60">spatie/schema-org · wall time, median of 3 alternated runs · same machine, same vendor/</text>
+
+  <!-- x = 140 + seconds × 31.25 -->
+  <line class="grid" x1="140.5" y1="80" x2="140.5" y2="176"/>
+  <line class="grid" x1="296.75" y1="80" x2="296.75" y2="176"/>
+  <line class="grid" x1="453" y1="80" x2="453" y2="176"/>
+  <line class="grid" x1="609.25" y1="80" x2="609.25" y2="176"/>
+
+  <text class="name" x="24" y="109">Crucible 1.0</text>
+  <path class="bar" d="M140 92 H558.19 A4 4 0 0 1 562.19 96 V112 A4 4 0 0 1 558.19 116 H140 Z"><title>Crucible 1.0 — median 13.51 s (runs 13.15, 13.53, 13.51 s)</title></path>
+  <text class="value" x="570" y="109">13.51 s</text>
+
+  <text class="name" x="24" y="149">Pest 5.2.1</text>
+  <path class="bar" d="M140 132 H612.56 A4 4 0 0 1 616.56 136 V152 A4 4 0 0 1 612.56 156 H140 Z"><title>Pest 5.2.1 — median 15.25 s (runs 14.95, 15.25, 15.47 s)</title></path>
+  <text class="value" x="624" y="149">15.25 s</text>
+
+  <text class="tick" x="140.5" y="192" text-anchor="middle">0 s</text>
+  <text class="tick" x="296.75" y="192" text-anchor="middle">5 s</text>
+  <text class="tick" x="453" y="192" text-anchor="middle">10 s</text>
+  <text class="tick" x="609.25" y="192" text-anchor="middle">15 s</text>
+
+  <text class="muted" x="24" y="218">Crucible 11.4% faster · runs 13.15–13.53 s vs 14.95–15.47 s · every run 1,926/1,926 passed on both</text>
+</svg>

@@ -1,0 +1,45 @@
+# The probe's incumbent-side verdict classification, analysed against the
+# real pest-oracle (ORACLES.md).
+#
+# conformance/probes/28-pest-matchers/cell.php never runs in Crucible's
+# process. The probe writes a suite into pest-oracle/tests/ that requires
+# it, so it executes inside the incumbent and names
+# PHPUnit\Framework\ExpectationFailedException — a class Crucible
+# deliberately does not depend on. The default phpstan.neon excludes it
+# for that reason and this config checks it instead, with the oracle
+# checkout as the symbol source.
+#
+# It is analysed at all because this is the code whose duplication caused
+# the false-green bug: five copies, every one inside a string literal a
+# generator concatenated, and therefore invisible to every gate. Making it
+# a file is what put it in reach of one.
+#
+# Run through phpstan/oracles.php, which skips when the oracle is absent
+# rather than failing. Never included by phpstan.neon; a fresh clone is
+# unaffected.
+
+includes:
+    - ../vendor/phpstan/phpstan-strict-rules/rules.neon
+    - ../vendor/phpstan/phpstan-deprecation-rules/rules.neon
+
+parameters:
+    level: max
+    paths:
+        - ../conformance/probes/28-pest-matchers/cell.php
+        # driver.php is the same argument one level up: cell.php stopped
+        # the CLASSIFICATION being written as text, and these are the
+        # loops that drive it. They were heredocs until 2026-09-01, so
+        # the code producing the headline parity number was itself in
+        # the one region no gate reads.
+        - ../conformance/probes/28-pest-matchers/driver.php
+    # Registered, not analysed: the incumbent's own source is read for
+    # types, never checked as if it were ours.
+    scanDirectories:
+        - ../pest-oracle/vendor/pestphp/pest/src
+        - ../pest-oracle/vendor/phpunit/phpunit/src
+    tmpDir: ../.phpstan.cache/oracles-pest
+    strictRules:
+        dynamicCallOnStaticMethod: false
+        noVariableVariables: false
+        disallowedEmpty: false
+        disallowedLooseComparison: false

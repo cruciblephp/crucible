@@ -1,0 +1,43 @@
+#!/usr/bin/env php
+<?php
+/*
+ * This file is part of Crucible.
+ *
+ * Copyright (c) 2026 Luciano Federico Pereira
+ * All rights reserved.
+ */
+
+(static function (array $argv): never {
+    if (PHP_VERSION_ID < 80300) {
+        fwrite(STDERR, sprintf(
+            "Crucible requires PHP 8.3 or later; this is PHP %s (%s).\n",
+            PHP_VERSION,
+            PHP_BINARY,
+        ));
+
+        exit(255);
+    }
+
+    $candidates = [
+        // The Composer bin proxy names the CONSUMING project's
+        // autoloader (Composer ≥ 2.2). It must win: __DIR__ resolves
+        // symlinks, so a path-repository install would otherwise load
+        // the repo's own dev vendor — whose InstalledVersions answers
+        // coexistence questions (D-019/D-060) for the wrong project.
+        $GLOBALS['_composer_autoload_path'] ?? null,
+        dirname(__DIR__, 2) . '/autoload.php', // installed as a Composer dependency
+        __DIR__ . '/vendor/autoload.php',      // repository checkout
+    ];
+
+    foreach ($candidates as $autoloader) {
+        if ($autoloader !== null && is_file($autoloader)) {
+            require $autoloader;
+
+            exit((new \LucianoPereira\Crucible\CLI\Application())->run($argv));
+        }
+    }
+
+    fwrite(STDERR, "No autoloader found. Run \"composer install\" first.\n");
+
+    exit(255);
+})($_SERVER['argv']);

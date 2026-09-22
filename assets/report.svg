@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 249" width="700" height="249" role="img" aria-label="Crucible's run report">
+  <style>
+    :root { color-scheme: light dark; }
+    .screen { fill: #fbfbfa; stroke: #d8d6d1; }
+    text { font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 13px; white-space: pre; fill: #24292f; }
+    @media (prefers-color-scheme: dark) {
+      .screen { fill: #0d1117; stroke: #30363d; }
+      text { fill: #c9d1d9; }
+    }
+  </style>
+  <rect class="screen" x="0.5" y="0.5" width="700" height="249" rx="6"/>
+    <text x="14.0" y="27.6">Passed</text>
+    <text x="14.0" y="44.6">                                    tests      time   share</text>
+    <text x="14.0" y="61.6">tests/unit                             28    0.027s   ████████████</text>
+    <text x="14.0" y="78.6">├─ Console                             25    0.024s   ████████████</text>
+    <text x="14.0" y="95.6">│  ├─ Support                          15    0.013s   ██████······</text>
+    <text x="14.0" y="112.6">│  │  └─ Str                           15    0.013s   ██████······</text>
+    <text x="14.0" y="129.6">│  └─ Output                           10    0.011s   ██████······</text>
+    <text x="14.0" y="146.6">│     ├─ TextPdf                        3    0.009s   █████·······</text>
+    <text x="14.0" y="163.6">│     └─ Help                           7    0.002s   █···········</text>
+    <text x="14.0" y="180.6">└─ CLI/Commands                         3    0.003s   ██··········</text>
+    <text x="14.0" y="197.6">   └─ CompletionCommand                 3    0.003s   ██··········</text>
+    <text x="14.0" y="214.6">Tests: 28. Passed: 28, Failed: 0, Errors: 0, Skipped: 0, Incomplete: 0, Risky: 0. Time: 0.030s</text>
+    <text x="14.0" y="231.6">OK</text>
+</svg>

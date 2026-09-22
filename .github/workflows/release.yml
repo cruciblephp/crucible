@@ -1,0 +1,69 @@
+name: Release
+
+# Runs when a v* tag is pushed. Two jobs, and the split is the point:
+#
+#   verify — read-only. The tag must name the version the code reports
+#            (src/Version.php), and the archive Composer will serve for it
+#            must carry the engine and none of what must not ship
+#            (.github/scripts/check-archive.php). A tag is immutable once
+#            Packagist has read it, so this is the last moment to be wrong.
+#
+#   draft  — the ONLY job in this repository with write access, and it has
+#            it for one thing: creating a DRAFT release. A person publishes
+#            it. ci.yml's header says its read-only trade stops being safe
+#            the moment a step with a token is added; this is that step, so
+#            it lives here, alone, after verify, with nothing else in it.
+#
+# Every action is pinned to a commit SHA, as in ci.yml.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: The tag, the version and the archive agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.3'
+          tools: none
+
+      - name: The tag names the version the code reports
+        run: |
+          reported="v$(php -r 'require "src/Version.php"; echo LucianoPereira\Crucible\Version::NUMBER;')"
+          if [ "$reported" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME, but src/Version.php reports $reported."
+            exit 1
+          fi
+          echo "Tag and src/Version.php agree: $reported"
+
+      - name: The archive ships the engine and nothing that must not ship
+        run: php .github/scripts/check-archive.php "$GITHUB_REF_NAME"
+
+  draft:
+    name: Draft the GitHub release
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # gh ships on the runner; no third-party release action, so the only
+      # code holding this token is GitHub's own CLI.
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --verify-tag \
+            --title "Crucible $GITHUB_REF_NAME" \
+            --generate-notes \
+            --notes "What shipped, each entry traced to its decision record: [RELEASE.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/RELEASE.md). Install: \`composer require --dev cruciblephp/crucible\`."

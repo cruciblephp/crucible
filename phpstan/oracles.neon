@@ -1,0 +1,42 @@
+# The PHPUnit/Mockery compatibility surface, analysed against the real
+# thing (ORACLES.md). These files compile against phpunit/phpunit and
+# mockery/mockery internals that are deliberately not dependencies —
+# D-019's whole point is working with or without them installed — so
+# the default phpstan.neon excludes them and this config analyses them
+# instead, using the oracle checkouts as the symbol source.
+#
+# Run through phpstan/oracles.php, which skips when an oracle is absent
+# rather than failing: an oracle that is not installed cannot disagree
+# with anything. Never included by phpstan.neon; a fresh clone is
+# unaffected.
+
+# extension.neon is deliberately NOT included. It aliases PHPUnit-shaped
+# names onto Crucible's classes for the drop-in case, which is precisely
+# wrong here: these five files exist to talk to the *real* PHPUnit, so
+# the analyzer has to see the real symbols. With the aliases on, the
+# check reports that PHPUnit's After has no priority() — because it had
+# resolved Crucible's After instead.
+includes:
+    - ../vendor/phpstan/phpstan-strict-rules/rules.neon
+    - ../vendor/phpstan/phpstan-deprecation-rules/rules.neon
+
+parameters:
+    level: max
+    paths:
+        - ../src/Runner/RealPhpUnitOutcomes.php
+        - ../src/Metadata/RealPhpUnitAttributes.php
+        - ../src/Metadata/RealPhpUnitHookAttributes.php
+        - ../src/Dialect/Pest/RealPhpUnitBootstrap.php
+        - ../src/Double/Mockery/MockeryPHPUnitIntegration.php
+    # Registered, not analysed: the incumbents are executed and their
+    # symbols read for types, never checked as if they were ours.
+    scanDirectories:
+        - ../phpunit-main/src
+        - ../mockery-main/library
+    tmpDir: ../.phpstan.cache/oracles
+    strictRules:
+        # Same four the default config turns off, for the same reasons.
+        dynamicCallOnStaticMethod: false
+        noVariableVariables: false
+        disallowedEmpty: false
+        disallowedLooseComparison: false

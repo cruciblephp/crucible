@@ -1,0 +1,34 @@
+# The Laravel, Livewire and Pest bridge surfaces, analysed against a
+# real application (ORACLES.md). They compile against illuminate/*,
+# livewire/* and spatie/* classes that are deliberately not Crucible
+# dependencies — nobody should have to install Laravel to use Crucible —
+# so the default phpstan.neon excludes them and this config analyses
+# them instead, taking its symbols from the livewire-oracle app.
+#
+# Run through phpstan/oracles.php, which skips when the oracle is absent
+# rather than failing. Never included by phpstan.neon.
+#
+# extension.neon *is* included here, unlike in oracles.neon: this
+# surface is Crucible's own dialect talking to Laravel, so it needs the
+# dialect symbols (expect(), the closure-bound $this) that the extension
+# supplies. The aliasing that made it wrong for the compat tier is
+# harmless here, because no real PHPUnit is in scope to be shadowed.
+
+includes:
+    - ../vendor/phpstan/phpstan-strict-rules/rules.neon
+    - ../vendor/phpstan/phpstan-deprecation-rules/rules.neon
+    - extension.neon
+
+parameters:
+    level: max
+    paths:
+        - ../src/Bridge
+        - ../tests/unit/Bridge/Laravel
+    scanDirectories:
+        - ../livewire-oracle/vendor
+    tmpDir: ../.phpstan.cache/oracles-laravel
+    strictRules:
+        dynamicCallOnStaticMethod: false
+        noVariableVariables: false
+        disallowedEmpty: false
+        disallowedLooseComparison: false

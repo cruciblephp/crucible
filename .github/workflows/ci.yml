@@ -1,0 +1,229 @@
+name: CI
+
+# The gate, run somewhere that is not the author's machine.
+#
+# `composer check` is FOUR of the nine gates — Pint (PER-CS 2.0) → Rector
+# → PHPStan max + strict → the self-hosted suite — which is why the jobs
+# below add the rest rather than stopping there: `composer conformance`
+# runs the fixture suites against the real oracles, `analyse:generated`
+# reads the code Crucible writes at runtime, and the coverage run is its
+# own suite with its own skip set.
+#
+# Two gates stay local, and for a stated reason rather than by omission:
+# the matcher probe and the `drift` oracle tier both need `pest-oracle`,
+# which no job here builds, and the `duplication` tier needs a phpcpd
+# checkout. A job that built neither would report green having asked
+# nothing, which is the failure this file exists to prevent.
+#
+# ---------------------------------------------------------------------
+# THIRD-PARTY DEPENDENCY — read before trusting this file
+#
+# `shivammathur/setup-php` is not maintained by GitHub and not by this
+# project. It runs with full access to the runner: the checkout, the
+# environment, and any secrets exposed to the job.
+#
+# It is used anyway, deliberately, because GitHub ships no first-party
+# PHP action and this is the ecosystem's de-facto standard — Pest,
+# Laravel and Symfony all depend on it. Rejecting it would mean
+# hand-rolling PHP installation in every job for a marginal reduction in
+# trust surface, since the runner image, Composer and every downloaded
+# package are equally outside this project's control.
+#
+# The mitigation that actually matters is applied: **every action is
+# pinned to a commit SHA, never a tag.** A tag can be moved to point at
+# different code; a SHA cannot. The comment beside each pin records which
+# version it was at the time, for humans — the SHA is what runs.
+#
+# Re-pinning is a deliberate act. Read the diff between the old and new
+# SHA before bumping one, exactly as you would for a dependency.
+#
+# This repository holds no secrets and `permissions` is read-only below,
+# so the blast radius of a compromised action here is a poisoned build
+# result rather than an exfiltration. That is the reason this trade is
+# acceptable, and it stops being true the moment a publish step with a
+# token is added to this file.
+# ---------------------------------------------------------------------
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: 'Style, static analysis, and the self-hosted suite (PHP ${{ matrix.php-version }}, ${{ matrix.os }})'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # D-001: the declared floor (8.3) runs the real gate here, not just
+        # a grep for version-gated syntax — a claimed floor that only ever
+        # ran on a newer PHP is not a verified floor. 8.4 is the declared
+        # range's own midpoint — tested for real, not inferred from the
+        # two ends bracketing it.
+        php-version: ['8.3', '8.4', '8.5']
+        # windows-latest: previously untested — a claimed "PHP 8.3+,
+        # nothing else at runtime" floor is not verified for developers
+        # who run PHP natively on Windows, not just under WSL.
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: mbstring
+          coverage: pcov
+          tools: composer:v2
+
+      # Composer's own cache directory differs by OS (Windows is not
+      # ~/.cache) — asked from composer itself rather than hardcoded, so
+      # this stays correct on every runner. shell: bash makes the same
+      # command line work identically on windows-latest (PowerShell is
+      # otherwise the default shell there) and ubuntu-latest.
+      - name: Get the composer cache directory
+        id: composer-cache
+        shell: bash
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ matrix.os }}-${{ matrix.php-version }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ matrix.os }}-${{ matrix.php-version }}-
+
+      - run: composer install --no-interaction --no-progress
+
+      - name: composer check
+        run: composer check
+
+      # composer check is NOT the whole gate, and this is the half that
+      # most needs a machine other than the author's: the only gate that
+      # reads the code Crucible writes at runtime, needing no oracle, so
+      # nothing justified leaving it out.
+      #
+      # All three PHP versions, which is the reason it wants a matrix at
+      # all — generated sources are version-sensitive (default rendering,
+      # tentative return types, enum cases), so 8.3 and 8.5 are genuinely
+      # different questions. ubuntu only, and that is a limit rather than
+      # a preference: the tier shells out to phpstan through passthru(),
+      # and nothing has established how that behaves on Windows. Widen it
+      # once someone has watched it pass there.
+      - name: The generated-code type tier
+        if: matrix.os == 'ubuntu-latest'
+        run: composer analyse:generated
+
+      # The coverage run is a different suite: it reaches paths the plain
+      # run cannot, and reports a different skip set. Once is enough --
+      # this asks whether coverage collection works, not whether the
+      # suite passes, which the matrix already covers.
+      - name: The suite under a coverage driver
+        if: matrix.os == 'ubuntu-latest' && matrix.php-version == '8.5'
+        run: php -d pcov.enabled=1 crucible --coverage
+
+  conformance:
+    name: Conformance against the real phpunit and mockery
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.5'
+          extensions: mbstring
+          tools: composer:v2
+
+      - run: composer install --no-interaction --no-progress
+
+      # The oracles are real installs of the incumbents, kept out of the
+      # tree: conformance runs each fixture against BOTH binaries and
+      # asserts identical observable results, so it cannot run without
+      # them. Installed here, never vendored — the provenance rule.
+      # Through the shared installer, never with its own copy of the
+      # commands: this workflow used to install mockery with
+      # --prefer-dist, which produces a checkout that fatals in its own
+      # autoloader, and the lane then reports as drift rather than as a
+      # broken oracle. conformance/oracles-registry.php is the one place
+      # an install command lives now.
+      - name: Install the oracles
+        run: php conformance/install-oracles.php phpunit-main mockery-main
+
+      - name: composer conformance
+        run: composer conformance
+
+      # The compatibility tier of the static analysis needs the same two
+      # oracles, so it runs where they already are. Named explicitly, so
+      # a tier whose oracle failed to install fails the job instead of
+      # skipping and going green having analysed nothing.
+      - name: Analyse the compatibility surface
+        run: php phpstan/oracles.php compat
+
+  browser:
+    name: Browser, Inertia and Livewire, against the real packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.5'
+          extensions: mbstring
+          tools: composer:v2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - run: composer install --no-interaction --no-progress
+
+      - name: Build the browser oracle
+        run: |
+          mkdir -p browser-oracle && cd browser-oracle
+          npm init -y >/dev/null
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: Build the Inertia oracle
+        run: |
+          cd inertia-oracle
+          npm install
+          npm run build
+
+      # Whole thing through the shared installer, component and routes
+      # included: an app with the packages but without them serves 404s,
+      # and the Livewire tests then wait on a round trip that never
+      # comes — a hang rather than a failure.
+      - name: Build the Livewire oracle
+        run: php conformance/install-oracles.php livewire-oracle
+
+      # The point of this job. Browser, Inertia and Livewire tests skip
+      # themselves when their oracle is absent — right locally, and
+      # catastrophic here, where the job would go green having proved
+      # nothing. So the oracles being present is asserted, not hoped for.
+      - name: Run the browser tier, refusing to skip
+        run: |
+          php crucible --filter 'Browser' --log-events-json events.ndjson
+          # A skip is an OUTCOME on test:finish, not an event of its own.
+          # Grepping for a "test:skip" event would match nothing and pass
+          # forever — the exact failure this step exists to prevent.
+          if grep -q '"outcome":"skip"' events.ndjson; then
+            echo "A browser test skipped — an oracle is missing and this job would have proved nothing:"
+            grep '"outcome":"skip"' events.ndjson
+            exit 1
+          fi
+
+      # The bridge tier's oracle is this job's Laravel app, so this is
+      # the only job that can analyse it. Required, for the same reason
+      # the skip check above exists.
+      - name: Analyse the Laravel, Livewire and Pest bridges
+        run: php phpstan/oracles.php bridges

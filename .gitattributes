@@ -1,0 +1,32 @@
+# What the Composer archive ships. Development scaffolding, the design
+# record, and the fixture corpora are repository artifacts, not runtime
+# ones: a consumer's vendor/ gets the engine, the binary, the PHPStan
+# extension it wires by path, and the docs it can read in place.
+#
+# Verify before tagging — the archive for a tag is immutable:
+#     git archive --format=tar HEAD | tar -t
+
+/.github            export-ignore
+/benchmarks         export-ignore
+/conformance        export-ignore
+/examples           export-ignore
+/inertia-oracle     export-ignore
+/integration        export-ignore
+/spec               export-ignore
+/tests              export-ignore
+
+/DESIGN.md          export-ignore
+/RELEASE.md         export-ignore
+/RESEARCH.md        export-ignore
+/improvements.md    export-ignore
+
+# Crucible's own self-hosting config; a consumer writes their own.
+/crucible.php       export-ignore
+
+/.editorconfig      export-ignore
+/.gitattributes     export-ignore
+/.gitignore         export-ignore
+/composer.lock      export-ignore
+/phpstan.neon       export-ignore
+/pint.json          export-ignore
+/rector.php         export-ignore

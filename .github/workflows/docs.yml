@@ -1,0 +1,70 @@
+name: Docs
+
+# The documentation's own gate, kept out of ci.yml on purpose: this job is
+# about whether what the documents say is true and reachable, and it runs
+# on the declared floor only, because a document does not change with the
+# PHP version reading it.
+#
+# Three checks, each for a way the docs go wrong without the code noticing:
+#   - every relative link and #anchor in every tracked Markdown file reaches
+#     something real (.github/scripts/check-doc-links.php). cruciblephp.com's
+#     docs page reads six of these files from this repository at view time,
+#     so a rename here breaks the site with no commit there;
+#   - every sample in examples/ still runs — MANUAL.md and README.md quote
+#     them, and a quoted sample that no longer works is a lie;
+#   - HELP.md still lists exactly the options the parser accepts.
+# The last two also run inside ci.yml's full suite. They are repeated here so
+# a docs-only change gets a fast, named answer instead of a matrix.
+#
+# Read-only, no secrets, every action pinned to a commit SHA: the same terms,
+# and the same pins, as ci.yml.
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - '**.md'
+      - 'examples/**'
+      - 'src/CLI/**'
+      - '.github/scripts/check-doc-links.php'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - '**.md'
+      - 'examples/**'
+      - 'src/CLI/**'
+      - '.github/scripts/check-doc-links.php'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    name: Links resolve, examples run, HELP.md matches the parser
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.3'
+          extensions: mbstring
+          tools: composer:v2
+
+      - run: composer install --no-interaction --no-progress
+
+      - name: Every relative link and anchor resolves
+        run: php .github/scripts/check-doc-links.php
+
+      - name: Every documented example runs
+        run: php crucible --testsuite examples
+
+      - name: HELP.md lists exactly the options the parser accepts
+        run: php crucible --filter DocumentedOptions

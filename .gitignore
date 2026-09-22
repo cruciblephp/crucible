@@ -1,0 +1,60 @@
+# Local-only material — never part of Crucible's tree.
+# phpunit-main is kept solely to RUN the phpunit binary for black-box
+# conformance observation; pest-4.x solely to consult Pest's public
+# docs when maintaining spec/pest-api.md; mockery-main solely to RUN
+# Mockery black-box when maintaining spec/mockery-api.md. No source
+# is a design input (see DESIGN.md), and none ships in this repository.
+# Oracles: real installs of other people's software, kept out of the
+# tree and rebuilt from ORACLES.md. What REBUILDS an oracle is source
+# and is tracked (inertia-oracle/entry.mjs, .github/fixtures/*); what
+# the rebuild PRODUCES is not.
+/livewire-oracle/
+/inertia-oracle/node_modules/
+/inertia-oracle/inertia.js
+/phpunit-main/
+/phpcpd-main/
+/pest-4.x/
+/mockery-main/
+/browser-oracle/
+
+# Composer
+/vendor/
+composer.phar
+
+# Browser failure artifacts
+/tests/Browser/Screenshots/
+
+# Caches
+/.crucible.cache/
+.phpunit.result.cache
+/.php-cs-fixer.cache
+/.phpstan.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+.crucible.hot
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs & coverage
+*.log
+xdebug.log
+/coverage/
+clover.xml
+.phpunit.cache/
+/pest-oracle/
+/sarif-schema/
+
+# A working handoff for the site build, not part of the project.
+/make-site.md

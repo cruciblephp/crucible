@@ -1,0 +1,124 @@
+.TH CRUCIBLE 1 2026-09-22 "Crucible 1.0" "User Commands"
+.SH NAME
+crucible \- an independent, XML-free test framework for PHP
+.SH SYNOPSIS
+.B crucible
+.RI [ options ]
+.br
+.B crucible
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+.B Crucible
+runs a PHP test suite. Its observable behavior targets drop-in
+compatibility with PHPUnit 13 suites: the same assertions, attributes,
+options, defaults and exit codes, with no XML to configure.
+.PP
+.B This page is deliberately brief.
+It covers starting a run and finding your way; it is not the reference.
+The complete manual \(em configuration, the three dialects, coverage,
+the browser tier, mutation testing, CI \(em is in the command itself:
+.PP
+.RS
+.B crucible manual
+.RE
+.PP
+That opens the whole document fullscreen, with
+.B \(ua/\(da
+to scroll,
+.B /
+to search, number keys to follow a link,
+.B \(<-
+to go back and
+.B q
+to quit. Piped or in CI it prints the same text plainly.
+.B crucible \-\-help
+lists every option; every option is also in HELP.md.
+.SH STARTING
+.TP
+.B crucible \-\-init
+Write a
+.I crucible.php
+for the project.
+.TP
+.B crucible migrate\-config
+Convert an existing
+.IR phpunit.xml ,
+reporting anything it cannot translate rather than dropping it.
+.TP
+.B crucible
+Run the suite.
+.SH COMMON OPTIONS
+.TP
+.BI \-\-filter " pattern"
+Run only tests whose name matches.
+.TP
+.BI \-\-testsuite " name"
+Run only the named suite.
+.TP
+.B \-\-coverage
+Collect line coverage and print the per\-file summary.
+.TP
+.BI \-\-parallel " N"
+Run test classes in N worker processes.
+.TP
+.B \-\-changed
+Run only tests affected by the working tree's changes.
+.TP
+.BI \-\-view " key"
+Choose the progress view:
+.BR map ,
+.B map\-fullscreen
+(the default at a terminal) or
+.B console
+(the default in CI and pipes).
+.SH OTHER COMMANDS
+.TP
+.B crucible manual
+The full manual. Add
+.BI \-\-out= file
+to write it as a PDF instead.
+.TP
+.BI "crucible completion " shell
+Print the tab\-completion script for
+.BR bash ,
+.B zsh
+or
+.BR fish .
+.TP
+.B crucible extensions
+List the registered report formats, subscribers and progress views.
+.TP
+.B crucible mutate
+Mutation\-test the covered source and report the score.
+.SH EXIT STATUS
+.TP
+.B 0
+Everything the exit\-code policy counts as success.
+.TP
+.B 1
+Failures, errors, or anything a
+.B \-\-fail\-on
+switch promoted.
+.TP
+.B 2
+The run could not proceed \(em a configuration error, no tests found, an
+unknown option, or a suite that could not be built.
+.SH FILES
+.TP
+.I crucible.php
+The project's configuration, returned as a built object. The only
+configuration file Crucible reads.
+.SH SEE ALSO
+.BR php (1)
+.PP
+.B crucible manual
+for the complete manual, and
+.UR https://cruciblephp.com
+.UE
+for the project.
+.SH AUTHOR
+Luciano Federico Pereira.
+.PP
+The code is MIT licensed. "Crucible" and the Crucible logo are
+trademarks and are not covered by that licence.

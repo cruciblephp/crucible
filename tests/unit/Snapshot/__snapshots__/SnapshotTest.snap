@@ -1,0 +1,14 @@
+--- crucible snapshots ---
+
+>>> testTheDogfoodSnapshotMatches » the dogfood snapshot
+  [
+      'engine' => 'crucible',
+      'feature' => 'snapshots',
+      'dialects' => [
+          0 => 'phpunit',
+          1 => 'pest',
+          2 => 'crucible',
+          3 => 'inline',
+      ],
+  ]
+<<<

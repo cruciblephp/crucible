@@ -1,0 +1,158 @@
+{
+    "schema": 1,
+    "purpose": "The README's real-world parity claims, pinned so a reader can reproduce them and a release can re-check them.",
+    "crucible_version": "0.9.0",
+    "crucible_version_note": "The version these cases were MEASURED at, not the current one. It stays behind Version::NUMBER until a case is re-run, because moving it without re-running would claim a measurement that never happened.",
+    "cases": {
+        "monolog": {
+            "repository": "https://github.com/Seldaek/monolog",
+            "ref": "3.10.0",
+            "dialect": "phpunit",
+            "incumbent": {
+                "package": "phpunit/phpunit",
+                "baseline": "OK, but there were issues! Tests: 1155, Assertions: 2132, Skipped: 22."
+            },
+            "expected": {
+                "tests": 1155,
+                "passed": 1115,
+                "failed": 0,
+                "exit": 0
+            },
+            "auto_fix": {
+                "required": true,
+                "drifting_tests": 5,
+                "reason": "Five tests assert PHPUnit's own internals — vendor stack-trace paths, and the runner's own class and method names in the IntrospectionProcessor records — not behaviour. `crucible compat-check --auto-fix` rewrites them from the oracle-verified pattern table; `--revert` undoes it. The 1115 figure is the post-fix run."
+            },
+            "steps": [
+                "composer install --no-interaction",
+                "composer config repositories.crucible path {CRUCIBLE}",
+                "composer require --dev cruciblephp/crucible:@dev --no-interaction",
+                "vendor/bin/crucible migrate-config",
+                "# add ->phpunitCompatibility() to crucible.php: compat-check needs BOTH engines running, and with phpunit/phpunit installed D-019 stands the aliases down, so Crucible would otherwise discover nothing and the comparison would be empty",
+                "vendor/bin/crucible compat-check --auto-fix",
+                "composer remove --dev phpunit/phpunit --no-interaction",
+                "vendor/bin/crucible"
+            ],
+            "status": "measured",
+            "platform": {
+                "extensions": [
+                    "mongodb"
+                ],
+                "reason": "mongodb/mongodb is a Monolog dev dependency and requires ext-mongodb; composer install fails without it. Installing with --ignore-platform-req instead makes those tests skip, which moves the tally and stops the run proving parity."
+            },
+            "notes": "Measured 2026-08-23 at 3.10.0: 1155 tests, 1115 passed, 0 failed, 22 skipped, 18 risky, exit 0. Real PHPUnit 11.5.56 at the same ref: 1155 tests, 2132 assertions, 22 skipped, 0 failures. Same collection, same skips, no failures on either engine. RE-PINNED from 3.9.0, which is no longer installable anywhere: 3.9.0 requires mongodb/mongodb ^1.8, every mongodb/mongodb 1.x requires ext-mongodb ^1.x, and neither Debian 13 nor Sury ships an ext-mongodb below 2.0 for any PHP version. 3.10.0 relaxes it to '^1.8 || ^2.0' and installs. NEVER run `composer require --dev phpunit/phpunit` here: it overrides monolog's own '^10.5.17 || ^11.0.7' constraint and installs 13.x, where TestCase::runTest() delegates through a new invokeTestMethod() frame — IntrospectionProcessorTest asserts that frame by name, so the ORACLE starts failing and the comparison stops meaning anything. phpunit arrives from monolog's own require-dev via composer install. The previous steps never produced a measurement: they ran `vendor/bin/crucible` with phpunit/phpunit still installed, so D-019's coexistence rule stood the PHPUnit-namespace aliases down and the run discovered no tests at all. compat-check reported 'No drift' over that empty run, which is how it survived; compat-check now refuses an empty comparison instead."
+        },
+        "laravel-data": {
+            "repository": "https://github.com/spatie/laravel-data",
+            "ref": "4.23.0",
+            "dialect": "pest",
+            "incumbent": {
+                "package": "pestphp/pest",
+                "version": "v4.7.8 (with phpunit/phpunit 12.5.33), resolved from laravel-data 4.23.0's own ^4 constraint",
+                "baseline": "Tests: 2 incomplete, 1 todo, 11 skipped, 1324 passed (3538 assertions). Exit 0."
+            },
+            "expected": {
+                "tests": 1338,
+                "passed": 1324,
+                "failed": 0,
+                "exit": 0
+            },
+            "notes": "PARITY PROVEN 2026-08-23. Real Pest v4.7.8 at 4.23.0: 1324 passed, 11 skipped, 2 incomplete, 1 todo, 3538 assertions, exit 0 — 1338 tests collected. Crucible at the same ref: 1338 tests, 1324 passed, 0 failed, 0 errors, 11 skipped, 3 incomplete, exit 0. Same collection, same passing count, same skips. The only difference is presentational: Pest splits its todo out of incomplete and Crucible reports all three as incomplete, which moves no test between outcomes. The earlier 1338/1338 claim was wrong in a different way — 1324 of the 1338 pass on BOTH engines; the remainder are skipped or incomplete on both, not passing on either. Pest is pinned by the project to ^4; do not override it to ^5 to 'modernise' the benchmark, for the same reason monolog's phpunit constraint must not be overridden — a benchmark measured against a version the project does not support measures nothing about the project. The recorded steps were wrong before 2026-08-22 and had never been run: they kept pestphp/pest installed, which D-019's coexistence rule refuses (two owners of test()/expect() in one process), so the run discovered nothing. Pest cannot be removed alone either — three plugins require it — and removing the set takes spatie/pest-plugin-snapshots with it, so the PHPUnit-level spatie/phpunit-snapshot-assertions that Crucible's PestSnapshots bridge delegates to must be restored, or 13 snapshot tests error.",
+            "steps": [
+                "composer install --no-interaction",
+                "# Run the incumbent FIRST: the Crucible steps below remove pest, and once removed the baseline cannot be taken from this checkout.",
+                "vendor/bin/pest",
+                "composer config repositories.crucible path {CRUCIBLE}",
+                "composer require --dev cruciblephp/crucible:@dev --no-interaction",
+                "composer remove --dev pestphp/pest pestphp/pest-plugin-laravel pestphp/pest-plugin-livewire spatie/pest-plugin-snapshots --no-interaction",
+                "composer require --dev spatie/phpunit-snapshot-assertions --no-interaction",
+                "vendor/bin/crucible migrate-config",
+                "vendor/bin/crucible"
+            ],
+            "status": "measured",
+            "platform": {
+                "extensions": []
+            }
+        },
+        "phpcpd": {
+            "repository": "https://github.com/phpcpd-next/phpcpd",
+            "ref": "v1.4",
+            "dialect": "phpunit",
+            "incumbent": {
+                "package": "phpunit/phpunit",
+                "baseline": "OK (271 tests, 642 assertions)"
+            },
+            "expected": {
+                "tests": 271,
+                "passed": 271,
+                "failed": 0,
+                "exit": 0
+            },
+            "notes": "Parity proven at v1.4. phpcpd-next 1.4 replaced the tests/_guard.php runner-name allowlist (which blocked every runner but phpunit and pest, v1.0-v1.3) with a SCRIPT_FILENAME-vs-caller path comparison, so Crucible runs the suite. One extra step is needed and is not incidental: phpcpd-next's own require-dev installs phpunit/phpunit, so D-019 disables Crucible's PHPUnit-namespace aliases and the run finds zero tests until crucible.php opts in with ->phpunitCompatibility(). migrate-config does not emit that call. Do NOT remove phpunit/phpunit to avoid it -- overriding a benchmarked project's own require-dev is what corrupted the monolog run. Measured on PHP 8.5.9: incumbent PHPUnit 11.5.55 OK (271 tests, 642 assertions) in 47.666s, run first; Crucible 0.9.0 then 271 tests, 271 passed, 0 failed, 0 skipped in 47.133s, both exit 0.",
+            "steps": [
+                "composer install --no-interaction",
+                "composer config repositories.crucible path {CRUCIBLE}",
+                "composer require --dev cruciblephp/crucible:@dev --no-interaction",
+                "vendor/bin/crucible migrate-config",
+                "php -r 'file_put_contents(\"crucible.php\", str_replace(\"->source(\", \"->phpunitCompatibility()\\n    ->source(\", file_get_contents(\"crucible.php\")));'",
+                "vendor/bin/crucible"
+            ],
+            "status": "measured",
+            "platform": {
+                "extensions": []
+            }
+        },
+        "schema-org": {
+            "repository": "https://github.com/spatie/schema-org",
+            "ref": "a02be7892c1680deb7346b74c0ffe7a454e433c1",
+            "dialect": "pest",
+            "why": "The first Pest 5 case. Chosen because it pins pestphp/pest ^5.0.4 exactly, so a plain `composer install` gives Pest 5 with no constraint override (constraint 6), and because it requires only ext-json — no framework to drag in. Pest 5 adoption is thin: measured, only 13 of the 100 most-depended-on pest dependents are on ^5, and most of those are Laravel packages or pest's own plugins.",
+            "incumbent": {
+                "package": "pestphp/pest",
+                "version": "v5.1.1",
+                "baseline": "Tests: 1926 passed (31059 assertions). Duration: 270.07s."
+            },
+            "expected": {
+                "tests": 1926,
+                "passed": 1926,
+                "failed": 0,
+                "exit": 0
+            },
+            "found": "A false green at the level of DISCOVERY, not verdicts. Before D-112 Crucible ran 64 of the 1926 and exited 0 — 96.7% of the suite silently not run. tests/AnalysisTest.php declares a PHPUnit TestCase whose #[DataProvider] yields 1862 cases and ends with uses(AnalysisTest::class); that call classified the file as pest, so it went to PestBuilder, produced an empty group, and the class was never collected. No verdict-level parity check can see this: the matcher probe measures what a matcher answers, never which files get collected.",
+            "steps": [
+                "composer install --no-interaction",
+                "vendor/bin/pest   # the incumbent FIRST — the Crucible steps below remove or displace it",
+                "composer remove --dev pestphp/pest   # D-019 drop-in migration; the baseline above is already recorded",
+                "composer config repositories.crucible path {CRUCIBLE}",
+                "composer require --dev cruciblephp/crucible:@dev --no-interaction",
+                "vendor/bin/crucible migrate-config",
+                "vendor/bin/crucible"
+            ],
+            "coexistence": "Pest can instead stay installed, which is what compat-check needs: keep pestphp/pest, add ->phpunitCompatibility() to crucible.php (pest brings phpunit/phpunit with it, so D-019 stands the class aliases down too), and run `php -d auto_prepend_file={CRUCIBLE}/src/Dialect/Pest/vocabulary-prelude.php vendor/bin/crucible`. Measured with both installed: 1926 passed, 247.16s. See D-111 — PHP has no function_alias(), so this is the only way two engines' globals can coexist.",
+            "speed": {
+                "measured": "2026-09-22",
+                "claim": "On this suite, Crucible ran the same 1926 tests in 11.4% less wall time than Pest 5.2.1 (median 13.51s vs 15.25s, 1.13x).",
+                "method": "One checkout, one vendor/: pestphp/pest v5.2.1 (resolved from the project's own ^5.0.4, with phpunit/phpunit 13.3.4) kept installed, Crucible at 64936c3 beside it through the coexistence prelude and ->phpunitCompatibility(). PHP 8.5.10 CLI, both engines with -d xdebug.mode=off (xdebug stays loaded, as it is on this machine), opcache.enable_cli off, sequential (no --parallel), output to a file so neither engine draws a TTY view. Machine on AC power. One untimed warm-up of each engine, then three rounds alternating pest, crucible, so drift in load or cache lands on both. Wall-clock from process start to exit.",
+                "commands": {
+                    "pest": "php -d xdebug.mode=off vendor/bin/pest",
+                    "crucible": "php -d xdebug.mode=off -d auto_prepend_file=vendor/cruciblephp/crucible/src/Dialect/Pest/vocabulary-prelude.php vendor/bin/crucible"
+                },
+                "seconds": {
+                    "pest": [
+                        14.95,
+                        15.25,
+                        15.47
+                    ],
+                    "crucible": [
+                        13.15,
+                        13.53,
+                        13.51
+                    ]
+                },
+                "verified": "Every timed run exit 0; pest 'Tests: 1926 passed (31059 assertions)' each round, matching the baseline above; crucible 'Tests: 1926. Passed: 1926, Failed: 0, Errors: 0' each round. The gap (1.74s) is over three times either engine's own spread (pest 0.52s, crucible 0.38s); the slowest crucible run beat the fastest pest run.",
+                "scope": "One suite, one machine. It says Crucible is faster on this suite, not on every suite; a claim wider than that needs more cases measured this way.",
+                "earlier_figures": "The baseline's 270.07s and the coexistence note's 247.16s were single runs with no recorded xdebug setting; this machine's CLI loads xdebug in develop mode by default, which fits the ~18x difference. They are kept as recorded, not as a speed comparison."
+            }
+        }
+    }
+}
