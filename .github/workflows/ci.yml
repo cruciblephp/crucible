@@ -81,7 +81,14 @@ jobs:
         with:
           php-version: ${{ matrix.php-version }}
           extensions: mbstring
-          coverage: pcov
+          # xdebug, not pcov: the pcov build the runners install (1.0.12)
+          # segfaults on any real collection under PHP 8.4 and 8.5 —
+          # reproduced locally with pcov as the ONLY loaded extension
+          # (`php -n -d extension=pcov.so`), so it is pcov, not Crucible.
+          # The first CI run died on it in both versions. xdebug is slower
+          # but collects, and it lets the xdebug-driver tests run here
+          # instead of skipping.
+          coverage: xdebug
           tools: composer:v2
 
       # Composer's own cache directory differs by OS (Windows is not
@@ -127,7 +134,7 @@ jobs:
       # suite passes, which the matrix already covers.
       - name: The suite under a coverage driver
         if: matrix.os == 'ubuntu-latest' && matrix.php-version == '8.5'
-        run: php -d pcov.enabled=1 crucible --coverage
+        run: XDEBUG_MODE=coverage php crucible --coverage
 
   conformance:
     name: Conformance against the real phpunit and mockery
@@ -190,7 +197,12 @@ jobs:
         run: |
           mkdir -p browser-oracle && cd browser-oracle
           npm init -y >/dev/null
-          npm install playwright
+          # axe-core too: the accessibility check loads it from beside
+          # Playwright, and without it that one test skips — which the
+          # step below then fails, correctly, as a job that proved less
+          # than it claims. conformance/oracles-registry.php already
+          # installs both; this hand-built copy had drifted from it.
+          npm install playwright axe-core
           npx playwright install --with-deps chromium
 
       - name: Build the Inertia oracle

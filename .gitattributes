@@ -1,3 +1,9 @@
+# LF everywhere, on every checkout. PER-CS 2.0 requires LF, and without
+# this a Windows checkout converts to CRLF and Pint reports every PHP
+# file in the tree as a style violation — which is what the first CI run
+# on windows-latest did, 859 files at once.
+* text=auto eol=lf
+
 # What the Composer archive ships. Development scaffolding, the design
 # record, and the fixture corpora are repository artifacts, not runtime
 # ones: a consumer's vendor/ gets the engine, the binary, the PHPStan

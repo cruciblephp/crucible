@@ -1264,7 +1264,9 @@ final class RunTestsCommand
             }
         }
 
-        $view = new ProgressViewRegistry([$key => ['class' => MapView::class, 'params' => $params]])
+        // Parenthesised: member access straight off `new` without them is PHP
+        // 8.4 syntax, and the floor is 8.3 — this line was a parse error there.
+        $view = (new ProgressViewRegistry([$key => ['class' => MapView::class, 'params' => $params]]))
             ->resolve($key, $options->stderr ? STDERR : STDOUT);
 
         if (!$view instanceof MapView) {

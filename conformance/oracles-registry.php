@@ -28,8 +28,13 @@ declare(strict_types=1);
 
 return [
     'phpunit-main' => [
+        // --no-dev, for mockery's reason below: phpunit's dist archive
+        // export-ignores tests/ while its autoload-dev classmaps
+        // tests/_files, so a default create-project dies generating the
+        // autoloader. The oracle is the binary and src/; neither needs
+        // phpunit's own dev dependencies.
         'probe'   => 'phpunit-main/src',
-        'install' => 'composer create-project phpunit/phpunit phpunit-main',
+        'install' => 'composer create-project phpunit/phpunit phpunit-main --no-dev',
         'unlocks' => 'the conformance lanes and the compatibility analysis tier',
     ],
     'mockery-main' => [
