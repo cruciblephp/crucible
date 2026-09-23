@@ -54,6 +54,7 @@ use function is_string;
 use function method_exists;
 use function rtrim;
 use function sprintf;
+use function str_replace;
 use function strlen;
 use function strpos;
 use function substr;
@@ -80,6 +81,11 @@ final readonly class PestBuilder
     {
         self::ensureUsable();
         RealPhpUnitBootstrap::ensureConfigured();
+
+        // One separator from here on: on Windows the discovered path
+        // arrives mixed (getcwd() gives '\', discovery joins with '/'),
+        // and every scope and dataset lookup below compares prefixes.
+        $file = str_replace('/', DIRECTORY_SEPARATOR, $file);
 
         // Suite-level configuration first: Pest.php and Datasets/*.php
         // from every directory above the file, outermost first.
