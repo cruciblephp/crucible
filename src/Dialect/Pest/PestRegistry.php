@@ -45,6 +45,7 @@ use function substr;
 use function token_get_all;
 use function trim;
 
+use const DIRECTORY_SEPARATOR;
 use const T_COMMENT;
 
 /**
@@ -128,7 +129,7 @@ final class PestRegistry
      */
     public static function begin(string $file, string $root = ''): void
     {
-        self::$root = rtrim($root, '/');
+        self::$root = rtrim($root, '/' . DIRECTORY_SEPARATOR);
 
         self::$calls         = [];
         self::$describePath  = [];

@@ -23,11 +23,13 @@ use function is_iterable;
 use function is_string;
 use function sprintf;
 use function str_contains;
+use function str_replace;
 use function str_starts_with;
 use function strlen;
 use function substr;
 use function trim;
 
+use const DIRECTORY_SEPARATOR;
 use const FNM_PATHNAME;
 
 /**
@@ -160,7 +162,8 @@ final class PestScopes
         $bestLength = -1;
 
         foreach (self::$datasets[$name] ?? [] as [$baseDir, $rows]) {
-            $contains = $fileDirectory === $baseDir || str_starts_with($fileDirectory . '/', $baseDir . '/');
+            $contains = $fileDirectory === $baseDir
+                || str_starts_with($fileDirectory . DIRECTORY_SEPARATOR, $baseDir . DIRECTORY_SEPARATOR);
 
             if ($contains && strlen($baseDir) > $bestLength) {
                 $best       = $rows;
@@ -202,7 +205,7 @@ final class PestScopes
         $result = [];
 
         foreach (self::$registrations as $registration) {
-            if (!str_starts_with($file, $registration->baseDir . '/')) {
+            if (!str_starts_with($file, $registration->baseDir . DIRECTORY_SEPARATOR)) {
                 continue;
             }
 
@@ -214,7 +217,9 @@ final class PestScopes
                 continue;
             }
 
-            $relative = substr($file, strlen($registration->baseDir) + 1);
+            // Globs are written with '/' whatever the OS, and
+            // FNM_PATHNAME only treats '/' as a separator.
+            $relative = str_replace(DIRECTORY_SEPARATOR, '/', substr($file, strlen($registration->baseDir) + 1));
 
             foreach ($registration->globs as $glob) {
                 if (self::matches($glob, $relative)) {
@@ -310,15 +315,15 @@ final class PestScopes
      */
     private static function chain(string $root, string $directory): array
     {
-        if ($directory === $root || !str_starts_with($directory, $root . '/')) {
+        if ($directory === $root || !str_starts_with($directory, $root . DIRECTORY_SEPARATOR)) {
             return [$directory];
         }
 
         $chain   = [$root];
         $current = $root;
 
-        foreach (explode('/', trim(substr($directory, strlen($root)), '/')) as $segment) {
-            $current .= '/' . $segment;
+        foreach (explode(DIRECTORY_SEPARATOR, trim(substr($directory, strlen($root)), DIRECTORY_SEPARATOR)) as $segment) {
+            $current .= DIRECTORY_SEPARATOR . $segment;
             $chain[] = $current;
         }
 

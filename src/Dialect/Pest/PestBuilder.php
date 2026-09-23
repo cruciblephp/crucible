@@ -59,6 +59,8 @@ use function strpos;
 use function substr;
 use function trait_exists;
 
+use const DIRECTORY_SEPARATOR;
+
 /**
  * The pest dialect frontend (growth G2): turns a *.pest.php file into
  * the same dialect-neutral TestGroup every other frontend produces
@@ -81,7 +83,7 @@ final readonly class PestBuilder
 
         // Suite-level configuration first: Pest.php and Datasets/*.php
         // from every directory above the file, outermost first.
-        $root = rtrim(substr($file, 0, strlen($file) - strlen($relative)), '/');
+        $root = rtrim(substr($file, 0, strlen($file) - strlen($relative)), '/' . DIRECTORY_SEPARATOR);
 
         if ($root !== '') {
             PestScopes::loadConfiguration($root, dirname($file));
