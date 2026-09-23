@@ -25,6 +25,9 @@ use function implode;
 use function in_array;
 use function sprintf;
 use function str_ends_with;
+use function str_replace;
+
+use const DIRECTORY_SEPARATOR;
 
 /**
  * `GeneratedCode::evaluate()` may only be called where it has been
@@ -98,7 +101,8 @@ final readonly class ApprovedGeneratorRule implements Rule
         $file = $scope->getFile();
 
         foreach (array_keys(self::APPROVED) as $approved) {
-            if (str_ends_with($file, $approved)) {
+            // The keys are written with '/', the analysed path uses the OS's own separator.
+            if (str_ends_with($file, str_replace('/', DIRECTORY_SEPARATOR, $approved))) {
                 return [];
             }
         }

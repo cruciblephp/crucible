@@ -21,11 +21,13 @@ use function file_get_contents;
 use function fnmatch;
 use function is_file;
 use function str_contains;
+use function str_replace;
 use function str_starts_with;
 use function strlen;
 use function substr;
 use function trait_exists;
 
+use const DIRECTORY_SEPARATOR;
 use const FNM_PATHNAME;
 
 /**
@@ -92,9 +94,9 @@ final class DialectThisResolver
         for ($depth = 0; $depth < self::WALK_CAP; $depth++) {
             $directories[] = $directory;
 
-            $isRoot = is_file($directory . '/crucible.php')
-                || is_file($directory . '/crucible.dist.php')
-                || is_file($directory . '/composer.json');
+            $isRoot = is_file($directory . DIRECTORY_SEPARATOR . 'crucible.php')
+                || is_file($directory . DIRECTORY_SEPARATOR . 'crucible.dist.php')
+                || is_file($directory . DIRECTORY_SEPARATOR . 'composer.json');
 
             $parent = dirname($directory);
 
@@ -109,11 +111,13 @@ final class DialectThisResolver
 
         foreach (array_reverse($directories) as $base) {
             foreach ($this->registrationsIn($base) as $registration) {
-                if (!str_starts_with($file, $base . '/')) {
+                if (!str_starts_with($file, $base . DIRECTORY_SEPARATOR)) {
                     continue;
                 }
 
-                $relative = substr($file, strlen($base) + 1);
+                // Globs are written with '/' whatever the OS, and
+                // FNM_PATHNAME only treats '/' as a separator.
+                $relative = str_replace(DIRECTORY_SEPARATOR, '/', substr($file, strlen($base) + 1));
                 $matched  = false;
 
                 foreach ($registration['globs'] as $glob) {
@@ -150,7 +154,7 @@ final class DialectThisResolver
             return $this->configurations[$directory];
         }
 
-        $config = $directory . '/Pest.php';
+        $config = $directory . DIRECTORY_SEPARATOR . 'Pest.php';
         $source = is_file($config) ? @file_get_contents($config) : false;
 
         return $this->configurations[$directory] = $source === false

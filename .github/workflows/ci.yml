@@ -80,7 +80,13 @@ jobs:
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
         with:
           php-version: ${{ matrix.php-version }}
-          extensions: mbstring
+          # xdebug pinned on ubuntu, where the coverage step runs: left
+          # unpinned, PHP 8.5 received 3.6.0alpha1, whose branch data
+          # came back empty and failed the xdebug-driver branch test
+          # that passes on 3.5.3. Re-pin once a stable 3.6 is out and
+          # has been watched to pass. Windows keeps the default — it
+          # never runs the coverage step.
+          extensions: ${{ matrix.os == 'ubuntu-latest' && 'mbstring, xdebug-3.5.3' || 'mbstring' }}
           # xdebug, not pcov: the pcov build the runners install (1.0.12)
           # segfaults on any real collection under PHP 8.4 and 8.5 —
           # reproduced locally with pcov as the ONLY loaded extension
