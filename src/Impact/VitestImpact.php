@@ -99,6 +99,6 @@ final readonly class VitestImpact
         $path = $workingDirectory->absolute($suite->directory);
         $real = realpath($path);
 
-        return $real === false ? rtrim($path, DIRECTORY_SEPARATOR) : $real;
+        return $real === false ? rtrim(WorkingDirectory::native($path), DIRECTORY_SEPARATOR) : $real;
     }
 }

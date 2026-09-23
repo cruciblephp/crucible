@@ -382,7 +382,9 @@ final readonly class TestDiscoverer
      */
     private function absolute(string $path, WorkingDirectory $workingDirectory): string
     {
-        return $workingDirectory->absolute($path);
+        // Native, because every candidate below comes from the
+        // filesystem and is compared against these prefixes.
+        return WorkingDirectory::native($workingDirectory->absolute($path));
     }
 
     /**

@@ -29,6 +29,7 @@ use function implode;
 use function is_dir;
 use function mkdir;
 use function putenv;
+use function realpath;
 use function rmdir;
 use function str_starts_with;
 use function sys_get_temp_dir;
@@ -149,10 +150,13 @@ final class ExternalCoverageArtifactTest extends TestCase
         self::assertSame([], $data->tests);
         self::assertNotSame([], $data->lines);
 
+        // Resolved, because the driver reports real paths in the OS's
+        // own separator and $root is spelled with '..' and '/'.
+        $real    = (string) realpath($root);
         $touched = 0;
 
         foreach ($data->lines as $file => $lines) {
-            if (str_starts_with($file, $root) || str_starts_with($file, '/')) {
+            if (str_starts_with($file, $real) || str_starts_with($file, '/')) {
                 $touched += count($lines) > 0 ? 1 : 0;
             }
         }

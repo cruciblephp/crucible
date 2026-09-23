@@ -47,10 +47,12 @@ use const DIRECTORY_SEPARATOR;
  *
  * On Windows, and only there, both separators are read: getcwd() and
  * the filesystem answer with '\', configuration and code join with
- * '/'. An absolute path comes back in the OS's own separator, a
- * relative one — what a TestId and every report carry — always in '/',
- * so the same suite names its tests the same way on every OS. Where
- * DIRECTORY_SEPARATOR is '/' every step below is the identity.
+ * '/'. absolute() still keeps the shape it was given — a drive path
+ * counts as absolute, nothing is rewritten — and a caller comparing
+ * against the filesystem converts with native(). relative() answers in
+ * '/', what a TestId and every report carry, so a suite names its tests
+ * the same way on every OS. Where DIRECTORY_SEPARATOR is '/' every step
+ * below is the identity.
  */
 final readonly class WorkingDirectory
 {
@@ -82,7 +84,7 @@ final readonly class WorkingDirectory
      */
     public function absolute(string $path): string
     {
-        return self::native($path !== '' && self::isAbsolute($path) ? $path : $this->path . '/' . $path);
+        return $path !== '' && self::isAbsolute($path) ? $path : $this->path . '/' . $path;
     }
 
     /**
