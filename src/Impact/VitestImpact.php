@@ -19,6 +19,8 @@ use function rtrim;
 use function sprintf;
 use function str_starts_with;
 
+use const DIRECTORY_SEPARATOR;
+
 /**
  * The JavaScript tier of impact selection (D-080), symmetric to
  * {@see ImpactSelection} for PHP. A configured Vitest suite is narrowed
@@ -65,7 +67,7 @@ final readonly class VitestImpact
             $related = [];
 
             foreach ($changed->files as $file) {
-                if (str_starts_with($file, $directory . '/')) {
+                if (str_starts_with(WorkingDirectory::native($file), $directory . DIRECTORY_SEPARATOR)) {
                     $related[] = $file;
                 }
             }
@@ -94,12 +96,9 @@ final readonly class VitestImpact
      */
     private static function directoryOf(VitestSuite $suite, WorkingDirectory $workingDirectory): string
     {
-        $path = str_starts_with($suite->directory, '/')
-            ? $suite->directory
-            : $workingDirectory->path . '/' . $suite->directory;
-
+        $path = $workingDirectory->absolute($suite->directory);
         $real = realpath($path);
 
-        return $real === false ? rtrim($path, '/') : $real;
+        return $real === false ? rtrim($path, DIRECTORY_SEPARATOR) : $real;
     }
 }

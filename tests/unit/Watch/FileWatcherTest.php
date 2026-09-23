@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Tests\Watch;
 
 use LucianoPereira\Crucible\Attributes\CoversClass;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Watch\FileWatcher;
 
@@ -66,11 +67,11 @@ final class FileWatcherTest extends TestCase
     {
         $snapshot = (new FileWatcher())->snapshot([$this->root], []);
 
-        self::assertArrayHasKey($this->root . '/a.php', $snapshot);
-        self::assertArrayHasKey($this->root . '/sub/b.php', $snapshot);
-        $this->assertArrayNotHasKey($this->root . '/vendor/dep.php', $snapshot);
+        self::assertArrayHasKey(WorkingDirectory::native($this->root . '/a.php'), $snapshot);
+        self::assertArrayHasKey(WorkingDirectory::native($this->root . '/sub/b.php'), $snapshot);
+        $this->assertArrayNotHasKey(WorkingDirectory::native($this->root . '/vendor/dep.php'), $snapshot);
         $this->assertArrayNotHasKey($this->root . '/node_modules/dep.js', $snapshot);
-        $this->assertArrayNotHasKey($this->root . '/.hidden/c.php', $snapshot);
+        $this->assertArrayNotHasKey(WorkingDirectory::native($this->root . '/.hidden/c.php'), $snapshot);
     }
 
     public function testModificationsAdditionsAndDeletionsAreDiffed(): void
@@ -84,9 +85,9 @@ final class FileWatcherTest extends TestCase
 
         $diff = $watcher->diff($before, $watcher->snapshot([$this->root], []));
 
-        self::assertContains($this->root . '/a.php', $diff['changed']);
-        self::assertContains($this->root . '/fresh.php', $diff['changed']);
-        self::assertSame([$this->root . '/sub/b.php'], $diff['deleted']);
+        self::assertContains(WorkingDirectory::native($this->root . '/a.php'), $diff['changed']);
+        self::assertContains(WorkingDirectory::native($this->root . '/fresh.php'), $diff['changed']);
+        self::assertSame([WorkingDirectory::native($this->root . '/sub/b.php')], $diff['deleted']);
     }
 
     public function testATouchAloneIsAChange(): void
@@ -98,14 +99,14 @@ final class FileWatcherTest extends TestCase
 
         $diff = $watcher->diff($before, $watcher->snapshot([$this->root], []));
 
-        self::assertSame([$this->root . '/a.php'], $diff['changed']);
+        self::assertSame([WorkingDirectory::native($this->root . '/a.php')], $diff['changed']);
     }
 
     public function testExplicitFilesAreWatchedToo(): void
     {
         $snapshot = (new FileWatcher())->snapshot([], [$this->root . '/a.php', $this->root . '/gone.php']);
 
-        self::assertArrayHasKey($this->root . '/a.php', $snapshot);
-        $this->assertArrayNotHasKey($this->root . '/gone.php', $snapshot);
+        self::assertArrayHasKey(WorkingDirectory::native($this->root . '/a.php'), $snapshot);
+        $this->assertArrayNotHasKey(WorkingDirectory::native($this->root . '/gone.php'), $snapshot);
     }
 }

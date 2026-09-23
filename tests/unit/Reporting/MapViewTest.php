@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\Tests\Reporting;
 
 use DateTimeImmutable;
 use LucianoPereira\Crucible\Attributes\CoversClass;
+use LucianoPereira\Crucible\Console\Runtime\ForkedAnimation;
 use LucianoPereira\Crucible\Console\Runtime\FullscreenPresenter;
 use LucianoPereira\Crucible\Console\Runtime\Runtime;
 use LucianoPereira\Crucible\Console\Support\Str;
@@ -41,6 +42,7 @@ use function implode;
 use function max;
 use function pcntl_alarm;
 use function pcntl_signal;
+use function preg_match_all;
 use function preg_replace;
 use function rewind;
 use function str_repeat;
@@ -49,6 +51,7 @@ use function stream_get_contents;
 use function substr_count;
 use function trim;
 
+use const PREG_SET_ORDER;
 use const SIG_DFL;
 use const SIGALRM;
 
@@ -486,11 +489,25 @@ final class MapViewTest extends TestCase
         // IN it. A frame that opened short and grew when the count
         // arrived would move every readout below the map down the
         // screen at the exact moment someone started reading them.
-        self::assertSame(
-            substr_count($frame, "\n"),
-            substr_count($running, "\n"),
-            'and nothing below the map moved',
-        );
+        //
+        // Where the sweep forks, the run's first draw is a full redraw of
+        // the same height. Where it cannot (Windows, PHP without pcntl)
+        // the process patches its own frame in place, touching only the
+        // rows that changed — so the check there is that no row lands
+        // below the frame the opening drew.
+        if (ForkedAnimation::isSupported()) {
+            self::assertSame(
+                substr_count($frame, "\n"),
+                substr_count($running, "\n"),
+                'and nothing below the map moved',
+            );
+        } else {
+            self::assertLessThanOrEqual(
+                $this->deepestRow($this->firstWrite($terminal)),
+                $this->deepestRow($this->lastWrite($terminal)),
+                'and nothing below the map moved',
+            );
+        }
     }
 
     /**
@@ -608,21 +625,59 @@ final class MapViewTest extends TestCase
      */
     private function firstFrame(FakeTerminal $terminal): string
     {
+        return $this->plain($this->firstWrite($terminal));
+    }
+
+    /** Whatever the last write was, which for a full redraw is the whole frame. */
+    private function lastFrame(FakeTerminal $terminal): string
+    {
+        return $this->plain($this->lastWrite($terminal));
+    }
+
+    /** The opening full draw, escapes kept. */
+    private function firstWrite(FakeTerminal $terminal): string
+    {
         foreach (array_slice(explode("\e[H", $terminal->output()), 1) as $segment) {
             if (trim($this->plain($segment)) !== '') {
-                return $this->plain($segment);
+                return $segment;
             }
         }
 
         return '';
     }
 
-    /** Whatever the last write was, which for a full redraw is the whole frame. */
-    private function lastFrame(FakeTerminal $terminal): string
+    /** The last write from home, escapes kept. */
+    private function lastWrite(FakeTerminal $terminal): string
     {
-        $frames = explode("\e[H", $terminal->output());
+        $writes = explode("\e[H", $terminal->output());
 
-        return $this->plain(end($frames));
+        return end($writes);
+    }
+
+    /**
+     * The lowest row, counted from home, a write puts anything on — in
+     * newlines for a full redraw, in cursor moves for a patch.
+     */
+    private function deepestRow(string $write): int
+    {
+        preg_match_all('/\e\[(\d*)([AB])|\e\[[0-9;?]*[A-Za-z]|\n|[^\e\r\n]/u', $write, $tokens, PREG_SET_ORDER);
+
+        $row     = 0;
+        $deepest = 0;
+
+        foreach ($tokens as $token) {
+            $move = $token[2] ?? '';
+
+            if ($token[0] === "\n") {
+                ++$row;
+            } elseif ($move !== '') {
+                $row += ($move === 'B' ? 1 : -1) * max(1, (int) ($token[1] ?? 1));
+            } elseif ($token[0][0] !== "\e") {
+                $deepest = max($deepest, $row);
+            }
+        }
+
+        return $deepest;
     }
 
     /**

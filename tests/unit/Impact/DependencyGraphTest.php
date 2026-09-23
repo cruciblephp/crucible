@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Tests\Impact;
 
 use LucianoPereira\Crucible\Attributes\CoversClass;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Impact\DependencyGraph;
 
@@ -34,9 +35,9 @@ final class DependencyGraphTest extends TestCase
         $fixtures = __DIR__ . '/Fixtures';
         $closure  = (new DependencyGraph(dirname(__DIR__, 3)))->closureOf($fixtures . '/Gamma.php');
 
-        self::assertArrayHasKey($fixtures . '/Gamma.php', $closure);
-        self::assertArrayHasKey($fixtures . '/Beta.php', $closure);   // aliased import
-        self::assertArrayHasKey($fixtures . '/Alpha.php', $closure);  // same-namespace, transitive
+        self::assertArrayHasKey($this->key($fixtures . '/Gamma.php'), $closure);
+        self::assertArrayHasKey($this->key($fixtures . '/Beta.php'), $closure);   // aliased import
+        self::assertArrayHasKey($this->key($fixtures . '/Alpha.php'), $closure);  // same-namespace, transitive
     }
 
     public function testAnIslandReachesOnlyItself(): void
@@ -44,9 +45,9 @@ final class DependencyGraphTest extends TestCase
         $fixtures = __DIR__ . '/Fixtures';
         $closure  = (new DependencyGraph(dirname(__DIR__, 3)))->closureOf($fixtures . '/Delta.php');
 
-        self::assertArrayHasKey($fixtures . '/Delta.php', $closure);
-        $this->assertArrayNotHasKey($fixtures . '/Alpha.php', $closure);
-        $this->assertArrayNotHasKey($fixtures . '/Gamma.php', $closure);
+        self::assertArrayHasKey($this->key($fixtures . '/Delta.php'), $closure);
+        $this->assertArrayNotHasKey($this->key($fixtures . '/Alpha.php'), $closure);
+        $this->assertArrayNotHasKey($this->key($fixtures . '/Gamma.php'), $closure);
     }
 
     public function testVendorFilesAreNeverGraphNodes(): void
@@ -62,7 +63,7 @@ final class DependencyGraphTest extends TestCase
             }
         }
 
-        self::assertArrayHasKey(dirname(__DIR__, 3) . '/src/Impact/ReferenceScanner.php', $closure);
+        self::assertArrayHasKey($this->key(dirname(__DIR__, 3) . '/src/Impact/ReferenceScanner.php'), $closure);
     }
 
     /**
@@ -86,8 +87,8 @@ final class DependencyGraphTest extends TestCase
 
         $closure = (new DependencyGraph(dirname(__DIR__, 3)))->closureOf($fixtures . '/Consumer.php');
 
-        self::assertArrayHasKey($fixtures . '/pkg/Owned.php', $closure, 'the control: an owned package is tracked');
-        self::assertArrayNotHasKey($fixtures . '/vendor/pkg/Vendored.php', $closure, 'a nested vendor/ is still vendor');
+        self::assertArrayHasKey($this->key($fixtures . '/pkg/Owned.php'), $closure, 'the control: an owned package is tracked');
+        self::assertArrayNotHasKey($this->key($fixtures . '/vendor/pkg/Vendored.php'), $closure, 'a nested vendor/ is still vendor');
     }
 
     public function testObservedEdgesApplyOneHopFromTheRootOnly(): void
@@ -98,18 +99,18 @@ final class DependencyGraphTest extends TestCase
         // Delta is a static island; an observed edge from Gamma (the
         // root) pulls it in — coverage saw what static analysis could
         // not (D-041).
-        $graph   = new DependencyGraph($root, observedEdges: [$fixtures . '/Gamma.php' => [$fixtures . '/Delta.php']]);
+        $graph   = new DependencyGraph($root, observedEdges: [$this->key($fixtures . '/Gamma.php') => [$this->key($fixtures . '/Delta.php')]]);
         $closure = $graph->closureOf($fixtures . '/Gamma.php');
 
-        self::assertArrayHasKey($fixtures . '/Delta.php', $closure);
-        self::assertArrayHasKey($fixtures . '/Alpha.php', $closure); // static edges still walk
+        self::assertArrayHasKey($this->key($fixtures . '/Delta.php'), $closure);
+        self::assertArrayHasKey($this->key($fixtures . '/Alpha.php'), $closure); // static edges still walk
 
         // The same edge keyed on an INNER node must not be followed:
         // observed edges describe the tests declared in that file,
         // not the file's production code.
-        $conflated = new DependencyGraph($root, observedEdges: [$fixtures . '/Beta.php' => [$fixtures . '/Delta.php']]);
+        $conflated = new DependencyGraph($root, observedEdges: [$this->key($fixtures . '/Beta.php') => [$this->key($fixtures . '/Delta.php')]]);
 
-        $this->assertArrayNotHasKey($fixtures . '/Delta.php', $conflated->closureOf($fixtures . '/Gamma.php'));
+        $this->assertArrayNotHasKey($this->key($fixtures . '/Delta.php'), $conflated->closureOf($fixtures . '/Gamma.php'));
     }
 
     public function testPestFamilyFilesDependOnTheSuiteConfigurationAboveThem(): void
@@ -128,8 +129,8 @@ final class DependencyGraphTest extends TestCase
         try {
             $closure = (new DependencyGraph($root))->closureOf($root . '/sub/CoffeeDialect.crucible.php');
 
-            self::assertArrayHasKey($root . '/sub/Pest.php', $closure);
-            self::assertArrayHasKey($root . '/sub/Datasets/Rows.php', $closure);
+            self::assertArrayHasKey($this->key($root . '/sub/Pest.php'), $closure);
+            self::assertArrayHasKey($this->key($root . '/sub/Datasets/Rows.php'), $closure);
         } finally {
             foreach (['/sub/CoffeeDialect.crucible.php', '/sub/Datasets/Rows.php', '/sub/Pest.php'] as $file) {
                 unlink($root . $file);
@@ -141,5 +142,13 @@ final class DependencyGraphTest extends TestCase
                 }
             }
         }
+    }
+
+    /** The form the graph keys on: resolved where the file exists, the OS's own separator either way. */
+    private function key(string $path): string
+    {
+        $real = realpath($path);
+
+        return $real === false ? WorkingDirectory::native($path) : $real;
     }
 }

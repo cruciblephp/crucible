@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Impact;
 
 use Composer\Autoload\ClassLoader;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 
 use function array_keys;
 use function array_pop;
@@ -28,6 +29,8 @@ use function str_ends_with;
 use function str_starts_with;
 use function strlen;
 use function substr;
+
+use const DIRECTORY_SEPARATOR;
 
 /**
  * The file-level dependency graph for impact selection (growth G3,
@@ -68,7 +71,7 @@ final class DependencyGraph
 
         $real = realpath($projectRoot);
 
-        $this->projectRoot = rtrim($real === false ? $projectRoot : $real, '/') . '/';
+        $this->projectRoot = rtrim(WorkingDirectory::native($real === false ? $projectRoot : $real), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
         $this->loaders     = $this->composerLoaders();
     }
 
@@ -84,7 +87,7 @@ final class DependencyGraph
     public function closureOf(string $file): array
     {
         $real = realpath($file);
-        $real = $real === false ? $file : $real;
+        $real = $real === false ? WorkingDirectory::native($file) : $real;
 
         /** @var array<string, true> $visited */
         $visited = [];
@@ -195,7 +198,7 @@ final class DependencyGraph
             // symfony/polyfill-php80, whose PhpToken stub entered the
             // graph through a root-only check.
             if (str_starts_with($real, $this->projectRoot)
-                && !in_array('vendor', explode('/', substr($real, strlen($this->projectRoot))), true)
+                && !in_array('vendor', explode(DIRECTORY_SEPARATOR, substr($real, strlen($this->projectRoot))), true)
             ) {
                 return $real;
             }
@@ -213,16 +216,16 @@ final class DependencyGraph
     {
         $found     = [];
         $directory = dirname($file);
-        $root      = rtrim($this->projectRoot, '/');
+        $root      = rtrim($this->projectRoot, DIRECTORY_SEPARATOR);
 
         while (str_starts_with($directory, $root)) {
-            $pest = $directory . '/Pest.php';
+            $pest = $directory . DIRECTORY_SEPARATOR . 'Pest.php';
 
             if (is_file($pest)) {
                 $found[] = $pest;
             }
 
-            $datasets = glob($directory . '/Datasets/*.php');
+            $datasets = glob($directory . DIRECTORY_SEPARATOR . 'Datasets' . DIRECTORY_SEPARATOR . '*.php');
 
             foreach ($datasets === false ? [] : $datasets as $dataset) {
                 $found[] = $dataset;

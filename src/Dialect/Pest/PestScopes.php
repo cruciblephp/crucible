@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\Dialect\Pest;
 
 use Closure;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 
 use function explode;
 use function fnmatch;
@@ -73,7 +74,7 @@ final class PestScopes
      */
     public static function loadConfiguration(string $root, string $directory): void
     {
-        foreach (self::chain($root, $directory) as $dir) {
+        foreach (self::chain(WorkingDirectory::native($root), WorkingDirectory::native($directory)) as $dir) {
             if (isset(self::$loaded[$dir])) {
                 continue;
             }
@@ -121,7 +122,7 @@ final class PestScopes
             'pest() can only be called from a Pest.php configuration file.',
         );
 
-        $registration          = new ScopeRegistration($dir, fromConfigFile: true);
+        $registration          = new ScopeRegistration(WorkingDirectory::native($dir), fromConfigFile: true);
         self::$registrations[] = $registration;
 
         return $registration;
@@ -143,7 +144,7 @@ final class PestScopes
             'dataset() can only be called from a Pest.php, Datasets file, or while a *.pest.php file is loading.',
         );
 
-        self::$datasets[$name][] = [$dir, $rows instanceof Closure ? $rows : self::materialize($rows)];
+        self::$datasets[$name][] = [WorkingDirectory::native($dir), $rows instanceof Closure ? $rows : self::materialize($rows)];
     }
 
     /**
@@ -158,8 +159,9 @@ final class PestScopes
      */
     public static function resolveDataset(string $name, string $fileDirectory): array
     {
-        $best       = null;
-        $bestLength = -1;
+        $best          = null;
+        $bestLength    = -1;
+        $fileDirectory = WorkingDirectory::native($fileDirectory);
 
         foreach (self::$datasets[$name] ?? [] as [$baseDir, $rows]) {
             $contains = $fileDirectory === $baseDir
@@ -203,6 +205,7 @@ final class PestScopes
     public static function matching(string $file): array
     {
         $result = [];
+        $file   = WorkingDirectory::native($file);
 
         foreach (self::$registrations as $registration) {
             if (!str_starts_with($file, $registration->baseDir . DIRECTORY_SEPARATOR)) {

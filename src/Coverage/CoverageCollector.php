@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Coverage;
 
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Test\TestId;
 
 use function array_any;
@@ -105,6 +106,14 @@ final readonly class CoverageCollector
 
     private function inScope(string $file): bool
     {
-        return array_any($this->scope, static fn(string $prefix): bool => $file === $prefix || str_starts_with($file, $prefix));
+        // The driver reports the OS's own separator; a scope joined
+        // with '/' on Windows would otherwise never match.
+        $file = WorkingDirectory::native($file);
+
+        return array_any($this->scope, static function (string $prefix) use ($file): bool {
+            $prefix = WorkingDirectory::native($prefix);
+
+            return $file === $prefix || str_starts_with($file, $prefix);
+        });
     }
 }

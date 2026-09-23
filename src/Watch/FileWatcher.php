@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Watch;
 
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use RecursiveCallbackFilterIterator;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -58,7 +59,10 @@ final readonly class FileWatcher
             /** @var SplFileInfo $entry */
             foreach ($iterator as $entry) {
                 if ($entry->isFile()) {
-                    $seen[$entry->getPathname()] = $entry->getMTime() . '|' . $entry->getSize();
+                    // Keyed in the OS's own separator: the iterator joins
+                    // with it onto whatever the caller passed, so a
+                    // '/'-joined directory would give mixed keys on Windows.
+                    $seen[WorkingDirectory::native($entry->getPathname())] = $entry->getMTime() . '|' . $entry->getSize();
                 }
             }
         }
@@ -67,7 +71,7 @@ final readonly class FileWatcher
             if (is_file($file)) {
                 $info = new SplFileInfo($file);
 
-                $seen[$file] = $info->getMTime() . '|' . $info->getSize();
+                $seen[WorkingDirectory::native($file)] = $info->getMTime() . '|' . $info->getSize();
             }
         }
 

@@ -13,9 +13,13 @@ namespace LucianoPereira\Crucible\Filesystem;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 
 use function getcwd;
+use function preg_match;
+use function str_replace;
 use function str_starts_with;
 use function strlen;
 use function substr;
+
+use const DIRECTORY_SEPARATOR;
 
 /**
  * The directory a run happens in, non-empty by construction.
@@ -40,6 +44,13 @@ use function substr;
  * purpose. It keeps the literal `/`, does not trim a trailing separator,
  * and resolves an empty path to `<dir>/` — a refactor this wide has to
  * be provable by the gates, so not one produced path moves.
+ *
+ * On Windows, and only there, both separators are read: getcwd() and
+ * the filesystem answer with '\', configuration and code join with
+ * '/'. An absolute path comes back in the OS's own separator, a
+ * relative one — what a TestId and every report carry — always in '/',
+ * so the same suite names its tests the same way on every OS. Where
+ * DIRECTORY_SEPARATOR is '/' every step below is the identity.
  */
 final readonly class WorkingDirectory
 {
@@ -71,7 +82,7 @@ final readonly class WorkingDirectory
      */
     public function absolute(string $path): string
     {
-        return $path !== '' && str_starts_with($path, '/') ? $path : $this->path . '/' . $path;
+        return self::native($path !== '' && self::isAbsolute($path) ? $path : $this->path . '/' . $path);
     }
 
     /**
@@ -82,10 +93,52 @@ final readonly class WorkingDirectory
      */
     public function relative(string $path): string
     {
-        $root    = $this->path . '/';
-        $trimmed = str_starts_with($path, $root) ? substr($path, strlen($root)) : $path;
+        $root     = self::portable($this->path) . '/';
+        $portable = self::portable($path);
+        $trimmed  = str_starts_with($portable, $root) ? substr($portable, strlen($root)) : $path;
 
         return $trimmed === '' ? $path : $trimmed;
+    }
+
+    /** Rooted at '/', or on Windows at a drive (`C:\`, `C:/`) or a UNC share. */
+    public static function isAbsolute(string $path): bool
+    {
+        if (DIRECTORY_SEPARATOR === '/') {
+            return str_starts_with($path, '/');
+        }
+
+        return str_starts_with($path, '/')
+            || str_starts_with($path, '\\')
+            || preg_match('~^[A-Za-z]:[/\\\\]~', $path) === 1;
+    }
+
+    /**
+     * The OS's own separator throughout — the form to compare against
+     * what the filesystem and PHP itself report.
+     *
+     * @template T of string
+     *
+     * @param T $path
+     *
+     * @return (T is non-empty-string ? non-empty-string : string)
+     */
+    public static function native(string $path): string
+    {
+        return DIRECTORY_SEPARATOR === '/' ? $path : str_replace('/', DIRECTORY_SEPARATOR, $path);
+    }
+
+    /**
+     * '/' throughout — the form a name is shown and stored in.
+     *
+     * @template T of string
+     *
+     * @param T $path
+     *
+     * @return (T is non-empty-string ? non-empty-string : string)
+     */
+    public static function portable(string $path): string
+    {
+        return DIRECTORY_SEPARATOR === '/' ? $path : str_replace(DIRECTORY_SEPARATOR, '/', $path);
     }
 
     public function equals(self $other): bool

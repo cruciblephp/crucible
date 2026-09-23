@@ -23,6 +23,7 @@ use LucianoPereira\Crucible\Bridge\PestSnapshots\AutoMixedTrait;
 use LucianoPereira\Crucible\Bridge\PestSnapshots\SnapshotFileContext;
 use LucianoPereira\Crucible\Bridge\PestSnapshots\SnapshotIdentityWrapper;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\HookPlanner;
 use LucianoPereira\Crucible\Framework\IncompleteTestError;
 use LucianoPereira\Crucible\Framework\SkippedTestError;
@@ -54,7 +55,6 @@ use function is_string;
 use function method_exists;
 use function rtrim;
 use function sprintf;
-use function str_replace;
 use function strlen;
 use function strpos;
 use function substr;
@@ -83,9 +83,9 @@ final readonly class PestBuilder
         RealPhpUnitBootstrap::ensureConfigured();
 
         // One separator from here on: on Windows the discovered path
-        // arrives mixed (getcwd() gives '\', discovery joins with '/'),
+        // can arrive mixed (getcwd() gives '\', config joins with '/'),
         // and every scope and dataset lookup below compares prefixes.
-        $file = str_replace('/', DIRECTORY_SEPARATOR, $file);
+        $file = WorkingDirectory::native($file);
 
         // Suite-level configuration first: Pest.php and Datasets/*.php
         // from every directory above the file, outermost first.

@@ -40,8 +40,8 @@ use function sort;
 use function sprintf;
 use function str_ends_with;
 use function str_starts_with;
-use function strlen;
-use function substr;
+
+use const DIRECTORY_SEPARATOR;
 
 /**
  * Turns the configuration into executable TestGroups: test suites
@@ -164,7 +164,7 @@ final readonly class TestDiscoverer
         $excludeDirectories = [];
 
         foreach ($source->excludeDirectories as $directory) {
-            $excludeDirectories[] = rtrim($this->absolute($directory, $workingDirectory), '/') . '/';
+            $excludeDirectories[] = rtrim($this->absolute($directory, $workingDirectory), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
         }
 
         $excludeFiles = [];
@@ -382,7 +382,7 @@ final readonly class TestDiscoverer
      */
     private function absolute(string $path, WorkingDirectory $workingDirectory): string
     {
-        return str_starts_with($path, '/') ? $path : $workingDirectory->path . '/' . $path;
+        return $workingDirectory->absolute($path);
     }
 
     /**
@@ -392,13 +392,8 @@ final readonly class TestDiscoverer
      */
     private function relative(string $file, WorkingDirectory $workingDirectory): string
     {
-        $prefix = $workingDirectory->path . '/';
+        $relative = $workingDirectory->relative($file);
 
-        if (str_starts_with($file, $prefix) && strlen($file) > strlen($prefix)) {
-            /** @var non-empty-string */
-            return substr($file, strlen($prefix));
-        }
-
-        return $file;
+        return $relative === '' ? $file : $relative;
     }
 }

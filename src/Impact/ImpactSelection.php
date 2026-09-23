@@ -11,11 +11,13 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Impact;
 
 use LucianoPereira\Crucible\Attributes\Group;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Test\TestGroup;
 
 use function array_diff_key;
 use function array_intersect_key;
 use function array_keys;
+use function array_map;
 use function basename;
 use function count;
 use function implode;
@@ -27,6 +29,8 @@ use function str_ends_with;
 use function str_starts_with;
 use function strlen;
 use function substr;
+
+use const DIRECTORY_SEPARATOR;
 
 /**
  * Ekstazi-style test selection at file granularity (growth G3): a
@@ -104,9 +108,9 @@ final readonly class ImpactSelection
 
         foreach ($changed->files as $file) {
             $real = realpath($file);
-            $real = $real === false ? $file : $real;
+            $real = $real === false ? WorkingDirectory::native($file) : $real;
 
-            if (in_array($real, $this->environmentFiles, true)
+            if (in_array($real, array_map(WorkingDirectory::native(...), $this->environmentFiles), true)
                 || in_array(basename($real), self::MANIFESTS, true)
             ) {
                 return ImpactResult::everything(sprintf('Impact: %s defines the environment', basename($real)));
@@ -266,8 +270,10 @@ final readonly class ImpactSelection
     /** Whether another tier of the run answers for this file. */
     private function isClaimed(string $file): bool
     {
+        $file = WorkingDirectory::native($file);
+
         foreach ($this->claimedPaths as $directory) {
-            if (str_starts_with($file, rtrim($directory, '/') . '/')) {
+            if (str_starts_with($file, rtrim(WorkingDirectory::native($directory), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)) {
                 return true;
             }
         }
@@ -280,9 +286,10 @@ final readonly class ImpactSelection
      */
     private function relative(string $file): string
     {
-        $prefix = rtrim($this->projectRoot, '/') . '/';
+        $prefix   = rtrim(WorkingDirectory::portable($this->projectRoot), '/') . '/';
+        $portable = WorkingDirectory::portable($file);
 
-        return str_starts_with($file, $prefix) ? substr($file, strlen($prefix)) : $file;
+        return str_starts_with($portable, $prefix) ? substr($portable, strlen($prefix)) : $file;
     }
 
     /**
@@ -296,6 +303,6 @@ final readonly class ImpactSelection
     {
         $relative = $group->tests[0]->id->file;
 
-        return rtrim($this->projectRoot, '/') . '/' . $relative;
+        return WorkingDirectory::native(rtrim($this->projectRoot, '/' . DIRECTORY_SEPARATOR) . '/' . $relative);
     }
 }

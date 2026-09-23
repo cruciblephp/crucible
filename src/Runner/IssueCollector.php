@@ -23,8 +23,6 @@ use function max;
 use function restore_error_handler;
 use function set_error_handler;
 use function str_starts_with;
-use function strlen;
-use function substr;
 
 use const DEBUG_BACKTRACE_IGNORE_ARGS;
 use const E_DEPRECATED;
@@ -177,7 +175,14 @@ final class IssueCollector
 
     private function isProjectFile(string $file): bool
     {
-        return array_any($this->projectDirectories, static fn(string $directory): bool => str_starts_with($file, $directory));
+        // PHP reports the OS's own separator; the configured prefixes
+        // may be joined with '/'.
+        $file = WorkingDirectory::native($file);
+
+        return array_any(
+            $this->projectDirectories,
+            static fn(string $directory): bool => str_starts_with($file, WorkingDirectory::native($directory)),
+        );
     }
 
     /**
@@ -187,13 +192,8 @@ final class IssueCollector
      */
     private function relative(string $file): string
     {
-        $prefix = $this->workingDirectory->path . '/';
+        $relative = $this->workingDirectory->relative($file);
 
-        if (str_starts_with($file, $prefix) && strlen($file) > strlen($prefix)) {
-            /** @var non-empty-string */
-            return substr($file, strlen($prefix));
-        }
-
-        return $file;
+        return $relative === '' ? $file : $relative;
     }
 }

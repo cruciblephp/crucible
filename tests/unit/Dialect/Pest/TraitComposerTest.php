@@ -35,8 +35,12 @@ use function class_uses;
 use function dirname;
 use function escapeshellarg;
 use function exec;
+use function file_put_contents;
 use function implode;
 use function str_contains;
+use function sys_get_temp_dir;
+use function tempnam;
+use function unlink;
 use function var_export;
 
 use const PHP_BINARY;
@@ -222,8 +226,15 @@ final class TraitComposerTest extends TestCase
             . 'echo "COMPOSED";'
             . '} catch (\\' . ConfigurationException::class . ' $refusal) { echo "REFUSED"; }';
 
+        // A script file, not `php -r`: on Windows escapeshellarg()
+        // blanks every double quote, so the code would never reach PHP
+        // as written.
+        $script = (string) tempnam(sys_get_temp_dir(), 'crucible-shape-');
+        file_put_contents($script, '<?php ' . $code);
+
         $output = [];
-        exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg($code) . ' 2>&1', $output);
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script) . ' 2>&1', $output);
+        unlink($script);
 
         $said = implode("\n", $output);
 

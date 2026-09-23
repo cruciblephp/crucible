@@ -82,7 +82,7 @@ final class SkipReasonsTest extends TestCase
     {
         $files    = [];
         $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator(dirname(__DIR__) . '/unit', FilesystemIterator::SKIP_DOTS),
+            new RecursiveDirectoryIterator(__DIR__, FilesystemIterator::SKIP_DOTS),
         );
 
         /** @var SplFileInfo $file */

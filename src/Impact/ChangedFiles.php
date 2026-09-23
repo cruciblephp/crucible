@@ -88,7 +88,8 @@ final readonly class ChangedFiles
         $files = [];
 
         foreach ($changed as $name) {
-            $absolute = $top . '/' . $name;
+            // git answers with '/' on every OS; the graph keys on the OS's own.
+            $absolute = WorkingDirectory::native($top . '/' . $name);
 
             if (is_file($absolute)) {
                 $files[$absolute] = true;

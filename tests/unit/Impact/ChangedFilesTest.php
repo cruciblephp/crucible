@@ -15,16 +15,21 @@ use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Impact\ChangedFiles;
 
-use function escapeshellarg;
-use function exec;
+use function chmod;
+use function explode;
+use function fclose;
 use function file_put_contents;
-use function implode;
 use function is_dir;
+use function is_file;
+use function is_resource;
 use function is_string;
 use function mkdir;
+use function proc_close;
+use function proc_open;
 use function realpath;
 use function rmdir;
-use function sprintf;
+use function scandir;
+use function stream_get_contents;
 use function sys_get_temp_dir;
 use function uniqid;
 use function unlink;
@@ -66,20 +71,58 @@ final class ChangedFilesTest extends TestCase
             @unlink($this->repository . '/' . $file);
         }
 
-        exec(sprintf('rm -rf %s/.git', escapeshellarg($this->repository)));
+        $this->remove($this->repository . '/.git');
 
         if (is_dir($this->repository)) {
             rmdir($this->repository);
         }
     }
 
+    /**
+     * An argument list, not a shell line: `2>/dev/null` and `rm -rf`
+     * do not exist under cmd.exe, and neither is needed.
+     */
     private function git(string $command): void
     {
-        exec(sprintf('git -C %s %s 2>/dev/null', escapeshellarg($this->repository), $command), $output, $code);
+        $process = proc_open(
+            ['git', '-C', $this->repository, ...explode(' ', $command)],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
 
-        if ($code !== 0) {
-            self::fail('git ' . $command . ' failed: ' . implode("\n", $output));
+        if (!is_resource($process)) {
+            self::fail('git ' . $command . ' could not be started.');
         }
+
+        $error = (string) stream_get_contents($pipes[2]);
+        stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        if (proc_close($process) !== 0) {
+            self::fail('git ' . $command . ' failed: ' . $error);
+        }
+    }
+
+    /** Git leaves its objects read-only, which Windows will not unlink until told otherwise. */
+    private function remove(string $path): void
+    {
+        if (!is_dir($path)) {
+            if (is_file($path)) {
+                chmod($path, 0o666);
+                unlink($path);
+            }
+
+            return;
+        }
+
+        foreach ((array) scandir($path) as $entry) {
+            if ($entry !== '.' && $entry !== '..' && is_string($entry)) {
+                $this->remove($path . '/' . $entry);
+            }
+        }
+
+        rmdir($path);
     }
 
     public function testModifiedUntrackedAndDeletedFilesAreReported(): void
@@ -94,10 +137,10 @@ final class ChangedFilesTest extends TestCase
             self::fail('Unexpected git error: ' . $changed);
         }
 
-        self::assertContains($this->repository . '/modified.php', $changed->files);
-        self::assertContains($this->repository . '/fresh.php', $changed->files);
-        $this->assertNotContains($this->repository . '/kept.php', $changed->files);
-        $this->assertNotContains($this->repository . '/doomed.php', $changed->files);
+        self::assertContains(WorkingDirectory::native($this->repository . '/modified.php'), $changed->files);
+        self::assertContains(WorkingDirectory::native($this->repository . '/fresh.php'), $changed->files);
+        $this->assertNotContains(WorkingDirectory::native($this->repository . '/kept.php'), $changed->files);
+        $this->assertNotContains(WorkingDirectory::native($this->repository . '/doomed.php'), $changed->files);
         self::assertSame(['doomed.php'], $changed->deleted);
     }
 

@@ -16,6 +16,7 @@ use LucianoPereira\Crucible\Dialect\Pest\DescribeCall;
 use LucianoPereira\Crucible\Dialect\Pest\PestRegistry;
 use LucianoPereira\Crucible\Dialect\Pest\TestCall;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Property\Gen;
 use RuntimeException;
@@ -406,7 +407,7 @@ final class PestRegistryTest extends TestCase
         // Always tests/Fixtures under the ROOT, whatever directory the
         // calling file sits in -- measured against Pest 5.1.1, which
         // has no nearest-Fixtures rule.
-        self::assertStringEndsWith('/tests/Fixtures/sample.txt', PestRegistry::fixture('sample.txt'));
+        self::assertStringEndsWith(WorkingDirectory::native('/tests/Fixtures/sample.txt'), PestRegistry::fixture('sample.txt'));
 
         $this->refuses(static fn(): mixed => PestRegistry::fixture('nothing-here.txt'), 'does not exist');
     }

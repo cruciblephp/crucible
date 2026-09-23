@@ -23,7 +23,10 @@ use LucianoPereira\Crucible\Console\Terminal\FakeTerminal;
 use LucianoPereira\Crucible\Framework\TestCase;
 
 use function str_contains;
+use function str_replace;
 use function substr_count;
+
+use const PHP_EOL;
 
 #[CoversClass(Splash::class)]
 #[CoversClass(Brand::class)]
@@ -81,8 +84,10 @@ final class SplashTest extends TestCase
         // Each cell carries its own SGR prefix, so the wordmark is never
         // a contiguous substring — what a reader sees is what is left
         // once the colour is stripped, which is what this asserts.
-        self::assertSame("cruciblephp\n", Str::stripAnsi($output));
-        self::assertStringNotContainsString("\r", $output, 'nothing to overwrite in a log');
+        self::assertSame('cruciblephp' . PHP_EOL, Str::stripAnsi($output));
+        // The line ending is the OS's own ("\r\n" on Windows); any other
+        // "\r" would be a frame rewriting the line.
+        self::assertStringNotContainsString("\r", str_replace(PHP_EOL, "\n", $output), 'nothing to overwrite in a log');
         self::assertStringNotContainsString('?25l', $output, 'the cursor is left alone');
         self::assertStringNotContainsString('?25h', $output);
         self::assertSame(1, substr_count($output, "\n"), 'exactly one line');
@@ -225,7 +230,7 @@ final class SplashTest extends TestCase
         $splash->suffix = ' 1.0.0';
         $splash->render();
 
-        self::assertSame("cruciblephp 1.0.0\n", Str::stripAnsi($static->output()), 'after the mark, not before');
+        self::assertSame('cruciblephp 1.0.0' . PHP_EOL, Str::stripAnsi($static->output()), 'after the mark, not before');
     }
 
     /**

@@ -13,6 +13,7 @@ namespace LucianoPereira\Crucible\Tests\Dialect\Pest;
 use LucianoPereira\Crucible\Attributes\CoversClass;
 use LucianoPereira\Crucible\Dialect\Pest\PestRegistry;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\TestCase;
 
 use function dirname;
@@ -44,7 +45,7 @@ final class PestFixtureTest extends TestCase
         // This file lives four levels down and still resolves there.
         $path = PestRegistry::fixture('sample.txt');
 
-        self::assertSame(dirname(__DIR__, 4) . '/tests/Fixtures/sample.txt', $path);
+        self::assertSame(WorkingDirectory::native(dirname(__DIR__, 4) . '/tests/Fixtures/sample.txt'), $path);
         self::assertSame("seed-data\n", file_get_contents($path));
     }
 

@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Watch;
 
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Impact\ImpactRule;
 
 use function array_any;
@@ -22,6 +23,8 @@ use function str_ends_with;
 use function str_starts_with;
 use function strlen;
 use function substr;
+
+use const DIRECTORY_SEPARATOR;
 
 /**
  * The watch state machine (growth G3, atoum's loop mode): while
@@ -132,7 +135,10 @@ final class WatchSession
     {
         return array_any(
             $this->jsDirectories,
-            static fn(string $directory): bool => str_starts_with($file, $directory . '/'),
+            static fn(string $directory): bool => str_starts_with(
+                WorkingDirectory::native($file),
+                rtrim(WorkingDirectory::native($directory), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR,
+            ),
         );
     }
 
@@ -143,8 +149,10 @@ final class WatchSession
      */
     private function ruled(string $file): bool
     {
-        $prefix   = rtrim($this->projectRoot, '/') . '/';
-        $relative = str_starts_with($file, $prefix) ? substr($file, strlen($prefix)) : $file;
+        // Rules match the '/' form on every OS.
+        $prefix   = rtrim(WorkingDirectory::portable($this->projectRoot), '/') . '/';
+        $portable = WorkingDirectory::portable($file);
+        $relative = str_starts_with($portable, $prefix) ? substr($portable, strlen($prefix)) : $file;
 
         return array_any(
             $this->rules,
