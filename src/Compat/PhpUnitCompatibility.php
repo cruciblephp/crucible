@@ -14,6 +14,7 @@ use Composer\InstalledVersions;
 use LucianoPereira\Crucible\Assert\Assert;
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Assert\Constraint\Constraint;
+use LucianoPereira\Crucible\Assert\Constraint\LogicalNot;
 use LucianoPereira\Crucible\Double\MockBuilder;
 use LucianoPereira\Crucible\Double\Mocked;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
@@ -129,6 +130,10 @@ final class PhpUnitCompatibility
             // the hook surface (matches/toString/failureDescription)
             // is signature-compatible by design.
             'PHPUnit\Framework\Constraint\Constraint' => Constraint::class,
+            // The one concrete constraint frameworks build by the
+            // incumbent's name: Laravel's assertDatabaseMissing() wraps
+            // its HasInDatabase in it.
+            'PHPUnit\Framework\Constraint\LogicalNot' => LogicalNot::class,
             // The double surface (D-046): mocks and stubs are one
             // concept in Crucible, so both spec interfaces alias the
             // Mocked marker and both builders alias the one builder.

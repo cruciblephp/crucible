@@ -15,6 +15,12 @@
 #   Crucible's classes for PHPStan too — so a Laravel test suite whose
 #   TestCase chain crosses PHPUnit\Framework\TestCase analyses clean,
 #   Larastan and friends untouched.
+#
+# The scan below declares the dialects' global functions, check() among
+# them, so a project with a global check() of its own sees every call
+# checked against Crucible's signature. A PHPUnit-dialect suite needs only
+# the aliases: include phpstan/bootstrap.php under bootstrapFiles instead
+# of this file.
 
 parameters:
     bootstrapFiles:

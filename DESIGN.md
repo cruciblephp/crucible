@@ -5713,6 +5713,103 @@ Pest refuses duplicates — so that suite provably declares none, and the new re
 there. Re-running it to be told so would cost 25 minutes and settle nothing that is not already
 settled.
 
+## 1.0.1 — what the first migration off Packagist found
+
+Two packages moved from PHPUnit to Crucible 1.0.0 as installed from Packagist, a Laravel array-store
+driver and its Wire bridge, and hit three defects. None was a named `Quirk` (D-110: there are
+none), so each was a divergence nobody had chosen. Each record below comes with a check that
+fails on 1.0.0 and passes now.
+
+### D-121: an attribute hook runs before setUp(), because setUp() is a hook at priority 0
+
+`invokeTest()` ran `setUp → #[Before] → #[PreCondition] → test → #[PostCondition] → #[After] →
+tearDown`. The incumbent builds each phase as one list: the template method (`setUp`,
+`assertPreConditions`, `assertPostConditions`, `tearDown`) starts it at priority 0, each attribute
+hook is **prepended** in the before phases and **appended** in the after phases, and one stable sort
+puts the highest priority first. So at the default priority a `#[Before]` runs *before* `setUp()` and
+an `#[After]` runs *after* `tearDown()`. Crucible had both the wrong way round.
+
+**Why it is not cosmetic.** A trait with a `#[Before]` reset and a class that wires something in
+`setUp()` is an ordinary shape. Under the incumbent the reset runs first and the wiring survives;
+under 1.0.0 the reset ran second and wiped it. The array-store driver's `RefreshesArrayStore` flush
+replaced the connection, so the event dispatcher and transaction manager set in `setUp()` were gone:
+three tests failed, one with "Transactions Manager has not been set". `compat-check` did flag the
+three, and blamed coupling to PHPUnit internals, when the tests assert Laravel events.
+
+**Three more divergences, found by reading the same list.**
+
+1. **The after phases sort by descending priority too.** `HookPlanner` sorted `#[After]` and
+   `#[PostCondition]` ascending, so `#[After(priority: 5)]` ran after `#[After(priority: 0)]`.
+2. **Ties.** Prepending reverses discovery order in the before phases: of two tied `#[Before]` hooks,
+   the one discovered later runs first. Discovery is the class's own methods, then its traits'.
+3. **`assertPreConditions()` and `assertPostConditions()` did not exist.** A test that overrode
+   either was never called, and one that marked it `#[\Override]` would not load.
+
+An attribute on a template method is ignored, as the incumbent ignores it, rather than running the
+method twice.
+
+**The shape of the fix.** `HookPlan`'s lists now *are* the run order, template methods included,
+built by `HookPlanner::merge()` in the incumbent's way. `invokeTest()` walks them and names nothing.
+The Pest dialect splits the before list at `setUp`: hooks ahead of it run first, `beforeEach` runs
+right after it (real Pest's `setUp()` is what calls `beforeEach`), and `afterEach` runs right before
+`tearDown()` for the same reason.
+
+**What did not change.** A throw in the before phase still ends the test without the after phase, as
+a throwing `setUp()` always has. The incumbent does run the after phase there; changing that is a
+separate decision, because an after hook meeting half-built state can throw again and hide the first
+error.
+
+✓ `conformance/fixtures/09-lifecycle/tests/HookOrderTest.php` records one whole lifecycle (priorities
+5, 0 and -1, a trait hook, all four template methods) and asserts the sequence. The real `phpunit`
+13.3.1 passes it; Crucible 1.0.0 drifts; 1.0.1 conforms. ✓ The driver's three tests, restored to
+wiring in `setUp()`, pass.
+
+### D-122: transformException() exists to be overridden
+
+The incumbent's `TestCase` has `protected function transformException(Throwable $t): Throwable`,
+and every error it reports passes through it once. Crucible had no such method. Orchestra Testbench
+overrides it with `#[\Override]`, so under 1.0.0 **every Testbench test was a fatal error during
+discovery**, and the run ended with no verdict.
+
+It now exists, returns its argument, and is applied where the incumbent applies it: to a throwable
+from the before phase or the test body that is not a failure, a skip or an incomplete, and not an
+exception the test expected. An exception from the after phase is not transformed, matching the
+incumbent.
+
+✓ Measured with `orchestra/testbench-core` 11.5 (the package without the meta package's hard
+requirement on `phpunit/phpunit`): 1.0.0 fatals on the first file, and 1.0.1 passes all 14 of the
+Wire bridge's Testbench tests.
+
+**Found beside it, not fixed here.** With the `orchestra/testbench` meta package, `phpunit/phpunit`
+is installed, and with `->phpunitCompatibility()` on, Laravel's `HandleExceptions::flushHandlersState()`
+finds the real `PHPUnit\Runner\ErrorHandler` and calls into a configuration registry only the real
+runner fills. Each test then errors in `tearDown()`. That is migration mode meeting a framework that
+reaches for the real runner's singletons; the drop-in route is to require `testbench-core`.
+
+### D-123: the incumbent's LogicalNot is aliased, and negates a framework's own description
+
+`PhpUnitCompatibility` aliased the constraint base, which covers every framework constraint that
+*extends* it. Laravel's `assertDatabaseMissing()` also *constructs* one by name,
+`new PHPUnit\Framework\Constraint\LogicalNot(new HasInDatabase(...))`, and failed with "class not
+found". It is the only concrete constraint Laravel or Testbench builds by the incumbent's name, so it
+is the only alias added: Crucible's `LogicalNot` already implemented it.
+
+**The alias alone was not enough; the message was wrong too.** A framework constraint follows the
+incumbent's contract: `failureDescription()` returns the fragment after "Failed asserting that", and
+the runner builds the sentence. Crucible's own constraints return the whole sentence. So under 1.0.0
+Laravel's own `assertDatabaseHas()` failure lost its "Failed asserting that", and the negation
+printed `'widgets' {"name":"this not is not data"}`: the base's toString negation reached into the
+JSON.
+
+`Constraint::failureSentence()` now builds the sentence around a description whose method is not
+declared in Crucible's namespace. For the same kind of constraint, `LogicalNot` negates that
+description's wording and leaves every quoted value alone. Laravel's message is now the incumbent's:
+"Failed asserting that a row in the table [widgets] does not match the attributes {...}". Crucible's
+own constraints are unchanged.
+
+✓ `tests/unit/Framework/LifecycleCompatibilityTest.php`: the alias and both messages. ✓ The Wire
+bridge's `assertDatabaseMissing()`, restored, passes.
+
 ---
 
 ## Closing the planned record

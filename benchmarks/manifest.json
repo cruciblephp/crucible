@@ -2,7 +2,7 @@
     "schema": 1,
     "purpose": "The README's real-world parity claims, pinned so a reader can reproduce them and a release can re-check them.",
     "crucible_version": "0.9.0",
-    "crucible_version_note": "The version these cases were MEASURED at, not the current one. It stays behind Version::NUMBER until a case is re-run, because moving it without re-running would claim a measurement that never happened.",
+    "crucible_version_note": "The version these cases were MEASURED at, not the current one. It stays behind Version::NUMBER until a case is re-run, because moving it without re-running would claim a measurement that never happened. A case that carries its own crucible_version was re-run at that version, and that field is what it was measured at.",
     "cases": {
         "monolog": {
             "repository": "https://github.com/Seldaek/monolog",
@@ -76,19 +76,20 @@
         },
         "phpcpd": {
             "repository": "https://github.com/phpcpd-next/phpcpd",
-            "ref": "v1.4",
+            "ref": "v2.0",
+            "crucible_version": "1.0.1",
             "dialect": "phpunit",
             "incumbent": {
                 "package": "phpunit/phpunit",
-                "baseline": "OK (271 tests, 642 assertions)"
+                "baseline": "OK (710 tests, 55330 assertions)"
             },
             "expected": {
-                "tests": 271,
-                "passed": 271,
+                "tests": 710,
+                "passed": 710,
                 "failed": 0,
                 "exit": 0
             },
-            "notes": "Parity proven at v1.4. phpcpd-next 1.4 replaced the tests/_guard.php runner-name allowlist (which blocked every runner but phpunit and pest, v1.0-v1.3) with a SCRIPT_FILENAME-vs-caller path comparison, so Crucible runs the suite. One extra step is needed and is not incidental: phpcpd-next's own require-dev installs phpunit/phpunit, so D-019 disables Crucible's PHPUnit-namespace aliases and the run finds zero tests until crucible.php opts in with ->phpunitCompatibility(). migrate-config does not emit that call. Do NOT remove phpunit/phpunit to avoid it -- overriding a benchmarked project's own require-dev is what corrupted the monolog run. Measured on PHP 8.5.9: incumbent PHPUnit 11.5.55 OK (271 tests, 642 assertions) in 47.666s, run first; Crucible 0.9.0 then 271 tests, 271 passed, 0 failed, 0 skipped in 47.133s, both exit 0.",
+            "notes": "Parity proven at v2.0, the latest release, re-measured with Crucible 1.0.1; the case stood at v1.4 (271 tests, Crucible 0.9.0) until then. v2.0 keeps v1.4's SCRIPT_FILENAME-vs-caller guard, so Crucible runs the suite. One extra step is needed and is not incidental: phpcpd-next's own require-dev installs phpunit/phpunit, so D-019 disables Crucible's PHPUnit-namespace aliases and the run finds zero tests until crucible.php opts in with ->phpunitCompatibility(). migrate-config does not emit that call. Do NOT remove phpunit/phpunit to avoid it -- overriding a benchmarked project's own require-dev is what corrupted the monolog run. Measured on PHP 8.5.10: incumbent PHPUnit 11.5.55 OK (710 tests, 55330 assertions) in 57.942s, run first; Crucible 1.0.1 then 710 tests, 710 passed, 0 failed, 0 skipped in 61.065s, both exit 0.",
             "steps": [
                 "composer install --no-interaction",
                 "composer config repositories.crucible path {CRUCIBLE}",

@@ -24,6 +24,7 @@ use LucianoPereira\Crucible\Bridge\PestSnapshots\SnapshotFileContext;
 use LucianoPereira\Crucible\Bridge\PestSnapshots\SnapshotIdentityWrapper;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+use LucianoPereira\Crucible\Framework\HookPlan;
 use LucianoPereira\Crucible\Framework\HookPlanner;
 use LucianoPereira\Crucible\Framework\IncompleteTestError;
 use LucianoPereira\Crucible\Framework\SkippedTestError;
@@ -41,6 +42,8 @@ use ReflectionUnionType;
 use Throwable;
 
 use function array_map;
+use function array_search;
+use function array_slice;
 use function basename;
 use function class_exists;
 use function count;
@@ -565,11 +568,24 @@ final readonly class PestBuilder
             // at all.
             SnapshotFileContext::set($snapshotsDirectory, $testFileBasename);
 
-            if ($hasLifecycle) {
-                if ($isRealPhpUnit) {
-                    RealPhpUnitBootstrap::resetAssertionCount();
-                }
+            if ($hasLifecycle && $isRealPhpUnit) {
+                RealPhpUnitBootstrap::resetAssertionCount();
+            }
 
+            // The before list carries setUp() at its priority-0 place
+            // (HookPlan): the #[Before] hooks ahead of it run first, as
+            // under the incumbent, and beforeEach runs right after it,
+            // since real Pest's setUp() is what calls beforeEach. The
+            // hooks behind setUp() wait for the closure-form skip.
+            $setUpAt     = array_search(HookPlan::SET_UP, $hooks->before, true);
+            $beforeSetUp = $setUpAt === false ? [] : array_slice($hooks->before, 0, $setUpAt);
+            $behindSetUp = $setUpAt === false ? $hooks->before : array_slice($hooks->before, $setUpAt + 1);
+
+            foreach ($beforeSetUp as $hook) {
+                (new ReflectionMethod($instance, $hook))->invoke($instance);
+            }
+
+            if ($hasLifecycle) {
                 (new ReflectionMethod($instance, 'setUp'))->invoke($instance);
             }
 
@@ -592,12 +608,12 @@ final readonly class PestBuilder
                     }
                 }
 
-                foreach ($hooks->before as $hook) {
+                foreach ($behindSetUp as $hook) {
                     (new ReflectionMethod($instance, $hook))->invoke($instance);
                 }
 
                 foreach ($hooks->preConditions as $hook) {
-                    (new ReflectionMethod($instance, $hook))->invoke($instance);
+                    self::invokeHook($instance, $hook);
                 }
 
                 // Bound rows (spec §4): a closure-valued dataset argument
@@ -710,24 +726,30 @@ final readonly class PestBuilder
                 // it only fires once the test method itself completed
                 // normally.
                 foreach ($hooks->postConditions as $hook) {
-                    (new ReflectionMethod($instance, $hook))->invoke($instance);
+                    self::invokeHook($instance, $hook);
                 }
 
                 return $value;
             } finally {
-                foreach ($state->afterEach as $hook) {
-                    $invoke($hook);
-                }
-
-                // Unconditional, like tearDown() below — matching
-                // TestCase::invokeTest()'s own "after/tearDown always
-                // run" contract (HookPlan's own docblock).
+                // Unconditional, matching TestCase::invokeTest()'s own
+                // "the after phase always runs" contract. tearDown()
+                // holds its priority-0 place in the list (HookPlan), and
+                // afterEach runs right before it, since real Pest's
+                // tearDown() is what calls afterEach.
                 foreach ($hooks->after as $hook) {
-                    (new ReflectionMethod($instance, $hook))->invoke($instance);
-                }
+                    if ($hook !== HookPlan::TEAR_DOWN) {
+                        (new ReflectionMethod($instance, $hook))->invoke($instance);
 
-                if ($hasLifecycle) {
-                    (new ReflectionMethod($instance, 'tearDown'))->invoke($instance);
+                        continue;
+                    }
+
+                    foreach ($state->afterEach as $afterEach) {
+                        $invoke($afterEach);
+                    }
+
+                    if ($hasLifecycle) {
+                        (new ReflectionMethod($instance, 'tearDown'))->invoke($instance);
+                    }
                 }
 
                 // Real PHPUnit's own TestCase tracks assertions
@@ -772,6 +794,20 @@ final readonly class PestBuilder
      * bound-rows comment). Only positional slots resolve; a named row
      * key can't be matched to a parameter by position.
      */
+    /**
+     * A condition hook, or the condition template of its phase — which a
+     * uses() class may not have (it need not be a TestCase), and which
+     * then has nothing to run.
+     */
+    private static function invokeHook(object $instance, string $hook): void
+    {
+        if (HookPlan::isTemplate($hook) && !method_exists($instance, $hook)) {
+            return;
+        }
+
+        (new ReflectionMethod($instance, $hook))->invoke($instance);
+    }
+
     private static function targetParameterAcceptsCallable(?Closure $test, int|string $key): bool
     {
         if (!$test instanceof Closure || !is_int($key)) {

@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Framework;
 
+use AssertionError;
 use LucianoPereira\Crucible\Assert\Assert;
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Attributes\AllowMockObjectsWithoutExpectations;
@@ -67,12 +68,36 @@ abstract class TestCase extends Assert
 
     protected function setUp(): void {}
 
+    /** Runs after setUp() and before the test: assertions every test of the class shares. */
+    protected function assertPreConditions(): void {}
+
+    /** Runs after a test that completed and before tearDown(): assertions every test shares. */
+    protected function assertPostConditions(): void {}
+
     protected function tearDown(): void {}
+
+    /**
+     * The seam a subclass uses to replace an error before it is
+     * reported: whatever a test, a before hook or setUp() throws, other
+     * than a failure, a skip or an incomplete, passes through here once.
+     * Frameworks override it (Orchestra Testbench adds the request that
+     * produced a Laravel exception), so it must exist to be overridden.
+     */
+    protected function transformException(Throwable $t): Throwable
+    {
+        return $t;
+    }
 
     /**
      * Runs one test method through the per-test lifecycle. Internal:
      * called by dialect frontends, not by user code. Returns the test
      * method's return value (consumed by #[Depends] injection).
+     *
+     * The hook lists carry setUp(), the condition templates and
+     * tearDown() at their priority-0 place (HookPlan). A failure in the
+     * before phase ends the test without the after phase, as a failing
+     * setUp() always has; once the test body is entered, the after
+     * phase always runs.
      *
      * @param non-empty-string  $methodName
      * @param list<mixed>       $arguments
@@ -83,14 +108,16 @@ abstract class TestCase extends Assert
         $hooks ??= new HookPlan();
         $this->nameTest($methodName, $dataset);
 
-        $this->setUp();
+        try {
+            foreach ($hooks->before as $hook) {
+                $this->{$hook}();
+            }
 
-        foreach ($hooks->before as $hook) {
-            $this->{$hook}();
-        }
-
-        foreach ($hooks->preConditions as $hook) {
-            $this->{$hook}();
+            foreach ($hooks->preConditions as $hook) {
+                $this->{$hook}();
+            }
+        } catch (Throwable $throwable) {
+            throw $this->transformed($throwable);
         }
 
         try {
@@ -114,6 +141,10 @@ abstract class TestCase extends Assert
 
             throw $outcome;
         } catch (Throwable $throwable) {
+            if (!$this->expectsException()) {
+                throw $this->transformed($throwable);
+            }
+
             $this->verifyThrowableMatchesExpectation($throwable);
 
             return null;
@@ -121,9 +152,23 @@ abstract class TestCase extends Assert
             foreach ($hooks->after as $hook) {
                 $this->{$hook}();
             }
-
-            $this->tearDown();
         }
+    }
+
+    /**
+     * An error goes through transformException(); a failure, a skip or
+     * an incomplete is an outcome, not an error, and passes unchanged.
+     */
+    private function transformed(Throwable $throwable): Throwable
+    {
+        if ($throwable instanceof AssertionFailedError
+            || $throwable instanceof AssertionError
+            || $throwable instanceof SkippedTestError
+            || $throwable instanceof IncompleteTestError) {
+            return $throwable;
+        }
+
+        return $this->transformException($throwable);
     }
 
     final public function expectsNoAssertions(): bool

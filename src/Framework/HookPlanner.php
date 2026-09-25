@@ -18,6 +18,7 @@ use LucianoPereira\Crucible\Metadata\MetadataParser;
 use ReflectionClass;
 use ReflectionMethod;
 
+use function strtolower;
 use function usort;
 
 /**
@@ -53,49 +54,76 @@ final readonly class HookPlanner
             /** @var non-empty-string $methodName */
             $metadata = $parser->forMethod($class->getName(), $methodName);
 
+            // A template method is already in its phase; the incumbent
+            // ignores the attribute on it rather than run it twice.
             foreach ($metadata->ofType(Before::class) as $attribute) {
-                $before[] = [$attribute->priority, $methodName];
+                if (!self::named($methodName, HookPlan::SET_UP)) {
+                    $before[] = [$attribute->priority, $methodName];
+                }
             }
 
             foreach ($metadata->ofType(PreCondition::class) as $attribute) {
-                $preConditions[] = [$attribute->priority, $methodName];
+                if (!self::named($methodName, HookPlan::PRE_CONDITIONS)) {
+                    $preConditions[] = [$attribute->priority, $methodName];
+                }
             }
 
             foreach ($metadata->ofType(PostCondition::class) as $attribute) {
-                $postConditions[] = [$attribute->priority, $methodName];
+                if (!self::named($methodName, HookPlan::POST_CONDITIONS)) {
+                    $postConditions[] = [$attribute->priority, $methodName];
+                }
             }
 
             foreach ($metadata->ofType(After::class) as $attribute) {
-                $after[] = [$attribute->priority, $methodName];
+                if (!self::named($methodName, HookPlan::TEAR_DOWN)) {
+                    $after[] = [$attribute->priority, $methodName];
+                }
             }
         }
 
         return new HookPlan(
-            self::byPriority($before, descending: true),
-            self::byPriority($preConditions, descending: true),
-            self::byPriority($postConditions, descending: false),
-            self::byPriority($after, descending: false),
+            self::merge($before, HookPlan::SET_UP, prepend: true),
+            self::merge($preConditions, HookPlan::PRE_CONDITIONS, prepend: true),
+            self::merge($postConditions, HookPlan::POST_CONDITIONS, prepend: false),
+            self::merge($after, HookPlan::TEAR_DOWN, prepend: false),
         );
     }
 
     /**
+     * One phase's run order, merged the incumbent's way: the template
+     * method starts the list at priority 0, each discovered hook is put
+     * in front of it (setUp, assertPreConditions) or behind it
+     * (assertPostConditions, tearDown), and a stable sort then puts the
+     * highest priority first. At equal priority that places a hook
+     * before setUp() and after tearDown(), and in the before phases the
+     * later-discovered of two tied hooks runs first.
+     *
      * @param list<array{int, non-empty-string}> $hooks
+     * @param non-empty-string                   $template
      *
      * @return list<non-empty-string>
      */
-    private static function byPriority(array $hooks, bool $descending): array
+    private static function merge(array $hooks, string $template, bool $prepend): array
     {
-        usort(
-            $hooks,
-            static fn(array $a, array $b): int => $descending ? $b[0] <=> $a[0] : $a[0] <=> $b[0],
-        );
+        $ordered = [[0, $template]];
+
+        foreach ($hooks as $hook) {
+            $ordered = $prepend ? [$hook, ...$ordered] : [...$ordered, $hook];
+        }
+
+        usort($ordered, static fn(array $a, array $b): int => $b[0] <=> $a[0]);
 
         $names = [];
 
-        foreach ($hooks as [, $name]) {
+        foreach ($ordered as [, $name]) {
             $names[] = $name;
         }
 
         return $names;
+    }
+
+    private static function named(string $methodName, string $template): bool
+    {
+        return strtolower($methodName) === strtolower($template);
     }
 }

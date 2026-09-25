@@ -13,6 +13,9 @@ namespace LucianoPereira\Crucible\Assert\Constraint;
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Assert\ComparisonFailure;
 use LucianoPereira\Crucible\Assert\Exporter;
+use ReflectionMethod;
+
+use function str_starts_with;
 
 /**
  * The shared evaluation core. Every assert*() method — and, in the
@@ -71,7 +74,7 @@ abstract class Constraint
             return false;
         }
 
-        $failure = $this->failureDescription($other) . $this->additionalFailureDescription($other);
+        $failure = $this->failureSentence($other) . $this->additionalFailureDescription($other);
 
         if ($description !== '') {
             $failure = $description . "\n" . $failure;
@@ -83,6 +86,31 @@ abstract class Constraint
     protected function failureDescription(mixed $other): string
     {
         return 'Failed asserting that ' . Exporter::describe($other) . ' ' . $this->toString() . '.';
+    }
+
+    /**
+     * The failure as a whole sentence. Crucible's constraints write the
+     * sentence in failureDescription() themselves; a framework's
+     * constraint, written to the incumbent's contract, returns only the
+     * fragment after "Failed asserting that" (Laravel's HasInDatabase:
+     * "a row in the table [users] matches the attributes ..."), and the
+     * sentence is built around it, as the incumbent builds it.
+     */
+    final protected function failureSentence(mixed $other): string
+    {
+        $description = $this->failureDescription($other);
+
+        return self::writesItsOwnSentence($this)
+            ? $description
+            : 'Failed asserting that ' . $description . '.';
+    }
+
+    /** Whether $constraint's failureDescription() is Crucible's, which returns a whole sentence. */
+    final protected static function writesItsOwnSentence(self $constraint): bool
+    {
+        $declaredBy = (new ReflectionMethod($constraint, 'failureDescription'))->getDeclaringClass()->getName();
+
+        return str_starts_with($declaredBy, 'LucianoPereira\\Crucible\\');
     }
 
     protected function additionalFailureDescription(mixed $other): string

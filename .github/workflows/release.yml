@@ -35,14 +35,20 @@ jobs:
           php-version: '8.3'
           tools: none
 
+      # Compared as Composer compares them: a missing component is zero, so
+      # the tag v1.0 names 1.0.0, the version Packagist serves for it.
       - name: The tag names the version the code reports
         run: |
-          reported="v$(php -r 'require "src/Version.php"; echo LucianoPereira\Crucible\Version::NUMBER;')"
-          if [ "$reported" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME, but src/Version.php reports $reported."
+          reported="$(php -r 'require "src/Version.php"; echo LucianoPereira\Crucible\Version::NUMBER;')"
+          tagged="${GITHUB_REF_NAME#v}"
+          while [ "$(printf '%s' "$tagged" | tr -cd . | wc -c)" -lt 2 ]; do
+            tagged="$tagged.0"
+          done
+          if [ "$tagged" != "$reported" ]; then
+            echo "Tag $GITHUB_REF_NAME names $tagged, but src/Version.php reports $reported."
             exit 1
           fi
-          echo "Tag and src/Version.php agree: $reported"
+          echo "Tag $GITHUB_REF_NAME and src/Version.php agree: $reported"
 
       - name: The archive ships the engine and nothing that must not ship
         run: php .github/scripts/check-archive.php "$GITHUB_REF_NAME"

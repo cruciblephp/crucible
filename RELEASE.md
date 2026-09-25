@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-09-22 (D-001..D-120). Every entry traces to a `DESIGN.md` decision
+_As of 2026-09-25 (D-001..D-123). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -50,10 +50,11 @@ invariant.
   1115 passed, 0 failed, 22 skipped, against real PHPUnit 11.5.56's own 1155 tests, 2132
   assertions and the same 22 skips at that ref, after `compat-check --auto-fix` rewrites the
   five tests asserting PHPUnit's own internals.
-  `phpcpd-next/phpcpd` at v1.4 — 271 tests, 271 passed, 0 failed in 47.1s, against the
-  incumbent PHPUnit 11.5.55's own `OK (271 tests, 642 assertions)` in 47.7s. The
+  `phpcpd-next/phpcpd` at v2.0, its latest release — 710 tests, 710 passed, 0 failed in 61.1s
+  on Crucible 1.0.1, against the incumbent PHPUnit 11.5.55's own `OK (710 tests, 55330
+  assertions)` in 57.9s. It was pinned at v1.4 (271 tests on Crucible 0.9.0) until 1.0.1. The
   `tests/_guard.php` runner-name allowlist that blocked every tag from v1.0 to v1.3 was
-  replaced in v1.4 by a `SCRIPT_FILENAME` comparison, which is what makes this ref runnable;
+  replaced in v1.4 by a `SCRIPT_FILENAME` comparison, which is what makes these refs runnable;
   it needs `->phpunitCompatibility()` in `crucible.php`, because phpcpd-next's own
   `require-dev` installs `phpunit/phpunit` and D-019 otherwise stands the aliases down.
   `benchmarks/manifest.json` carries each case's ref, exact steps
@@ -272,6 +273,15 @@ against Crucible's own class only._
 | The incumbent's own event stream read where JUnit loses the file, lifting D-117's ceiling of 64 comparable tests | D-118 |
 | An uncatchable compile fatal is refused before `eval()`, in Crucible's own words: reproducing a verdict is fidelity, reproducing a crash is not | D-119 |
 | A duplicate composed test name is refused as the incumbent refuses it — an explicit description no longer files two tests under one id | D-120 |
+
+## 1.0.1
+
+| Shipped | Records |
+|---|---|
+| Hook order matches the incumbent: `#[Before]` runs before `setUp()` and `#[After]` after `tearDown()` at the default priority, the after phases sort by descending priority, ties fall as the incumbent's do, and `assertPreConditions()`/`assertPostConditions()` exist and run. A trait's `#[Before]` reset no longer wipes what `setUp()` wired; fixture `09-lifecycle` holds the whole sequence against the real runner | D-121 |
+| `TestCase::transformException()` exists and is applied as the incumbent applies it, so Orchestra Testbench test cases load instead of failing discovery with a fatal error | D-122 |
+| `PHPUnit\Framework\Constraint\LogicalNot` is aliased, so Laravel's `assertDatabaseMissing()` runs, and a framework constraint's failure reads as the incumbent's sentence, negated without touching the data it quotes | D-123 |
+| The `phpcpd-next/phpcpd` benchmark moved from v1.4 to v2.0, its latest release, and re-measured on 1.0.1: 710 of 710, against the incumbent's `OK (710 tests, 55330 assertions)` | `benchmarks/manifest.json` |
 
 ## Design inputs honored
 
