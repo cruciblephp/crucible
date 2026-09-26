@@ -254,7 +254,13 @@ final class MapViewTest extends TestCase
             $this->finish($view, Outcome::Passed);
         }
 
-        self::assertStringContainsString('tests 533–1,000 of 1,000', $this->lastFrame($terminal), 'the window turned');
+        // The latest range drawn, not the latest write: at the speed of a
+        // coverage run the throttle lets redraws through after the turn,
+        // and a patch that leaves the header alone is a later write that
+        // does not repeat it.
+        preg_match_all('/tests [\d,]+–[\d,]+ of [\d,]+/u', $this->plain($terminal->output()), $ranges);
+
+        self::assertSame('tests 533–1,000 of 1,000', end($ranges[0]), 'the window turned');
     }
 
     /**

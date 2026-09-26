@@ -1,0 +1,23 @@
+# The crucible dialect's own globals for the analyser (D-128): check(),
+# property() and table() — the three names the real Pest does not define.
+#
+# Not in extension.neon, which every project using
+# phpstan/extension-installer gets: those are common words, and a
+# project's own global check() or table() resolved to Crucible's
+# signature instead (373 false errors on one real suite, measured).
+# Include this file when your tests use the dialect:
+#
+#     includes:
+#         - vendor/cruciblephp/crucible/phpstan/crucible-dialect.neon
+#
+# `crucible phpstan-init` adds it when a test suite holds *.crucible.php
+# files.
+
+parameters:
+    scanFiles:
+        - ../src/Dialect/Pest/crucible-functions.php
+
+# table() rows against the subject's parameters (D-129). Here, not in
+# extension.neon: table() is this dialect's global.
+rules:
+    - LucianoPereira\Crucible\PHPStan\TableRowRule

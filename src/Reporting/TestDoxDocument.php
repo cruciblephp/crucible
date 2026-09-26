@@ -13,9 +13,13 @@ namespace LucianoPereira\Crucible\Reporting;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunFinished;
 use LucianoPereira\Crucible\Event\TestFinished;
+use LucianoPereira\Crucible\Reporting\Document\Blocks\Badge;
+use LucianoPereira\Crucible\Version;
 
+use function array_any;
 use function htmlspecialchars;
 use function sprintf;
+use function strtolower;
 
 use const ENT_QUOTES;
 
@@ -70,7 +74,7 @@ final class TestDoxDocument
 
             foreach ($finished as $test) {
                 $body .= sprintf(
-                    "  <li class=\"%s\">%s %s</li>\n",
+                    "  <li class=\"%s\"><span class=\"mark\">%s</span> %s</li>\n",
                     $this->cssClass($test),
                     $this->mark($test),
                     htmlspecialchars(PrettyName::ofTest($test->test), ENT_QUOTES),
@@ -81,8 +85,10 @@ final class TestDoxDocument
         }
 
         return sprintf(
-            "<!DOCTYPE html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\"><title>Crucible test documentation</title><style>%s</style></head>\n<body>\n<h1>Test documentation</h1>\n%s<pre>%s</pre>\n</body>\n</html>\n",
+            "<!DOCTYPE html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\"><title>Crucible test documentation</title><style>%s</style></head>\n<body>\n<h1>%sTest documentation %s</h1>\n%s<pre>%s</pre>\n</body>\n</html>\n",
             self::STYLE,
+            Version::logoHtml(),
+            $this->verdict($event),
             $body,
             htmlspecialchars($this->summary($event), ENT_QUOTES),
         );
@@ -128,13 +134,28 @@ final class TestDoxDocument
     private const string STYLE = <<<'CSS'
         body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 2rem; color: #1a1a1a; background: #fff; }
         h1 { font-size: 1.2rem; } h2 { font-size: 1rem; margin-bottom: .25rem; }
+        h1 { display: flex; align-items: center; gap: .45rem; }
+        .logo svg { display: block; width: 1.6em; height: 1.6em; }
         h2 small { font-weight: 400; color: #777; }
         ul { list-style: none; padding-left: 1rem; margin-top: 0; }
         li { padding: .1rem 0; font-size: .9rem; }
-        li.passed { color: #2f6f31; } li.failed { color: #a12a2a; }
-        li.untested, li.skipped { color: #8a6d1f; }
+        li.passed .mark { color: #2f6f31; } li.failed .mark { color: #a12a2a; }
+        li.untested .mark, li.skipped .mark { color: #8a6d1f; }
+        .badge { font-size: .85rem; font-weight: 700; color: #fff; padding: .15rem .55rem; }
+        .badge.success { background: #2e7d32; } .badge.caution { background: #b36b00; } .badge.danger { background: #c62828; }
         pre { background: #f6f6f6; padding: .75rem; font-size: .85rem; }
         CSS;
+
+    /**
+     * The run's verdict beside the title, decided as the PDF's badge is
+     * (Badge::forRun), so the two reports cannot call one run differently.
+     */
+    private function verdict(RunFinished $event): string
+    {
+        $badge = Badge::forRun($event->summary, array_any($this->finished, static fn(TestFinished $test): bool => $test->flaky()));
+
+        return sprintf('<span class="badge %s">%s</span>', strtolower($badge->tone->name), htmlspecialchars($badge->text, ENT_QUOTES));
+    }
 
     /**
      * @return non-empty-string

@@ -1,0 +1,18 @@
+argv: --testsuite unit,vitest --filter totals
+exit: 0
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Configuration: <project>/crucible.php
+
+.
+
+Passed
+                                    tests      time   share
+js                                      1    <t>s   <bar>
++- cart.test.js                         1    <t>s   <bar>
+
+Tests: 1. Passed: 1, Failed: 0, Errors: 0, Skipped: 0, Incomplete: 0, Risky: 0. Time: <t>s
+OK
+--- stderr
+

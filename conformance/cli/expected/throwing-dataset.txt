@@ -1,0 +1,20 @@
+argv: 
+exit: 2
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Configuration: <project>/crucible.php
+
+E
+
+1) tests/rows.pest.php::uses the rows [error]
+the dataset cannot be built
+
+Passed
+                                    tests      time   share
+tests                                   0    <t>s   <bar>
++- rows.pest                            0    <t>s   <bar>
+
+Tests: 1. Passed: 0, Failed: 0, Errors: 1, Skipped: 0, Incomplete: 0, Risky: 0. Time: <t>s
+--- stderr
+

@@ -13,6 +13,7 @@ namespace LucianoPereira\Crucible\Reporting\ReportFormat\Formats;
 use LucianoPereira\Crucible\Reporting\Document\Document;
 use LucianoPereira\Crucible\Reporting\Document\Renderers\PdfRenderer;
 use LucianoPereira\Crucible\Reporting\ReportFormat\{ReportContext, ReportFormat, ReportFormatContract};
+use LucianoPereira\Crucible\Version;
 
 /**
  * Crucible's own PDF report, as a report-format plugin — registered
@@ -33,7 +34,7 @@ final class PdfReportFormat implements ReportFormatContract
 {
     public function render(Document $document, ReportContext $context, array $params): string
     {
-        return (new PdfRenderer())->render(
+        return (new PdfRenderer(Version::logo()))->render(
             $document,
             $context->title,
             $context->author,

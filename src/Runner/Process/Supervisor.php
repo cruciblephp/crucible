@@ -17,6 +17,7 @@ use LucianoPereira\Crucible\Attributes\RunTestsInSeparateProcesses;
 use LucianoPereira\Crucible\Configuration\ExecutionOrder;
 use LucianoPereira\Crucible\Configuration\Overrides;
 use LucianoPereira\Crucible\Event\Emitter;
+use LucianoPereira\Crucible\Event\Failure;
 use LucianoPereira\Crucible\Event\IssueKind;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunFinished;
@@ -54,6 +55,7 @@ use function sprintf;
 use function str_contains;
 use function stream_select;
 use function sys_get_temp_dir;
+use function trim;
 use function unlink;
 use function usort;
 
@@ -290,7 +292,7 @@ final class Supervisor
             }
 
             if ($wholeClass) {
-                $units[] = $this->unitFor($file, $group->tests);
+                $units[] = $this->unitFor($file, $group->tests, isolated: true);
 
                 continue;
             }
@@ -324,7 +326,7 @@ final class Supervisor
                     }
                 }
 
-                $units[] = $this->unitFor($file, $rows);
+                $units[] = $this->unitFor($file, $rows, isolated: true);
             }
 
             if ($remaining === []) {
@@ -352,8 +354,9 @@ final class Supervisor
      *
      * @param non-empty-string     $file
      * @param list<TestDefinition> $tests
+     * @param bool                 $isolated the tests asked for their own process (see {@see attributeStderr()})
      */
-    private function unitFor(string $file, array $tests): PlannedUnit
+    private function unitFor(string $file, array $tests, bool $isolated = false): PlannedUnit
     {
         $cost     = 0.0;
         $ids      = [];
@@ -391,7 +394,7 @@ final class Supervisor
             }
         }
 
-        return new PlannedUnit(new WorkUnit($file, $ids, $cost), $expected, $dependsOn, [], $preserve);
+        return new PlannedUnit(new WorkUnit($file, $ids, $cost), $expected, $dependsOn, [], $preserve, $isolated);
     }
 
     /**
@@ -431,6 +434,9 @@ final class Supervisor
 
         /** @var array<int, ?non-empty-string> $artifactOf worker object id => where it writes its values */
         $artifactOf = [];
+
+        /** @var array<int, bool> $isolatedOf worker object id => its unit asked for its own process */
+        $isolatedOf = [];
 
         while ($units !== [] || $active !== []) {
             while ($units !== [] && count($active) < $slots) {
@@ -529,6 +535,7 @@ final class Supervisor
                 $finished[spl_object_id($worker)]   = [];
                 $slotOf[spl_object_id($worker)]     = $slot;
                 $artifactOf[spl_object_id($worker)] = $artifact;
+                $isolatedOf[spl_object_id($worker)] = $planned->isolated;
             }
 
             if ($active === []) {
@@ -549,6 +556,19 @@ final class Supervisor
 
                     if (!$event instanceof \LucianoPereira\Crucible\Event\Event) {
                         continue;
+                    }
+
+                    // What the worker wrote before a test started (a
+                    // startup notice, the bootstrap) belongs to no test;
+                    // what it wrote while one ran belongs to that test.
+                    if ($event instanceof TestStarted) {
+                        $this->forwardStderr($worker->takeStderr());
+                    }
+
+                    if ($event instanceof TestFinished && $isolatedOf[$key]) {
+                        $event = $this->attributeStderr($event, $worker->takeStderr());
+                    } elseif ($event instanceof TestFinished) {
+                        $this->forwardStderr($worker->takeStderr());
                     }
 
                     $this->emitter->emit($event);
@@ -573,6 +593,12 @@ final class Supervisor
 
                 $worker->close();
 
+                // A crash carries the tail in its reason already; a clean
+                // exit hands over whatever came after the last test.
+                if ($worker->hasFinished()) {
+                    $this->forwardStderr($worker->takeStderr());
+                }
+
                 if (!$worker->hasFinished()) {
                     $this->reportLost(
                         $worker->expected,
@@ -592,8 +618,60 @@ final class Supervisor
                     $available = [...$available, ...$this->readValues($artifact)];
                 }
 
-                unset($active[$key], $finished[$key], $slotOf[$key], $artifactOf[$key]);
+                unset($active[$key], $finished[$key], $slotOf[$key], $artifactOf[$key], $isolatedOf[$key]);
             }
+        }
+    }
+
+    /**
+     * A test that asked for its own process and wrote to STDERR there (D-124)
+     * errors, with that text as the message — PHPUnit's rule for a
+     * child process (ChildProcessResultProcessor), so a suite moving
+     * across keeps its verdicts. The output is never dropped: dropping
+     * it hid a debugging probe with nothing saying it was lost.
+     */
+    private function attributeStderr(TestFinished $event, string $stderr): TestFinished
+    {
+        $text = trim($stderr);
+
+        if ($text === '') {
+            return $event;
+        }
+
+        $message = 'The test wrote to STDERR in its separate process:' . PHP_EOL . $text;
+
+        if ($event->failure instanceof Failure) {
+            $message .= PHP_EOL . PHP_EOL . 'The test itself also reported: ' . $event->failure->message;
+        }
+
+        return new TestFinished(
+            $event->test,
+            Outcome::Errored,
+            $event->duration,
+            new Failure($message),
+            $event->attempt,
+            null,
+            $event->issues,
+            $event->quarantined,
+            $event->property,
+            $event->retried,
+            $event->snapshots,
+            $event->propertyClean,
+            $event->snapshotKeys,
+            false,
+            $event->assertions,
+        );
+    }
+
+    /**
+     * Output that belongs to no isolated test reaches the console as it
+     * would have in process: on STDERR, verbatim. A --parallel worker is
+     * only a share of the run, so its tests keep the in-process rule.
+     */
+    private function forwardStderr(string $stderr): void
+    {
+        if ($stderr !== '') {
+            fwrite(STDERR, $stderr);
         }
     }
 

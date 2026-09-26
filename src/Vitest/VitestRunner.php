@@ -11,14 +11,16 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Vitest;
 
 use LucianoPereira\Crucible\Event\Emitter;
-use LucianoPereira\Crucible\Event\Failure;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunSummary;
 use LucianoPereira\Crucible\Event\TestFinished;
-use LucianoPereira\Crucible\Event\TestStarted;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+use LucianoPereira\Crucible\Runner\FoldIn;
+use LucianoPereira\Crucible\Runner\NameFilter;
 use LucianoPereira\Crucible\Test\TestId;
 
+use function array_filter;
+use function array_values;
 use function file_get_contents;
 use function is_array;
 use function is_file;
@@ -27,7 +29,6 @@ use function json_decode;
 use function proc_close;
 use function proc_get_status;
 use function proc_open;
-use function str_starts_with;
 use function sys_get_temp_dir;
 use function tempnam;
 use function trim;
@@ -52,7 +53,12 @@ final readonly class VitestRunner
 {
     private const int POLL_MICROSECONDS = 10_000;
 
-    public function __construct(private Emitter $emitter) {}
+    private FoldIn $fold;
+
+    public function __construct(Emitter $emitter)
+    {
+        $this->fold = new FoldIn($emitter);
+    }
 
     /**
      * @param list<VitestSuite> $suites
@@ -70,16 +76,14 @@ final readonly class VitestRunner
 
     private function runSuite(VitestSuite $suite, WorkingDirectory $workingDirectory): RunSummary
     {
-        $directory = str_starts_with($suite->directory, '/')
-            ? $suite->directory
-            : $workingDirectory->path . '/' . $suite->directory;
-        $binary = $suite->binary ?? $directory . '/node_modules/.bin/vitest';
+        $directory = $workingDirectory->absolute($suite->directory);
+        $binary    = $suite->binary ?? $directory . '/node_modules/.bin/vitest';
 
         $report = tempnam(sys_get_temp_dir(), 'crucible-vitest-');
         $stderr = tempnam(sys_get_temp_dir(), 'crucible-vitest-err-');
 
         if ($report === false || $stderr === false) {
-            return $this->couldNotRun($suite, 'Vitest report file could not be created.');
+            return $this->fold->couldNotRun(new TestId($suite->directory, 'vitest'), 'Vitest report file could not be created.');
         }
 
         // Under impact selection (D-080) the suite carries the changed
@@ -89,6 +93,14 @@ final readonly class VitestRunner
         $command = $suite->related === []
             ? [$binary, 'run', '--reporter=json', '--outputFile=' . $report]
             : [$binary, 'related', ...$suite->related, '--run', '--reporter=json', '--outputFile=' . $report];
+
+        // A name filter reaches the suite as Vitest's own (D-125), so the
+        // tests it leaves out never run at all.
+        $filter = $suite->filter === null ? null : new NameFilter($suite->filter);
+
+        if ($filter instanceof NameFilter) {
+            $command[] = '--testNamePattern=' . $filter->vitestPattern();
+        }
 
         // argv form — no shell. stdout is discarded (the JSON rides the
         // outputFile); stderr is captured for the diagnostic. A missing
@@ -105,7 +117,7 @@ final readonly class VitestRunner
             @unlink($report);
             @unlink($stderr);
 
-            return $this->couldNotRun($suite, 'Vitest could not be started — is it installed in ' . $directory . '?');
+            return $this->fold->couldNotRun(new TestId($suite->directory, 'vitest'), 'Vitest could not be started — is it installed in ' . $directory . '?');
         }
 
         while (proc_get_status($process)['running']) {
@@ -122,7 +134,7 @@ final readonly class VitestRunner
         @unlink($stderr);
 
         if (!is_array($decoded)) {
-            return $this->couldNotRun($suite, 'Vitest produced no JSON report.' . ($tail !== '' ? "\n" . $tail : ''));
+            return $this->fold->couldNotRun(new TestId($suite->directory, 'vitest'), 'Vitest produced no JSON report.' . ($tail !== '' ? "\n" . $tail : ''));
         }
 
         // Paths are made relative to the working directory, not the JS
@@ -131,53 +143,18 @@ final readonly class VitestRunner
         // (D-081) re-feeds a failed test's file, and it must resolve. A
         // suite outside the working directory keeps absolute paths,
         // which `--related` resolves just as well.
-        return $this->emit(VitestReport::translate($decoded, $workingDirectory->path));
-    }
+        $events = VitestReport::translate($decoded, $workingDirectory->path);
 
-    /**
-     * @param list<TestFinished> $events
-     */
-    private function emit(array $events): RunSummary
-    {
-        $counts = ['pass' => 0, 'fail' => 0, 'error' => 0, 'skip' => 0, 'incomplete' => 0, 'risky' => 0];
-
-        foreach ($events as $event) {
-            $this->emitter->emit(new TestStarted($event->test));
-            $this->emitter->emit($event);
-            $counts[$event->outcome->value]++;
+        // Vitest reports the tests -t left out as skipped. They were not
+        // selected, so they are not reported at all; a skipped test the
+        // filter does name (an it.skip) stays skipped.
+        if ($filter instanceof NameFilter) {
+            $events = array_values(array_filter(
+                $events,
+                static fn(TestFinished $event): bool => $event->outcome !== Outcome::Skipped || $filter->matchesName($event->test->name),
+            ));
         }
 
-        return $this->summary($counts);
-    }
-
-    /**
-     * A suite that could not run at all is one errored test, visible on
-     * the stream and failing the run.
-     *
-     * @param non-empty-string $reason
-     */
-    private function couldNotRun(VitestSuite $suite, string $reason): RunSummary
-    {
-        $id = new TestId($suite->directory, 'vitest');
-
-        $this->emitter->emit(new TestStarted($id));
-        $this->emitter->emit(new TestFinished($id, Outcome::Errored, 0.0, new Failure($reason)));
-
-        return new RunSummary(errored: 1);
-    }
-
-    /**
-     * @param array{pass: int, fail: int, error: int, skip: int, incomplete: int, risky: int} $counts
-     */
-    private function summary(array $counts): RunSummary
-    {
-        return new RunSummary(
-            passed: $counts['pass'],
-            failed: $counts['fail'],
-            errored: $counts['error'],
-            skipped: $counts['skip'],
-            incomplete: $counts['incomplete'],
-            risky: $counts['risky'],
-        );
+        return $this->fold->emit($events);
     }
 }

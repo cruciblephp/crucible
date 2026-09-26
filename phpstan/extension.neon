@@ -1,6 +1,11 @@
 # Crucible's PHPStan extension (DESIGN.md D-049).
 #
-# Wire it with one line in your project's phpstan.neon —
+# With phpstan/extension-installer there is nothing to wire: Crucible's
+# composer.json declares this file under extra.phpstan, and the installer
+# loads it (D-127). Do not include it by hand as well — PHPStan refuses a
+# file included twice.
+#
+# Without the installer, wire it with one line in your phpstan.neon —
 #
 #     includes:
 #         - vendor/cruciblephp/crucible/phpstan/extension.neon
@@ -27,6 +32,10 @@ parameters:
         - bootstrap.php
     # The dialect globals (test/it/expect/...) load lazily at runtime;
     # scanning makes the symbols known without analyzing vendor code.
+    # Only the names real Pest also defines: those collide with nothing
+    # Crucible does not already refuse. check(), property() and table()
+    # are crucible-dialect.neon's, included by projects that write the
+    # dialect (D-128).
     scanFiles:
         - ../src/Dialect/Pest/functions.php
     # Dynamic $this state is the pest idiom (the runtime says so with
@@ -40,6 +49,31 @@ services:
         class: LucianoPereira\Crucible\PHPStan\AssertStaticMethodTypeSpecifyingExtension
         tags:
             - phpstan.typeSpecifier.staticMethodTypeSpecifyingExtension
+    # One set of narrowing rules for the chain and the subject (D-128,
+    # D-129), and PHPStan's reading of toMatchShape()'s type string (D-131).
+    -
+        class: LucianoPereira\Crucible\PHPStan\ExpectationNarrowing
+    # The expectation chain keeps its value's type; type matchers
+    # narrow it (D-128), held against pest-plugin-phpstan by probe 30.
+    -
+        class: LucianoPereira\Crucible\PHPStan\ExpectationChainReturnTypeExtension
+        tags:
+            - phpstan.broker.dynamicMethodReturnTypeExtension
+    # Gen::of('<type>') draws that type (D-132).
+    -
+        class: LucianoPereira\Crucible\PHPStan\GenOfReturnTypeExtension
+        tags:
+            - phpstan.broker.dynamicStaticMethodReturnTypeExtension
+    -
+        class: LucianoPereira\Crucible\PHPStan\ExpectFunctionReturnTypeExtension
+        tags:
+            - phpstan.broker.dynamicFunctionReturnTypeExtension
+    # The subject narrows too (D-129): after `expect($x)->toBeString();`
+    # $x is a string, as after assertIsString($x).
+    -
+        class: LucianoPereira\Crucible\PHPStan\ExpectationSubjectTypeSpecifyingExtension
+        tags:
+            - phpstan.typeSpecifier.methodTypeSpecifyingExtension
     -
         class: LucianoPereira\Crucible\PHPStan\AssertMethodTypeSpecifyingExtension
         tags:
@@ -88,6 +122,11 @@ services:
             - phpstan.broker.methodsClassReflectionExtension
 
 rules:
+    # An inline dataset row the test closure cannot take (D-129).
+    - LucianoPereira\Crucible\PHPStan\DatasetRowRule
+    # #[TestWith], #[TestWithJson] rows and #[Check] claims against the
+    # signature they feed (D-129).
+    - LucianoPereira\Crucible\PHPStan\DataAttributeRule
     # Declared check-closure parameters must accept what their
     # generators produce — the acceptance half the closure-type
     # extension point cannot do (D-067).

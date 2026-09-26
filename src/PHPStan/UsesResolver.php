@@ -10,32 +10,33 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\PHPStan;
 
+use PhpToken;
+
 use function array_key_exists;
 use function array_last;
+use function array_merge;
 use function count;
 use function explode;
 use function implode;
 use function in_array;
-use function is_array;
 use function ltrim;
 use function str_contains;
 use function str_starts_with;
-use function token_get_all;
 use function trim;
 
+use const T_AS;
 use const T_CLASS;
-use const T_COMMENT;
+use const T_CONST;
 use const T_CONSTANT_ENCAPSED_STRING;
-use const T_DOC_COMMENT;
 use const T_DOUBLE_COLON;
 use const T_FUNCTION;
 use const T_NAME_FULLY_QUALIFIED;
 use const T_NAME_QUALIFIED;
 use const T_NAMESPACE;
+use const T_NS_SEPARATOR;
 use const T_OBJECT_OPERATOR;
 use const T_STRING;
 use const T_USE;
-use const T_WHITESPACE;
 
 /**
  * Static reading of a dialect file's `uses(...)` arguments (D-050):
@@ -44,12 +45,17 @@ use const T_WHITESPACE;
  * PestScopes resolves at runtime by executing the file. Token-based
  * like every other scanner in this project, name resolution follows
  * PHP's own rules (leading backslash wins, then the alias map, then
- * the namespace prefix). File-local `uses(...)` reads through
+ * the namespace prefix), and imports are read by PHP's grammar: lists,
+ * groups, aliases (D-137). File-local `uses(...)` reads through
  * classRefs(); the directory-scoped `pest()/uses()->in()` chains a
- * Pest.php declares read through scopedRegistrations() (D-067).
+ * Pest.php declares read through scopedRegistrations() (D-067). Both
+ * are one walk over the file, differing only in what they keep.
  */
 final readonly class UsesResolver
 {
+    /** A name as the tokenizer spells it: bare, qualified, or fully qualified. */
+    private const array NAME = [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED];
+
     /**
      * Fully-qualified names passed to top-level uses() calls, in
      * argument order — `Foo::class` references and FQ string
@@ -59,70 +65,10 @@ final readonly class UsesResolver
      */
     public static function classRefs(string $source): array
     {
-        $tokens    = token_get_all($source);
-        $total     = count($tokens);
-        $namespace = '';
-
-        /** @var array<string, non-empty-string> $aliases alias => fully-qualified */
-        $aliases = [];
-
         $names = [];
 
-        for ($i = 0; $i < $total; $i++) {
-            $token = $tokens[$i];
-
-            if (!is_array($token)) {
-                continue;
-            }
-
-            if ($token[0] === T_NAMESPACE) {
-                $next = self::nextSignificant($tokens, $i + 1, $total);
-
-                if ($next !== null && is_array($tokens[$next]) && ($tokens[$next][0] === T_STRING || $tokens[$next][0] === T_NAME_QUALIFIED)) {
-                    $namespace = $tokens[$next][1];
-                }
-
-                continue;
-            }
-
-            if ($token[0] === T_USE) {
-                self::collectImport($tokens, $i + 1, $total, $aliases);
-
-                continue;
-            }
-
-            // Both spellings call the same global: uses(...) and the
-            // fully-qualified \uses(...) the tokenizer names apart.
-            $isUses = ($token[0] === T_STRING && $token[1] === 'uses')
-                || ($token[0] === T_NAME_FULLY_QUALIFIED && $token[1] === '\uses');
-
-            if (!$isUses) {
-                continue;
-            }
-
-            // A method or static call spelled `->uses(` / `::uses(`
-            // is somebody else's API, not the dialect global.
-            $previous = self::previousSignificant($tokens, $i - 1);
-
-            if ($previous !== null && is_array($tokens[$previous])
-                && (in_array($tokens[$previous][0], [T_OBJECT_OPERATOR, T_DOUBLE_COLON, T_FUNCTION], true))
-            ) {
-                continue;
-            }
-
-            $open = self::nextSignificant($tokens, $i + 1, $total);
-
-            if ($open === null || $tokens[$open] !== '(') {
-                continue;
-            }
-
-            foreach (self::arguments($tokens, $open + 1, $total) as $name) {
-                $resolved = self::resolve($name, $namespace, $aliases);
-
-                if ($resolved !== '') {
-                    $names[] = $resolved;
-                }
-            }
+        foreach (self::chains($source, ['uses']) as $chain) {
+            $names = [...$names, ...$chain['root']];
         }
 
         return $names;
@@ -137,153 +83,136 @@ final readonly class UsesResolver
      * an in() are bare (hooks only, classes inert — the D-033 rule)
      * and are not returned.
      *
-     * @return list<array{names: list<non-empty-string>, globs: non-empty-list<string>}>
+     * @return list<array{names: list<non-empty-string>, globs: non-empty-list<non-empty-string>}>
      */
     public static function scopedRegistrations(string $source): array
     {
-        $tokens    = token_get_all($source);
-        $total     = count($tokens);
-        $namespace = '';
-
-        /** @var array<string, non-empty-string> $aliases */
-        $aliases = [];
-
         $registrations = [];
 
-        for ($i = 0; $i < $total; $i++) {
-            $token = $tokens[$i];
-
-            if (!is_array($token)) {
-                continue;
+        foreach (self::chains($source, ['pest', 'uses']) as $chain) {
+            if ($chain['globs'] !== []) {
+                $registrations[] = ['names' => array_merge($chain['root'], $chain['chained']), 'globs' => $chain['globs']];
             }
-
-            if ($token[0] === T_NAMESPACE) {
-                $next = self::nextSignificant($tokens, $i + 1, $total);
-
-                if ($next !== null && is_array($tokens[$next]) && ($tokens[$next][0] === T_STRING || $tokens[$next][0] === T_NAME_QUALIFIED)) {
-                    $namespace = $tokens[$next][1];
-                }
-
-                continue;
-            }
-
-            if ($token[0] === T_USE) {
-                self::collectImport($tokens, $i + 1, $total, $aliases);
-
-                continue;
-            }
-
-            $isChainRoot = ($token[0] === T_STRING && in_array($token[1], ['pest', 'uses'], true))
-                || ($token[0] === T_NAME_FULLY_QUALIFIED && in_array($token[1], ['\pest', '\uses'], true));
-
-            if (!$isChainRoot) {
-                continue;
-            }
-
-            $previous = self::previousSignificant($tokens, $i - 1);
-
-            if ($previous !== null && is_array($tokens[$previous])
-                && in_array($tokens[$previous][0], [T_OBJECT_OPERATOR, T_DOUBLE_COLON, T_FUNCTION], true)
-            ) {
-                continue;
-            }
-
-            $open = self::nextSignificant($tokens, $i + 1, $total);
-
-            if ($open === null || $tokens[$open] !== '(') {
-                continue;
-            }
-
-            // The root call's own arguments count (the legacy
-            // uses(Class, Trait)->in() spelling).
-            $names = [];
-
-            foreach (self::arguments($tokens, $open + 1, $total) as $name) {
-                $resolved = self::resolve($name, $namespace, $aliases);
-
-                if ($resolved !== '') {
-                    $names[] = $resolved;
-                }
-            }
-
-            $index = self::closingParen($tokens, $open, $total);
-            $globs = [];
-
-            // Walk the fluent chain: `-> name ( args )` until `;`.
-            while ($index !== null) {
-                $arrow = self::nextSignificant($tokens, $index + 1, $total);
-
-                if ($arrow === null || !is_array($tokens[$arrow]) || $tokens[$arrow][0] !== T_OBJECT_OPERATOR) {
-                    break;
-                }
-
-                $method = self::nextSignificant($tokens, $arrow + 1, $total);
-
-                if ($method === null || !is_array($tokens[$method])) {
-                    break;
-                }
-
-                $methodName = $tokens[$method][1];
-                $openArgs   = self::nextSignificant($tokens, $method + 1, $total);
-
-                if ($openArgs === null || $tokens[$openArgs] !== '(') {
-                    break;
-                }
-
-                if (in_array($methodName, ['extend', 'use', 'assign'], true)) {
-                    foreach (self::arguments($tokens, $openArgs + 1, $total) as $name) {
-                        $resolved = self::resolve($name, $namespace, $aliases);
-
-                        if ($resolved !== '') {
-                            $names[] = $resolved;
-                        }
-                    }
-                }
-
-                if ($methodName === 'in') {
-                    foreach (self::stringArguments($tokens, $openArgs + 1, $total) as $glob) {
-                        $globs[] = $glob;
-                    }
-                }
-
-                $index = self::closingParen($tokens, $openArgs, $total);
-            }
-
-            if ($globs !== []) {
-                $registrations[] = ['names' => $names, 'globs' => $globs];
-            }
-
-            $i = $index ?? $i;
         }
 
         return $registrations;
     }
 
     /**
+     * Every top-level call to one of $roots and its fluent chain: the
+     * names its own arguments pass, the names `->extend()`, `->use()` and
+     * `->assign()` pass, and the `->in()` globs — resolved against the
+     * namespace and imports in force where the call stands.
+     *
+     * @param non-empty-list<non-empty-string> $roots
+     *
+     * @return list<array{root: list<non-empty-string>, chained: list<non-empty-string>, globs: list<non-empty-string>}>
+     */
+    private static function chains(string $source, array $roots): array
+    {
+        $tokens    = PhpToken::tokenize($source);
+        $total     = count($tokens);
+        $namespace = '';
+
+        /** @var array<string, non-empty-string> $aliases alias => fully-qualified */
+        $aliases = [];
+        $chains  = [];
+
+        for ($i = 0; $i < $total; $i++) {
+            $token = $tokens[$i];
+
+            if ($token->is(T_NAMESPACE)) {
+                $next      = self::nextSignificant($tokens, $i + 1);
+                $namespace = $next !== null && $tokens[$next]->is([T_STRING, T_NAME_QUALIFIED]) ? $tokens[$next]->text : $namespace;
+
+                continue;
+            }
+
+            if ($token->is(T_USE)) {
+                self::collectImport($tokens, $i + 1, $aliases);
+
+                continue;
+            }
+
+            $open = self::rootCall($tokens, $i, $roots);
+
+            if ($open === null) {
+                continue;
+            }
+
+            $chain = ['root' => self::resolveAll(self::arguments($tokens, $open + 1), $namespace, $aliases), 'chained' => [], 'globs' => []];
+            $index = self::closingParen($tokens, $open);
+
+            // Walk the fluent chain: `-> name ( args )` until it ends.
+            while ($index !== null) {
+                $arrow  = self::nextSignificant($tokens, $index + 1);
+                $method = $arrow === null || !$tokens[$arrow]->is(T_OBJECT_OPERATOR) ? null : self::nextSignificant($tokens, $arrow + 1);
+                $args   = $method === null ? null : self::nextSignificant($tokens, $method + 1);
+
+                if ($method === null || $args === null || $tokens[$args]->text !== '(') {
+                    break;
+                }
+
+                if (in_array($tokens[$method]->text, ['extend', 'use', 'assign'], true)) {
+                    $chain['chained'] = [...$chain['chained'], ...self::resolveAll(self::arguments($tokens, $args + 1), $namespace, $aliases)];
+                } elseif ($tokens[$method]->text === 'in') {
+                    $chain['globs'] = [...$chain['globs'], ...self::stringArguments($tokens, $args + 1)];
+                }
+
+                $index = self::closingParen($tokens, $args);
+            }
+
+            $chains[] = $chain;
+            $i        = $index ?? $i;
+        }
+
+        return $chains;
+    }
+
+    /**
+     * The index of the `(` when the token at $i calls one of $roots as
+     * the dialect global: `uses(` or `\uses(`, never `->uses(`,
+     * `::uses(` or the `function uses(` that declares somebody else's.
+     *
+     * @param array<PhpToken>                  $tokens
+     * @param non-empty-list<non-empty-string> $roots
+     */
+    private static function rootCall(array $tokens, int $i, array $roots): ?int
+    {
+        $token = $tokens[$i];
+        $name  = $token->is(T_NAME_FULLY_QUALIFIED) ? ltrim($token->text, '\\') : ($token->is(T_STRING) ? $token->text : null);
+
+        if ($name === null || !in_array($name, $roots, true)) {
+            return null;
+        }
+
+        $previous = self::previousSignificant($tokens, $i - 1);
+
+        if ($previous !== null && $tokens[$previous]->is([T_OBJECT_OPERATOR, T_DOUBLE_COLON, T_FUNCTION])) {
+            return null;
+        }
+
+        $open = self::nextSignificant($tokens, $i + 1);
+
+        return $open !== null && $tokens[$open]->text === '(' ? $open : null;
+    }
+
+    /**
      * Every string literal inside one balanced argument list.
      *
-     * @param array<int, array{0: int, 1: string, 2: int}|string> $tokens
+     * @param array<PhpToken> $tokens
      *
      * @return list<non-empty-string>
      */
-    private static function stringArguments(array $tokens, int $start, int $total): array
+    private static function stringArguments(array $tokens, int $start): array
     {
-        $depth   = 1;
         $strings = [];
 
-        for ($i = $start; $i < $total && $depth > 0; $i++) {
-            $token = $tokens[$i];
+        foreach (self::argumentTokens($tokens, $start) as $token) {
+            $literal = $token->is(T_CONSTANT_ENCAPSED_STRING) ? trim($token->text, "'\"") : '';
 
-            if ($token === '(') {
-                $depth++;
-            } elseif ($token === ')') {
-                $depth--;
-            } elseif (is_array($token) && $token[0] === T_CONSTANT_ENCAPSED_STRING) {
-                $literal = trim($token[1], "'\"");
-
-                if ($literal !== '') {
-                    $strings[] = $literal;
-                }
+            if ($literal !== '') {
+                $strings[] = $literal;
             }
         }
 
@@ -291,23 +220,73 @@ final readonly class UsesResolver
     }
 
     /**
+     * The `Name::class` and FQ-string arguments inside one balanced
+     * argument list, unresolved.
+     *
+     * @param array<PhpToken> $tokens
+     *
+     * @return list<string>
+     */
+    private static function arguments(array $tokens, int $start): array
+    {
+        $names = [];
+
+        foreach (self::argumentTokens($tokens, $start) as $index => $token) {
+            if ($token->is(T_CONSTANT_ENCAPSED_STRING)) {
+                $literal = trim($token->text, "'\"");
+
+                if (str_contains($literal, '\\')) {
+                    $names[] = '\\' . ltrim($literal, '\\');
+                }
+
+                continue;
+            }
+
+            $colons = $token->is(self::NAME) ? self::nextSignificant($tokens, $index + 1) : null;
+            $class  = $colons !== null && $tokens[$colons]->is(T_DOUBLE_COLON) ? self::nextSignificant($tokens, $colons + 1) : null;
+
+            if ($class !== null && $tokens[$class]->is(T_CLASS)) {
+                $names[] = $token->text;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * The tokens of one balanced argument list, from $start (just past
+     * its `(`) to its `)`, keyed by index.
+     *
+     * @param array<PhpToken> $tokens
+     *
+     * @return array<int, PhpToken>
+     */
+    private static function argumentTokens(array $tokens, int $start): array
+    {
+        $end = self::closingParen($tokens, $start - 1) ?? count($tokens);
+        $in  = [];
+
+        for ($i = $start; $i < $end; $i++) {
+            $in[$i] = $tokens[$i];
+        }
+
+        return $in;
+    }
+
+    /**
      * The index of the parenthesis closing the one open at $open.
      *
-     * @param array<int, array{0: int, 1: string, 2: int}|string> $tokens
+     * @param array<PhpToken> $tokens
      */
-    private static function closingParen(array $tokens, int $open, int $total): ?int
+    private static function closingParen(array $tokens, int $open): ?int
     {
         $depth = 0;
 
-        for ($i = $open; $i < $total; $i++) {
-            if ($tokens[$i] === '(') {
+        for ($i = $open, $total = count($tokens); $i < $total; $i++) {
+            if ($tokens[$i]->text === '(') {
                 $depth++;
-            } elseif ($tokens[$i] === ')') {
-                $depth--;
-
-                if ($depth === 0) {
-                    return $i;
-                }
+            } elseif ($tokens[$i]->text === ')' && --$depth === 0) {
+                return $i;
             }
         }
 
@@ -315,66 +294,26 @@ final readonly class UsesResolver
     }
 
     /**
-     * The `Name::class` and FQ-string arguments inside one balanced
-     * argument list, unresolved.
+     * Each name resolved; one that resolves to nothing is dropped.
      *
-     * @param array<int, array{0: int, 1: string, 2: int}|string> $tokens
+     * @param list<string>                    $names
+     * @param array<string, non-empty-string> $aliases
      *
-     * @return list<string>
+     * @return list<non-empty-string>
      */
-    private static function arguments(array $tokens, int $start, int $total): array
+    private static function resolveAll(array $names, string $namespace, array $aliases): array
     {
-        $depth = 1;
-        $names = [];
+        $resolved = [];
 
-        for ($i = $start; $i < $total && $depth > 0; $i++) {
-            $token = $tokens[$i];
+        foreach ($names as $name) {
+            $name = self::resolve($name, $namespace, $aliases);
 
-            if ($token === '(') {
-                $depth++;
-
-                continue;
-            }
-
-            if ($token === ')') {
-                $depth--;
-
-                continue;
-            }
-
-            if (!is_array($token)) {
-                continue;
-            }
-
-            if ($token[0] === T_CONSTANT_ENCAPSED_STRING) {
-                $literal = trim($token[1], "'\"");
-
-                if ($literal !== '' && str_contains($literal, '\\')) {
-                    $names[] = '\\' . ltrim($literal, '\\');
-                }
-
-                continue;
-            }
-
-            if (!in_array($token[0], [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED], true)) {
-                continue;
-            }
-
-            $doubleColon = self::nextSignificant($tokens, $i + 1, $total);
-
-            if ($doubleColon === null || !is_array($tokens[$doubleColon]) || $tokens[$doubleColon][0] !== T_DOUBLE_COLON) {
-                continue;
-            }
-
-            $classKeyword = self::nextSignificant($tokens, $doubleColon + 1, $total);
-
-            if ($classKeyword !== null && is_array($tokens[$classKeyword]) && $tokens[$classKeyword][0] === T_CLASS) {
-                $names[] = $token[1];
-                $i       = $classKeyword;
+            if ($name !== '') {
+                $resolved[] = $name;
             }
         }
 
-        return $names;
+        return $resolved;
     }
 
     /**
@@ -402,84 +341,125 @@ final readonly class UsesResolver
     }
 
     /**
-     * One `use A\B\C;` / `use A\B as C;` import into the alias map.
-     * Function and const imports, and trait-use inside class bodies,
-     * are skipped by shape: a trait use has no qualified name after
-     * it or sits inside braces the caller never routes here — the
-     * dialect files this reads are top-level scripts.
+     * One `use` statement into the alias map, by PHP's grammar: a comma
+     * list (`use A, B as C;`) and group imports (`use A\{B, C as D};`),
+     * each entry optionally aliased. Function and const imports never name
+     * classes and are skipped, whole or inside a group. Trait-use inside
+     * class bodies is not routed here: the dialect files this reads are
+     * top-level scripts.
      *
-     * @param array<int, array{0: int, 1: string, 2: int}|string> $tokens
-     * @param array<string, non-empty-string>                     $aliases
+     * @param array<PhpToken>                 $tokens
+     * @param array<string, non-empty-string> $aliases
      */
-    private static function collectImport(array $tokens, int $start, int $total, array &$aliases): void
+    private static function collectImport(array $tokens, int $start, array &$aliases): void
     {
-        $index = self::nextSignificant($tokens, $start, $total);
+        $index = self::nextSignificant($tokens, $start);
 
-        if ($index === null || !is_array($tokens[$index])) {
+        if ($index === null || $tokens[$index]->is([T_FUNCTION, T_CONST])) {
             return;
         }
 
-        $token = $tokens[$index];
+        while ($index !== null && $tokens[$index]->is(self::NAME)) {
+            $after = self::nextSignificant($tokens, $index + 1);
+            $index = $after !== null && $tokens[$after]->is(T_NS_SEPARATOR)
+                ? self::collectGroup($tokens, $after, ltrim($tokens[$index]->text, '\\') . '\\', $aliases)
+                : self::collectEntry($tokens, $index, '', $aliases);
 
-        // `use function ...` / `use const ...` never name classes.
-        if ($token[0] === T_FUNCTION || $token[1] === 'const') {
-            return;
-        }
-
-        if (!in_array($token[0], [T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_STRING], true)) {
-            return;
-        }
-
-        $qualified = ltrim($token[1], '\\');
-        $segments  = explode('\\', $qualified);
-        $alias     = array_last($segments);
-
-        $next = self::nextSignificant($tokens, $index + 1, $total);
-
-        if ($next !== null && is_array($tokens[$next]) && $tokens[$next][1] === 'as') {
-            $aliasToken = self::nextSignificant($tokens, $next + 1, $total);
-
-            if ($aliasToken !== null && is_array($tokens[$aliasToken]) && $tokens[$aliasToken][0] === T_STRING) {
-                $alias = $tokens[$aliasToken][1];
+            if ($index === null || $tokens[$index]->text !== ',') {
+                return;
             }
-        }
 
-        if ($qualified !== '' && $alias !== '') {
-            $aliases[$alias] = $qualified;
+            $index = self::nextSignificant($tokens, $index + 1);
         }
     }
 
     /**
-     * @param array<int, array{0: int, 1: string, 2: int}|string> $tokens
+     * The `{…}` of a group import after its `Prefix\`: every class entry,
+     * prefixed. The index after the closing brace, or null.
+     *
+     * @param array<PhpToken>                 $tokens
+     * @param array<string, non-empty-string> $aliases
      */
-    private static function nextSignificant(array $tokens, int $start, int $total): ?int
+    private static function collectGroup(array $tokens, int $separator, string $prefix, array &$aliases): ?int
     {
-        for ($i = $start; $i < $total; $i++) {
-            $token = $tokens[$i];
+        $open = self::nextSignificant($tokens, $separator + 1);
 
-            if (is_array($token) && (in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true))) {
-                continue;
+        if ($open === null || $tokens[$open]->text !== '{') {
+            return null;
+        }
+
+        $index = self::nextSignificant($tokens, $open + 1);
+
+        while ($index !== null && $tokens[$index]->text !== '}') {
+            // `use A\{function f, const C, B}`: only B names a class.
+            $class = !$tokens[$index]->is([T_FUNCTION, T_CONST]);
+            $entry = $class ? $index : self::nextSignificant($tokens, $index + 1);
+            $index = $entry === null ? null : self::collectEntry($tokens, $entry, $prefix, $aliases, $class);
+
+            if ($index !== null && $tokens[$index]->text === ',') {
+                $index = self::nextSignificant($tokens, $index + 1);
             }
+        }
 
-            return $i;
+        return $index === null ? null : self::nextSignificant($tokens, $index + 1);
+    }
+
+    /**
+     * One `Name` or `Name as Alias` entry. The index after it, or null
+     * when the token at $index is no name.
+     *
+     * @param array<PhpToken>                 $tokens
+     * @param array<string, non-empty-string> $aliases
+     */
+    private static function collectEntry(array $tokens, int $index, string $prefix, array &$aliases, bool $record = true): ?int
+    {
+        if (!$tokens[$index]->is(self::NAME)) {
+            return null;
+        }
+
+        $qualified = $prefix . ltrim($tokens[$index]->text, '\\');
+        $alias     = array_last(explode('\\', $qualified));
+        $next      = self::nextSignificant($tokens, $index + 1);
+
+        if ($next !== null && $tokens[$next]->is(T_AS)) {
+            $aliasToken = self::nextSignificant($tokens, $next + 1);
+
+            if ($aliasToken !== null && $tokens[$aliasToken]->is(T_STRING)) {
+                $alias = $tokens[$aliasToken]->text;
+                $next  = self::nextSignificant($tokens, $aliasToken + 1);
+            }
+        }
+
+        if ($record && $qualified !== '' && $alias !== '') {
+            $aliases[$alias] = $qualified;
+        }
+
+        return $next;
+    }
+
+    /**
+     * @param array<PhpToken> $tokens
+     */
+    private static function nextSignificant(array $tokens, int $start): ?int
+    {
+        for ($i = $start, $total = count($tokens); $i < $total; $i++) {
+            if (!$tokens[$i]->isIgnorable()) {
+                return $i;
+            }
         }
 
         return null;
     }
 
     /**
-     * @param array<int, array{0: int, 1: string, 2: int}|string> $tokens
+     * @param array<PhpToken> $tokens
      */
     private static function previousSignificant(array $tokens, int $start): ?int
     {
         for ($i = $start; $i >= 0; $i--) {
-            $token = $tokens[$i];
-
-            if (is_array($token) && (in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true))) {
-                continue;
+            if (!$tokens[$i]->isIgnorable()) {
+                return $i;
             }
-
-            return $i;
         }
 
         return null;

@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\Property;
 
 use Closure;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
+use LucianoPereira\Crucible\Types\TypeExpression;
 
 use function array_values;
 use function ceil;
@@ -208,17 +209,20 @@ final readonly class Gen
     }
 
     /**
-     * Strings over the alphabet, shrinking toward '' and toward the
-     * alphabet's first character.
+     * Strings over the alphabet, shrinking toward the shortest allowed
+     * and toward the alphabet's first character.
      *
      * @param int<0, max>      $maxLength
      * @param non-empty-string $alphabet
+     * @param int<0, max>      $minLength characters every string has (D-132): `non-empty-string` is 1,
+     *                                    drawn directly rather than filtered, so no draw is wasted
      *
      * @return self<string>
      */
     public static function string(
         int $maxLength = 20,
         string $alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-',
+        int $minLength = 0,
     ): self {
         $characters = mb_str_split($alphabet);
         $last       = count($characters) - 1;
@@ -229,9 +233,15 @@ final readonly class Gen
         // deletes the element — no stale length drawing phantom
         // entries. The choice is biased (0 of 8 stops) or lengths
         // would collapse to a coin-flip average of one.
-        return new self(static function (ChoiceSource $source) use ($maxLength, $characters, $last): string {
+        return new self(static function (ChoiceSource $source) use ($maxLength, $characters, $last, $minLength): string {
             $string = '';
             $length = 0;
+
+            // The required characters carry no continuation choice.
+            while ($length < $minLength) {
+                $string .= $characters[$source->draw($last)];
+                $length++;
+            }
 
             while ($length < $maxLength && $source->draw(7) !== 0) {
                 $string .= $characters[$source->draw($last)];
@@ -249,14 +259,19 @@ final readonly class Gen
      *
      * @param self<TElement> $element
      * @param int<0, max>    $maxCount
+     * @param int<0, max>    $minCount items every list has (D-132), for `non-empty-list`
      *
      * @return self<list<TElement>>
      */
-    public static function listOf(self $element, int $maxCount = 25): self
+    public static function listOf(self $element, int $maxCount = 25, int $minCount = 0): self
     {
         // Continuation-choice encoding — see string() for why.
-        return new self(static function (ChoiceSource $source) use ($element, $maxCount): array {
+        return new self(static function (ChoiceSource $source) use ($element, $maxCount, $minCount): array {
             $items = [];
+
+            while (count($items) < $minCount) {
+                $items[] = $element->generate($source);
+            }
 
             while (count($items) < $maxCount && $source->draw(7) !== 0) {
                 $items[] = $element->generate($source);
@@ -264,6 +279,55 @@ final readonly class Gen
 
             return $items;
         });
+    }
+
+    /**
+     * Arrays of a fixed shape (D-132): every key its own generator, an
+     * optional key present or not. Presence is a choice drawn before the
+     * value, 0 for absent, so shrinking removes optional keys first — the
+     * smallest counterexample names only the keys the failure needs.
+     *
+     *     Gen::shape(['id' => Gen::int(1, 99), 'nick' => [Gen::string(), true]])
+     *
+     * @param array<array-key, self<mixed>|array{self<mixed>, bool}> $entries key => generator, or [generator, optional]
+     *
+     * @return self<array<array-key, mixed>>
+     */
+    public static function shape(array $entries): self
+    {
+        return new self(static function (ChoiceSource $source) use ($entries): array {
+            $value = [];
+
+            foreach ($entries as $key => $entry) {
+                [$generator, $optional] = $entry instanceof self ? [$entry, false] : $entry;
+
+                if ($optional && $source->draw(1) === 0) {
+                    continue;
+                }
+
+                $value[$key] = $generator->generate($source);
+            }
+
+            return $value;
+        });
+    }
+
+    /**
+     * Values of a PHPStan type string (D-132): the same grammar
+     * `toMatchShape()` reads, so the type a test states for its data is
+     * the type it can draw data from.
+     *
+     *     property('an export fits', Gen::of('array{id: positive-int, email: non-empty-string}'),
+     *         fn (array $user) => expect(export($user))->toMatchShape('array{id: int, email: string}'));
+     *
+     * A type there is no sound way to draw — a class, a callable, a
+     * resource — is refused naming it, never approximated.
+     *
+     * @return self<mixed>
+     */
+    public static function of(string $type): self
+    {
+        return TypeGen::compile(TypeExpression::parse($type));
     }
 
     /**

@@ -78,7 +78,7 @@ final readonly class VitestImpact
                 continue;
             }
 
-            $scoped[] = new VitestSuite($suite->directory, $suite->binary, $related);
+            $scoped[] = $suite->relatedTo($related);
             $notes[]  = sprintf(
                 'Impact: Vitest suite %s — %d changed file(s), running related.',
                 $suite->directory,

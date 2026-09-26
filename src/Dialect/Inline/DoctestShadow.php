@@ -90,7 +90,7 @@ final readonly class DoctestShadow
             }
 
             foreach (explode("\n", $token[1]) as $offset => $line) {
-                if (preg_match('/^[ \t]*\**[ \t]*@crucible[ \t]+(.+)$/', $line, $matches) !== 1) {
+                if (preg_match(InlineBuilder::DOCTEST, $line, $matches) !== 1) {
                     continue;
                 }
 

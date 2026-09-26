@@ -43,6 +43,8 @@ final class WorkerProcess
 
     private string $stderrTail = '';
 
+    private string $stderrPending = '';
+
     private bool $finished = false;
 
     /**
@@ -137,13 +139,36 @@ final class WorkerProcess
     }
 
     /**
-     * Drains stderr into a bounded tail kept for crash diagnostics.
+     * Drains stderr into a bounded tail kept for crash diagnostics, and
+     * into the pending text {@see takeStderr()} hands over — what a test
+     * wrote is the test's output, not only a crash's last words.
      */
     public function drainStderr(): void
     {
+        // close() drained it one last time; what it held stays pending.
+        if (!is_resource($this->stderr)) {
+            return;
+        }
+
         while (($chunk = fgets($this->stderr)) !== false) {
             $this->stderrTail = substr($this->stderrTail . $chunk, -2048);
+            $this->stderrPending .= $chunk;
         }
+    }
+
+    /**
+     * Everything drained since the last call. A pipe is written in
+     * order, so draining when a test:finish line is read collects all
+     * the test wrote before it finished.
+     */
+    public function takeStderr(): string
+    {
+        $this->drainStderr();
+
+        $pending             = $this->stderrPending;
+        $this->stderrPending = '';
+
+        return $pending;
     }
 
     public function stderrTail(): string

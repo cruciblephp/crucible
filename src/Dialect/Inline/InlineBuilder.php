@@ -36,6 +36,7 @@ use function class_exists;
 use function get_defined_functions;
 use function get_included_files;
 use function in_array;
+use function preg_match;
 use function preg_match_all;
 use function preg_replace;
 use function realpath;
@@ -58,16 +59,27 @@ final readonly class InlineBuilder
     ) {}
 
     /**
+     * A doctest: `@crucible <expression>` on a starred docblock line — the
+     * one grammar the builder, the pre-filter and the PHPStan shadow read.
+     * `@crucible-equivalent` (D-134) and any other `@crucible-…` tag is not
+     * one: the tag must be followed by whitespace.
+     */
+    public const string DOCTEST = '/^[ \t]*\**[ \t]*@crucible[ \t]+(.+)$/m';
+
+    /**
      * The discovery pre-filter: whether a source file can possibly
-     * declare inline tests. A cheap substring scan so discovery only
-     * loads files that opted in; a false positive merely costs one
-     * require of an autoloadable file.
+     * declare inline tests, so discovery only loads files that opted in.
+     * A false positive is not merely one extra require: the file's classes
+     * are then declared before any test asks for them, and a mutated class
+     * can no longer load in their place — every mutant in the file would
+     * read as escaped (D-137). So the doctest test is the real grammar,
+     * not a substring.
      */
     public static function hasMarkers(string $source): bool
     {
         return str_contains($source, '#[Check')
             || str_contains($source, 'Crucible\Attributes\Check')
-            || str_contains($source, '@crucible');
+            || preg_match(self::DOCTEST, $source) === 1;
     }
 
     /**
@@ -326,7 +338,7 @@ final readonly class InlineBuilder
             return [];
         }
 
-        preg_match_all('/^[ \t]*\**[ \t]*@crucible[ \t]+(.+)$/m', $docComment, $matches);
+        preg_match_all(self::DOCTEST, $docComment, $matches);
 
         $expressions = [];
 

@@ -98,6 +98,7 @@ final class MutationJournalTest extends TestCase
             MutationVerdict::errored($this->mutant('<?php // r'), 'boom', 0.5),
             MutationVerdict::timedOut($this->mutant('<?php // t'), 0.5),
             MutationVerdict::notCovered($this->mutant('<?php // n')),
+            MutationVerdict::equivalent($this->mutant('<?php // q'), 'the bound is never reached'),
         ];
 
         $expected = [];
@@ -119,7 +120,7 @@ final class MutationJournalTest extends TestCase
         }
 
         self::assertEqualsCanonicalizing($expected, $outcomes);
-        self::assertCount(5, $outcomes, 'every outcome kind survives the round trip');
+        self::assertCount(6, $outcomes, 'every outcome kind survives the round trip');
     }
 
     /**

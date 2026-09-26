@@ -1,0 +1,8 @@
+argv: --report nosuchformat:out.txt
+exit: 1
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Report format "nosuchformat" is not registered — add it via ->reportFormat() in crucible.php.
+--- stderr
+

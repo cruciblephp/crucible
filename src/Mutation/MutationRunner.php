@@ -59,7 +59,9 @@ final readonly class MutationRunner
         foreach ($mutants as $mutant) {
             $covering = ($this->coveringTests)($mutant);
 
-            if ($covering === []) {
+            if ($mutant->equivalent !== null) {
+                $verdict = MutationVerdict::equivalent($mutant, $mutant->equivalent);
+            } elseif ($covering === []) {
                 $verdict = MutationVerdict::notCovered($mutant);
             } else {
                 $executor = $this->warm instanceof MutantExecutor && $this->warm->canRun($mutant) ? $this->warm : $this->cold;

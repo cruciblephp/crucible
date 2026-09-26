@@ -98,7 +98,10 @@ use LucianoPereira\Crucible\Snapshot\InlineSnapshotWriter;
 use LucianoPereira\Crucible\Snapshot\SnapshotLog;
 use LucianoPereira\Crucible\Snapshot\SnapshotPruner;
 use LucianoPereira\Crucible\Test\TestGroup;
+use LucianoPereira\Crucible\Types\TypeTestRunner;
+use LucianoPereira\Crucible\Types\TypeTestSuite;
 use LucianoPereira\Crucible\Vitest\VitestRunner;
+use LucianoPereira\Crucible\Vitest\VitestSuite;
 
 use function array_column;
 use function array_filter;
@@ -138,6 +141,7 @@ use function rtrim;
 use function set_include_path;
 use function sort;
 use function sprintf;
+use function str_ends_with;
 use function str_starts_with;
 use function stream_get_contents;
 use function stream_isatty;
@@ -347,7 +351,7 @@ final class RunTestsCommand
         // — --log-pdf=/--log-markdown= are convenience sugar for the
         // same underlying "key:path" selection --report= takes, so
         // there's exactly one dispatch mechanism under both spellings.
-        $selectedReportFormats = [];
+        $selections = [];
 
         foreach ($options->report as $entry) {
             [$key, $path] = array_pad(explode(':', $entry, 2), 2, null);
@@ -358,15 +362,31 @@ final class RunTestsCommand
                 return 1;
             }
 
-            $selectedReportFormats[$key] = $path;
+            $selections[] = [$key, $path];
         }
 
         if ($options->logPdf !== null) {
-            $selectedReportFormats['pdf'] = $options->logPdf;
+            $selections[] = ['pdf', $options->logPdf];
         }
 
         if ($options->logMarkdown !== null) {
-            $selectedReportFormats['markdown'] = $options->logMarkdown;
+            $selections[] = ['markdown', $options->logMarkdown];
+        }
+
+        // A format renders once, to one path. Asked for at two, one would
+        // be dropped without a word — refused instead, naming both.
+        $selectedReportFormats = [];
+
+        foreach ($selections as [$format, $output]) {
+            $already = $selectedReportFormats[$format] ?? null;
+
+            if ($already !== null && $already !== $output) {
+                printf('Report format "%s" is asked for twice, at %s and at %s: one path per format.' . PHP_EOL, $format, $already, $output);
+
+                return 1;
+            }
+
+            $selectedReportFormats[$format] = $output;
         }
 
         if ($selectedReportFormats !== []) {
@@ -440,7 +460,11 @@ final class RunTestsCommand
         }
 
         if ($options->testsuite !== null) {
-            $known = array_map(static fn($suite): string => $suite->name, $configuration->testSuites);
+            $known = [
+                ...array_map(static fn($suite): string => $suite->name, $configuration->testSuites),
+                ...array_map(static fn(VitestSuite $suite): string => $suite->name, $configuration->vitest),
+                ...array_map(static fn(TypeTestSuite $suite): string => $suite->name, $configuration->typeTests),
+            ];
 
             foreach ($options->testsuite as $requested) {
                 if (!in_array($requested, $known, true)) {
@@ -594,8 +618,16 @@ final class RunTestsCommand
         // narrowed to the change set under impact selection below, where
         // an affected JS suite also keeps the run alive when no PHP test
         // is (a changed .vue with no PHP dependents).
-        $vitestSuites = $configuration->vitest;
-        $jsAffected   = false;
+        $vitestSuites = $this->foldedSelection($options, $configuration->vitest, 'Vitest suite');
+        $typeSuites   = $this->foldedSelection($options, $configuration->typeTests, 'Type-test suite');
+
+        // A folded suite named with --testsuite takes the name filter too.
+        if ($options->testsuite !== null && $options->filter !== null) {
+            $filter       = $options->filter;
+            $vitestSuites = array_map(static fn(VitestSuite $suite): VitestSuite => $suite->filtered($filter), $vitestSuites);
+            $typeSuites   = array_map(static fn(TypeTestSuite $suite): TypeTestSuite => $suite->filtered($filter), $typeSuites);
+        }
+        $jsAffected = false;
 
         // Impact selection (G3): narrow to the tests whose dependency
         // closure intersects the change set. Runs before the name and
@@ -719,9 +751,9 @@ final class RunTestsCommand
             // configured Vitest suites the way ImpactSelection narrowed
             // the PHP groups. An affected suite makes the run non-empty
             // even when no PHP test is.
-            if ($configuration->vitest !== []) {
+            if ($vitestSuites !== []) {
                 [$vitestSuites, $vitestNotes] = VitestImpact::select(
-                    $configuration->vitest,
+                    $vitestSuites,
                     new ChangedFiles($files, $changed->deleted),
                     $workingDirectory,
                 );
@@ -732,10 +764,17 @@ final class RunTestsCommand
                 }
             }
 
+            // A type test can change with any PHP file or the analyser's
+            // configuration (D-130); a change touching neither leaves the
+            // type suites out rather than start an analysis for nothing.
+            if ($typeSuites !== [] && array_filter($files, static fn(string $file): bool => str_ends_with($file, '.php') || str_ends_with($file, '.neon')) === []) {
+                $typeSuites = [];
+            }
+
             print PHP_EOL;
 
             if ($impact->groups !== null) {
-                if ($impact->groups === [] && !$jsAffected) {
+                if ($impact->groups === [] && !$jsAffected && $typeSuites === []) {
                     print 'No tests are affected by the given changes.' . PHP_EOL;
 
                     return 0;
@@ -826,7 +865,7 @@ final class RunTestsCommand
         // A JS-only change (D-080) leaves no PHP group but an affected
         // Vitest suite: the run proceeds so the suite folds in through
         // the after-tests hook, bracketed by the normal run:start/finish.
-        if ($groups === [] && !$jsAffected) {
+        if ($groups === [] && $vitestSuites === [] && $typeSuites === []) {
             // An empty todo listing is a healthy answer, not a failed
             // selection — the D-036 distinction ('No tests are
             // affected' exits 0 where 'No tests found' exits 1).
@@ -1023,15 +1062,23 @@ final class RunTestsCommand
             $options->noExtensions ? [] : [...$configuration->extensions, ...$registered],
             static fn(Extension $extension): bool => $extension instanceof Check,
         ));
-        $vitest = $vitestSuites;
+        $vitest    = $vitestSuites;
+        $types     = $typeSuites;
+        $typeCache = $workingDirectory->absolute($cacheDirectory);
 
-        $afterTests = $configuration->commandGates === [] && $checks === [] && $vitest === []
+        $afterTests = $configuration->commandGates === [] && $checks === [] && $vitest === [] && $types === []
             ? null
-            : static function () use ($emitter, $configuration, $checks, $vitest, $workingDirectory): ?RunSummary {
-                // JS tests are tests: their test:finish events lead, then
-                // the run-scoped checks' check:finish. The Vitest delta
-                // folds into the tally; checks vote the exit code instead.
+            : static function () use ($emitter, $configuration, $checks, $vitest, $types, $typeCache, $workingDirectory): ?RunSummary {
+                // JS tests and type tests are tests: their test:finish
+                // events lead, then the run-scoped checks' check:finish.
+                // Their deltas fold into the tally; checks vote the exit
+                // code instead.
                 $delta = $vitest === [] ? null : (new VitestRunner($emitter))->run($vitest, $workingDirectory);
+
+                if ($types !== []) {
+                    $typed = (new TypeTestRunner($emitter, $typeCache))->run($types, $workingDirectory);
+                    $delta = $delta instanceof RunSummary ? $delta->plus($typed) : $typed;
+                }
 
                 (new CheckRunner($emitter))->run($configuration->commandGates, $checks, $workingDirectory);
 
@@ -1209,6 +1256,75 @@ final class RunTestsCommand
         }
 
         return array_values(array_unique($prefixes));
+    }
+
+    /**
+     * The folded JS suites answer to the same selection as the PHP ones
+     * (D-125). `--testsuite` and `--exclude-testsuite` select them by
+     * name. An option that only selects PHP tests — a name filter, a
+     * group, a test id — leaves an unnamed JS suite out and says so,
+     * because arming one PHP test must not wait on the whole JS suite.
+     * Named with `--testsuite`, a JS suite runs and takes `--filter`
+     * through to `vitest -t`. The type-test suites (D-130) follow the same
+     * rules: they are folded suites too.
+     *
+     * @template TSuite of VitestSuite|TypeTestSuite
+     *
+     * @param list<TSuite>     $suites
+     * @param non-empty-string $kind   how the note names them
+     *
+     * @return list<TSuite>
+     */
+    private function foldedSelection(CliOptions $options, array $suites, string $kind): array
+    {
+        $selected = [];
+        $left     = [];
+
+        $phpOnly = array_keys(array_filter([
+            '--filter'                 => $options->filter !== null,
+            '--group'                  => $options->groups !== [],
+            '--covers'                 => $options->covers !== [],
+            '--uses'                   => $options->uses !== [],
+            '--requires-php-extension' => $options->requiresPhpExtension !== [],
+            '--run-test-id'            => $options->runTestIds !== [],
+            '--test-id-filter-file'    => $options->testIdFilterFile !== null,
+            '--test-files-file'        => $options->testFilesFile !== null,
+            '--todos'                  => $options->todos || $options->assignee !== null || $options->issue !== null,
+        ]));
+
+        foreach ($suites as $suite) {
+            if (in_array($suite->name, $options->excludeTestsuite, true)) {
+                continue;
+            }
+
+            if ($options->testsuite !== null) {
+                if (in_array($suite->name, $options->testsuite, true)) {
+                    $selected[] = $suite;
+                }
+
+                continue;
+            }
+
+            if ($phpOnly !== []) {
+                $left[] = $suite->name;
+
+                continue;
+            }
+
+            $selected[] = $suite;
+        }
+
+        if ($left !== []) {
+            printf(
+                '%s %s not run: %s selects PHP tests. Add --testsuite %s to run it too.' . PHP_EOL . PHP_EOL,
+                $kind,
+                implode(', ', array_map(static fn(string $name): string => '"' . $name . '"', $left)),
+                implode(', ', $phpOnly),
+                $left[0],
+            );
+        }
+
+        return $selected;
     }
 
     /**
@@ -1704,6 +1820,14 @@ final class RunTestsCommand
         if ($what === 'suites') {
             foreach ($configuration->testSuites as $suite) {
                 print ' - ' . $suite->name . PHP_EOL;
+            }
+
+            foreach ($configuration->vitest as $suite) {
+                print ' - ' . $suite->name . ' (Vitest, ' . $suite->directory . ')' . PHP_EOL;
+            }
+
+            foreach ($configuration->typeTests as $suite) {
+                print ' - ' . $suite->name . ' (type tests, ' . $suite->directory . ')' . PHP_EOL;
             }
 
             return;

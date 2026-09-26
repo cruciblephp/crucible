@@ -41,6 +41,7 @@ use LucianoPereira\Crucible\Assert\Constraint\JsonMatches;
 use LucianoPereira\Crucible\Assert\Constraint\LessThan;
 use LucianoPereira\Crucible\Assert\Constraint\LogicalNot;
 use LucianoPereira\Crucible\Assert\Constraint\MatchesRegularExpression;
+use LucianoPereira\Crucible\Assert\Constraint\MatchesShape;
 use LucianoPereira\Crucible\Assert\Constraint\ObjectEquals;
 use LucianoPereira\Crucible\Assert\Constraint\ObjectHasProperty;
 use LucianoPereira\Crucible\Assert\Constraint\StringContains;
@@ -348,6 +349,17 @@ abstract class Assert
     public static function assertIsList(mixed $array, string $message = ''): void
     {
         self::assertThat($array, new IsList(), $message);
+    }
+
+    /**
+     * The value fits a PHPStan type string, `array{id: positive-int,
+     * tags: list<string>}` (D-131). Crucible's own assertion, not the
+     * incumbent's: it checks the value at run time, and Crucible's PHPStan
+     * extension narrows it to the same type afterwards.
+     */
+    public static function assertMatchesShape(string $shape, mixed $actual, string $message = ''): void
+    {
+        self::assertThat($actual, new MatchesShape($shape), $message);
     }
 
     // --- Strings -------------------------------------------------------------

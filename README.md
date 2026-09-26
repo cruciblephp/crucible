@@ -24,6 +24,11 @@ runs; method and raw times in [`benchmarks/manifest.json`](benchmarks/manifest.j
 
 ![Crucible 13.51 s against Pest 5.2.1's 15.25 s on spatie/schema-org's suite](assets/speed.svg)
 
+And 1.1.0 against 1.0.1 on spatie/laravel-data, a Pest suite on Orchestra Testbench, where discovery
+and each test class's setup cost 1.0.1 the most:
+
+![Crucible 1.1.0 61.08 s against 1.0.1's 328.52 s on spatie/laravel-data's suite](assets/speed-laravel-data.svg)
+
 Already have a `phpunit.xml`? `./vendor/bin/crucible migrate-config` converts it, and tells you
 about anything it could not translate rather than dropping it silently.
 
@@ -89,6 +94,26 @@ visit('/checkout')->click('Place order')->waitForNetworkIdle()->assertSee('Thank
 
 Every sample is from [`examples/`](examples), and those files are **run by the test suite** —
 an example that stopped working turns the suite red.
+
+---
+
+## PHPStan, built in
+
+Crucible ships its own PHPStan extension. With
+[`phpstan/extension-installer`](https://github.com/phpstan/extension-installer) there is nothing to
+wire; without it, `crucible phpstan-init` writes the one include line. It covers what phpstan-phpunit
+and pest-plugin-phpstan give a migrated suite — assertions narrow, `expect()` is generic, `$this` is
+typed in Pest closures — held line by line against both. And it goes further:
+
+```php
+expect($x)->toBeString();          // $x itself is a string now, not only the chain
+expect($user)->toMatchShape('array{id: positive-int, tags: list<string>}');
+                                   // checked when the test runs, narrowed for PHPStan
+```
+
+Dataset rows that the test cannot take are reported before anything runs, `assertType()` calls in
+`*.types.php` files are tests in the run, and `Gen::of('<type>')` draws property-test data from a
+type string.
 
 ---
 

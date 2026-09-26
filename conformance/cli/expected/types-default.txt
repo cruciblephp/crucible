@@ -1,0 +1,31 @@
+argv: 
+exit: 2
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Configuration: <project>/crucible.php
+
+..F.FE
+
+1) tests/Types/ids.types.php::line 14: list<string> [fail]
+Expected type list<string>, actual: list<int>
+
+2) tests/Types/ids.types.php::line 16: type error binaryOp.invalid [fail]
+Expected a binaryOp.invalid error on this line; it analyses clean.
+
+3) tests/Types/ids.types.php::the file analyses [error]
+PHPStan reported errors outside any type assertion:
+line 17: Function undefinedFunctionHere not found.
+line 17: Parameter #1 (mixed) of echo cannot be converted to string.
+
+Passed
+                                    tests      time   share
+tests                                   3    <t>s   <bar>
++- Types                                2    <t>s   <bar>
+   +- ids.types                         2    <t>s   <bar>
++- Unit                                 1    <t>s   <bar>
+   +- Ok                                1    <t>s   <bar>
+
+Tests: 6. Passed: 3, Failed: 2, Errors: 1, Skipped: 0, Incomplete: 0, Risky: 0. Time: <t>s
+--- stderr
+

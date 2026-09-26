@@ -16,6 +16,17 @@ return RectorConfig::configure()
     ->withPaths([
         __DIR__ . '/src',
         __DIR__ . '/tests/unit',
+        // The conformance code phpstan.neon analyses, and only that: what
+        // one gate types, the other refactors. Fixture trees stay out of
+        // both — their exact shape is what the probes measure.
+        __DIR__ . '/conformance/process.php',
+        __DIR__ . '/conformance/cli/run.php',
+        __DIR__ . '/conformance/cli/cases.php',
+        __DIR__ . '/conformance/probes/28-pest-matchers',
+        __DIR__ . '/conformance/probes/30-extension-types/probe.php',
+        __DIR__ . '/conformance/probes/30-extension-types/compare.php',
+        __DIR__ . '/conformance/probes/30-extension-types/regenerate.php',
+        __DIR__ . '/conformance/probes/30-extension-types/divergences.php',
     ])
     ->withPhpSets()
     ->withPreparedSets(
@@ -23,6 +34,11 @@ return RectorConfig::configure()
         codeQuality: true,
     )
     ->withSkip([
+        // Excluded from phpstan.neon for the same reasons: they run inside
+        // the incumbent, or they are the subject the arch grid measures.
+        __DIR__ . '/conformance/probes/28-pest-matchers/cell.php',
+        __DIR__ . '/conformance/probes/28-pest-matchers/driver.php',
+        __DIR__ . '/conformance/probes/28-pest-matchers/arch-fixture',
         // Empty methods are often load-bearing here: attribute
         // carriers in fixtures, overridable lifecycle hooks.
         RemoveEmptyClassMethodRector::class,

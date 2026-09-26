@@ -5810,6 +5810,505 @@ own constraints are unchanged.
 ✓ `tests/unit/Framework/LifecycleCompatibilityTest.php`: the alias and both messages. ✓ The Wire
 bridge's `assertDatabaseMissing()`, restored, passes.
 
+### D-124: an isolated test's STDERR is the test's, not the worker's
+
+A test that runs in its own process (`#[RunInSeparateProcess]`, `#[RunTestsInSeparateProcesses]`,
+`#[RunClassInSeparateProcess]`, `--process-isolation`) and wrote to STDERR lost the output: the
+worker's STDERR was drained into a 2 KB tail kept only for the crash message, and a clean exit threw
+it away. Nothing said so. It surfaced in the server panel, where a debugging probe written from an
+isolated MySQL test printed nowhere and had to be written to a file instead.
+
+The incumbent errors such a test with the output as its message. Checked black-box:
+`StderrIsolationTest` in fixture `12-separate-process` writes one line to STDERR from an isolated
+test; the real `phpunit` 13.3 reports it errored and exits 2, and 1.0.1 reported a pass and exit 0.
+
+**The rule now.** The supervisor keeps what a worker writes to STDERR as pending text, and reads it at
+two points on the worker's stream. At a `test:start` it hands anything pending to the console: that is
+the bootstrap or a startup notice, and it belongs to no test. At a `test:finish` from an isolated
+unit, what arrived since the start is that test's. If it is not empty, the test errors with the text as
+its message, and its own failure, if any, is kept beneath. A pipe is written in order, so everything
+the test wrote is in the pipe before its `test:finish` line is. Output before the first test is
+forwarded rather than charged to it, because a coverage driver's "already loaded" notice would
+otherwise error every isolated test of a coverage run.
+
+A `--parallel` worker is only a share of the run, not a request for a separate process, so its tests
+keep the in-process rule: their STDERR reaches the console verbatim, and no verdict changes. A crashed
+worker's tail still rides in the reason of the tests it lost.
+
+✓ Fixture `12-separate-process` conforms again, 7 tests, exit 2.
+
+### D-125: the folded JS suite is a suite, and selections say which language they mean
+
+`--filter` did not reach the `->vitest()` suite (D-079). A PHP name filter narrowed the PHP tests and
+left all the JS tests running, so arming one PHP test waited on the whole JS suite (the server panel:
+`--filter FailureCode` ran 8 PHP tests and 290 JS ones). And there was no way to run the PHP tests
+alone, since `--testsuite` and `--exclude-testsuite` did not know the JS suite existed.
+
+Two ways were proposed: pass the filter through as `vitest -t`, or leave the JS suite out under a PHP
+selection and let `--testsuite` name it. Pass-through alone still starts Vitest, which collects every
+test file to match names against, and that start is most of the cost. Leaving the suite out alone
+loses a way to filter JS tests. Both are taken, split by whether the JS suite was named:
+
+- `VitestSuite` carries a name, `vitest` unless `->vitest(..., name:)` says otherwise.
+  `--testsuite` accepts it, `--exclude-testsuite` drops it, and `--list-suites` lists it.
+- Without `--testsuite`, an option that selects PHP tests only (`--filter`, `--group`, `--covers`,
+  `--uses`, `--requires-ext`, the id and file lists, `--todos`) leaves the JS suite out and prints a line
+  naming the suite and the option. Exclusions (`--exclude-group`, `--exclude-filter`, `--no-wip`) do
+  not, because they select nothing.
+- With the suite named, `--filter` goes through as `--testNamePattern`. A substring filter keeps its
+  meaning exactly: escaped, with `*` still a wildcard, and each letter matched in either case, since a
+  pattern on Vitest's command line takes no flags. A regular expression passes its body. Vitest reports
+  the tests the pattern left out as skipped, so a skip the filter does not match is dropped; an
+  `it.skip` the filter names stays skipped.
+
+Impact selection narrows only the suites the selection kept. A run whose only selected suite is JS runs
+it alone, and no longer answers "No tests found".
+
+✓ `tests/unit/Vitest/VitestRunnerTest.php` runs a stand-in binary that records its argv. ✓ Measured on a
+mixed project with a real Vitest: 5 tests unfiltered; `--filter Adds` 1 test with the note;
+`--testsuite vitest` 3; `--testsuite vitest --filter cart` 2; `--exclude-testsuite vitest` 2.
+
+### D-126: the console does not print OK over a failed check
+
+The console reporter printed OK when no test was a problem, whatever the run-scoped checks said: a
+failing `CommandGate` or `Check` showed "OK" and then "Checks: 1 run, 1 failed", and the run exited 1.
+The reporter now counts the `CheckFinished` events that did not pass (they land inside the run bracket,
+before `run:finish`) and prints OK only when there are none. The summary line and the exit code are
+unchanged.
+
+### D-127: the extension is declared to phpstan/extension-installer
+
+The PHPStan extension (D-049) needed an include line, written by hand or by `crucible phpstan-init`.
+PHPStan's ecosystem wires extensions through `phpstan/extension-installer`, which reads a package's
+`extra.phpstan.includes`. Crucible now declares `phpstan/extension.neon` there, and a project using the
+installer gets the extension with nothing written. That is also what PHPStan's own list of extensions
+expects of an entry.
+
+Read from the installer's source (1.4.3): a package counts when its type is `phpstan-extension` **or**
+it has `extra.phpstan`, so Crucible stays a `library`. A project can opt out through the installer's
+`ignore` list.
+
+**The one hazard, and the answer to it.** PHPStan refuses a file included twice ("This file is
+included multiple times"), measured. A project with the installer that also has the include line
+therefore stops analysing on upgrade. `phpstan-init` checks for the installer (and its `ignore` list).
+With it installed, it writes no include into a new `phpstan.neon`, answers "nothing to add" for an
+existing one, and when the line is already there it prints the line to remove and exits 1. Projects
+without the installer are unaffected.
+
+✓ `tests/unit/CLI/PhpstanNeonTest.php`: the declaration, and a fresh file without the include.
+
+### Declined: the acknowledgment ledger through DuplicationCheck
+
+Proposed in the server panel's doc 14: pass phpcpd-next's acknowledgment ledger through `DuplicationCheck`, so the
+server panel could gate on `maxClones: 0` and keep the clones its item 24 chose to leave. Researched
+before deciding, because a ledger that changes a verdict is a policy, not plumbing.
+
+**What each side already says.**
+
+- phpcpd-next's README states the ledger "is not a baseline in the usual sense": an acknowledged
+  finding "is still reported, still counted, and still gates the exit code", because a mechanism that
+  made findings disappear would, over a few quarters, turn the report into a record of what nobody had
+  got round to acknowledging yet. Its CLI keeps that (`count($clones) > 0 ? 1 : 0`).
+- The same README assigns the two tools to two cases: markers "when the duplication is deliberate
+  design and the explanation belongs beside the code; the ledger when the honest statement is 'we know,
+  not this quarter'". The panel's item 24 says of what it leaves: "The repetition is the design." That
+  is the marker case.
+- Markers act inside detection, so `Phpcpd::detect()` never returns a marked clone. Measured on the
+  released 2.0.0: two copies of a 13-line method are 1 clone; `@phpcpd-ignore-clone` on one side makes it
+  0. `DuplicationCheck` with `maxClones: 0` already holds the panel's line, with no change here.
+
+**The SARIF reading.** SARIF 2.1.0 §3.27.23 defines a suppression as a request to exclude a result
+"from result lists, bug counts, etc.", with `kind` `inSource` (a marker) or `external` (a store), and
+`status` `accepted`, `underReview` or `rejected`. A phpcpd-next marker is an `inSource` suppression. An
+acknowledgment is *not* an `external` one: the ledger refuses exactly the exclusion from counts that
+defines a suppression. What it matches is §3.27.24's `baselineState`, a result's state against an
+earlier run, found by fingerprint: an acknowledged clone is `unchanged`, an unlisted one `new`, a stale
+entry `absent`. The ledger's content hash is such a fingerprint, and editing a copy makes the clone
+`new` again, which is the ledger's self-expiry.
+
+**Why the answer is still no, and what would change it.** The other ecosystems gate differently.
+PHPStan's baseline removes the errors from the report and the exit code (measured: a baselined project
+reports no files and exits 0) and reports an entry nothing matches. ESLint's bulk suppressions leave the
+exit code to the violations not suppressed, and fail on unused ones. Both are ratchets: no new debt.
+phpcpd-next chose the other way, on purpose. Crucible wraps each tool with the tool's own notion of what
+counts. A check that
+gated on `baselineState` `new` alone would be a ratchet phpcpd-next itself refuses, so the decision
+belongs to phpcpd-next (for instance a gate on new findings, and a headless way to pass the ledger,
+announced through `Phpcpd::supports()`). The check follows it when it exists; until then it reads only
+`detect()`, the one surface phpcpd-next offers an embedder.
+
+### D-128: the extension, held against the incumbents' — probe 30, and parity
+
+A migrated suite brings its analysis with it. A PHPUnit suite had phpstan-phpunit; a Pest suite had
+pest-plugin-phpstan (5.2.1, 2026-09-06), which types `expect()` generically, narrows the chain,
+types `$this`, and ships fourteen rules. Both are written against their own framework's classes, so
+on Crucible a suite loses them. Crucible's extension had no oracle: the engine is proven against the
+real PHPUnit (conformance), the extension against nothing.
+
+**Probe 30** is probe 28's method applied to types. One fixture, written in PHPUnit's namespace and
+Pest's globals — the suite a migration brings — is analysed twice: with the incumbent stack
+(`pest-oracle`, now also holding phpstan, phpstan-phpunit and pest-plugin-phpstan) and with
+Crucible's. Each `dumpType(...); // label` line is a row of a recorded table (`record.php`,
+written by `regenerate.php` from the live incumbent), keyed by label so an edit never reshuffles it.
+Check 1, Crucible against the record, runs in the suite (`ExtensionParityTest`); check 2, the record
+against the live incumbent, runs when the oracle is installed. Every difference is absent or named
+in `divergences.php`. Both forms are swept: every assertion beside its negation, every matcher
+beside `->not`.
+
+The first run measured the backlog: 143 lines, 31 differing — 22 the Pest chain (Crucible's
+`->value` was `mixed` everywhere), 9 three PHPUnit assertions in three spellings.
+
+- **The three assertions**: `assertArrayHasKey` (array_key_exists, or an ArrayAccess),
+  `assertObjectHasProperty` (property_exists), `assertContainsOnlyInstancesOf` (the haystack is its
+  own filter by `instanceof`) — translations into conditions PHPStan already reads, D-049's rule,
+  with the negations beside them.
+- **The chain is generic**: `Expectation<TValue>`; `expect()` is typed by
+  `ExpectFunctionReturnTypeExtension`, not `@template` — an argument that is already an error (an
+  undefined method's result) left the template unresolved and reported a second error on the same
+  line, 53 of them on spatie/laravel-data's suite. `ExpectationChainReturnTypeExtension` carries the
+  type through every step that returns the chain (helpers returning a constraint or the items keep
+  their declared types), narrows it for the type matchers, and narrows nothing after `->not`, as the
+  incumbent does. `toBeList()` gives a list of the value's elements rather than intersecting: on a
+  string-keyed array the intersection is never, though the empty array is a list — the incumbents
+  disagree there (phpstan-phpunit answers never, pest-plugin-phpstan `list`), and the sound answer
+  is the Pest plugin's.
+- **The dialect's own globals are opt-in**: `check()`, `property()` and `table()` — the three names
+  real Pest does not define — moved to `crucible-functions.php`, scanned by
+  `phpstan/crucible-dialect.neon`, not by `extension.neon`. A project's own global `check()`
+  resolved to Crucible's signature depending on which files were in the run: 373 false
+  `arguments.count` errors on sashimi's tests with the full extension, 0 without the scan, 0 after
+  the split. Now that the installer loads the extension for every project (D-127), a common word
+  scanned unconditionally could not stay. `phpstan-init` adds the dialect include when a suite holds
+  `*.crucible.php` files; `lint-inline` skips its include when the installer loads the extension.
+
+**Gate, measured before it shipped**: the generic adds no error on real suites — Crucible's own
+analysis at max is clean, spatie/laravel-data's tests at level 6 report 857 errors before and after,
+none new, none gone. ✓ Probe 30: 143 of 143, the live incumbent unmoved.
+
+### D-129: the subject narrows, and data rows are typed
+
+**The subject.** After the statement `expect($x)->toBeString();` the analyser knows `$x` is a string,
+as after `assertIsString($x)`. The incumbent narrows only the chain. Sound because an expectation
+that fails throws (no soft mode exists); the negated form narrows too (`->not->toBeNull()` removes
+null), which the incumbent does not do even for the chain. The chain is read back from the
+statement's last call to `expect(...)`; any step that changes the subject (`and()`, `json()`,
+`->each`, a higher-order member, a method forwarded to the value) narrows nothing. The subject gets
+exactly the chain's computed type — one service, `ExpectationNarrowing`, for both — overwritten
+rather than intersected, so the two cannot disagree. Probe 30 names the 20 lines where Crucible now
+knows more than the incumbent; the chain lines all still agree. Gate: laravel-data 857 → 857.
+
+**Data rows.** A row the test cannot take is wrong at the keyboard, not at the first run — D-067's
+principle for generators, applied to every form a row is written in: inline Pest `->with([...])`,
+`#[TestWith]`, `#[TestWithJson]`, `#[Check(args:, returns:)]` (the claimed return against the
+declared return type too), and `table()` (its subject's signature, as PHPStan resolves it). One
+helper, `DataRows`, reports only what fails at run time: a missing required argument, a value its
+parameter definitely cannot accept. A value it might accept, an extra value, a closure value (Pest
+calls it) are left alone; several `->with()` calls (a Cartesian product), named datasets and
+`#[DataProvider]` are not read yet. The Pest rule reads the whole statement: one `->with()` cannot
+see the one it sits inside, which is how the first cut reported the Cartesian test in Crucible's
+own suite.
+
+✓ Seeded fixtures, one mistake of every kind beside rows that are right: every flagged row errors
+when run, every unflagged row passes (`DataRowRulesTest`). ✓ Zero findings on laravel-data's suite
+and Crucible's own — both green, so any finding would have been false.
+
+### D-130: type tests
+
+Vitest's typecheck mode, for PHP: files named `*.types.php` under `->typeTests('tests/Types')` are
+analysed by PHPStan once — through the project's own phpstan.neon when there is one — and every
+assertion in them is a test in the run:
+
+- `assertType('list<int>', $value)` passes when PHPStan reports nothing on its line, fails on
+  `phpstan.type`, errors on anything else there;
+- a line ending `// crucible-type-error <identifier>` passes when PHPStan reports that identifier on
+  it, and fails when the line analyses clean or reports something else — the negative form, for
+  library and extension authors;
+- errors on no assertion's line are the file's, one errored entry, never lost.
+
+A folded suite, like Vitest's (D-079): named `types`, selected by `--testsuite`/`--exclude-testsuite`
+(D-125's selection, now generic over both kinds), left out with a note under a PHP-only selection,
+and under `--changed` run only when a changed file is PHP or a `.neon`. With no project
+configuration, a written one at a stable path in the cache directory keeps PHPStan's result cache
+useful. The analysis's time is shared across its tests so the tree adds up. Measured: a PHPStan
+start costs seconds on this machine (about 7.7 s for one small file, xdebug loaded), which is the
+floor of a run that includes the suite — `--exclude-testsuite types` keeps an edit loop fast.
+
+✓ `TypeTestRunnerTest` through the real phpstan; ✓ five command-line snapshots (D-135).
+
+### D-131: one shape, two meanings
+
+`expect($data)->toMatchShape('array{id: positive-int, tags: list<string>}')` and
+`assertMatchesShape($shape, $value)` state a type once for two readers. At run time the value is
+checked, and a failure names the first place it does not fit — `$.tags[1]: expected string, got 7`.
+For the analyser the value is narrowed to that type afterwards: the subject, the chain's value, and
+the asserted variable, through PHPStan's own `TypeStringResolver` (`@api`).
+
+The run-time reading is Crucible's own (`TypeParser`, `TypeExpression`), not
+`phpstan/phpdoc-parser`: the assertion runs in any test run, and a run-time check cannot depend on a
+development tool being installed. The subset is documented on `TypeExpression`; a string it cannot
+read is refused with its position. Class names are read as fully qualified on both sides, as a
+string cannot see `use` statements.
+
+Where PHPStan's reading was measured it is followed: **shapes are open** — PHPStan 2.2 at level max
+accepts `['id' => 1, 'extra' => 2]` for `array{id: int}` and an extra element for `array{int,
+string}` — and set membership is the semantics, not call-site acceptance (`1` is not a float,
+though PHP widens it at a call). ✓ `TypeExpressionAgreementTest`: 81 values over the grammar, each
+narrowed and dumped by the real phpstan, the run-time reading agreeing on all 81. The oracle's own
+reading needed two corrections, both recorded in the test: a generic like `ArrayObject<*NEVER*,
+*NEVER*>` is an empty object, not no room; a never kept on one element of a constant array
+(`list{1, *NEVER*}`) is no room.
+
+**Gate, open.** The claim was that real JSON/DTO tests read better and catch more. laravel-data's
+toArray() tests assert exact values, which toMatchArray already does well; a shape assertion earns
+its place where the structure is fixed and the values vary (identifiers, timestamps, API payloads)
+— the server panel's RFC 9457 responses are the sample to measure, and it is not on this machine.
+
+### D-132: data from types
+
+`Gen::of('array{id: positive-int, email: non-empty-string, tags: list<string>, nick?: string}')`
+draws from the same grammar toMatchShape() reads, compiled onto Gen's existing combinators:
+ranges are `int(min, max)`, nullable is `oneOf`, `list<T>` is `listOf`. New: `Gen::shape()` (an
+optional key's presence is a choice drawn before its value, 0 for absent, so shrinking drops
+optional keys first) and a minimum length on `Gen::string()` and `Gen::listOf()` for the non-empty
+types, drawn directly rather than filtered. A type there is no sound way to draw — a class, a
+callable, a resource, an iterable — is refused naming it. For the analyser, `Gen::of('<type>')` is
+a `Gen<type>`, so a property closure receives the type, and D-067's parameter rule checks it.
+
+One PHP fact the generator had to learn: `array<string, V>` cannot hold the key `'1'` — PHP makes it
+the integer 1. The first cut drew such keys; 30 of 300 draws did not fit their own type. A pair
+whose key would change type is skipped.
+
+✓ `GenOfTest`: 200 draws for each of seven types, every one fitting its type by D-131's reading;
+a failing property over a shape shrinks to `['id' => 50]` — the boundary, and the optional key gone.
+
+### D-133: a Pest file is a class — its lifecycle, and discovery that finishes
+
+Found running spatie/laravel-data (the benchmark's Pest case) on 1.0.1, whose discovery did not
+finish.
+
+- **Discovery.** With the real PHPUnit installed — here brought by spatie/phpunit-snapshot-
+  assertions — `RealPhpUnitAttributes::candidates()` globbed `src/Attributes/*.php` once per method
+  it was asked about, and `HookPlanner::forClass()` asked about every method of a test class once
+  per test: for Pest tests over Laravel's TestCase, hundreds of thousands of globs. Both answers
+  are fixed for the run; both are memoised (the plan per class name). ✓ Discovery of the 1,338
+  tests: killed unfinished after 60 s and 14 CPU-minutes before; 0.82 s after.
+- **The lifecycle.** Real Pest generates a class per file extending its `uses()` class, and the
+  runner calls its `setUpBeforeClass()` and `tearDownAfterClass()` around the file. Crucible called
+  neither for Pest files. Orchestra Testbench — the base class of every Laravel package's suite —
+  gathers per-test state in a static array and clears it only in `tearDownAfterClass()`; never
+  cleared, each test's tearDown grouped an ever longer array, and the run slowed quadratically. The
+  order, measured on the real Pest 5: `setUpBeforeClass`, `beforeAll`, the tests, `afterAll`,
+  `tearDownAfterClass` — Crucible now calls the same. ✓ `PestClassLifecycleTest` (failed before);
+  ✓ laravel-data on Crucible: 1,338 tests, 1,324 passed, 11 skipped, 3 incomplete, exit 0 in 226 s —
+  the benchmark's recorded result, on a checkout with its snapshot files pristine (two runs that
+  left snapshots behind showed 1,326: spatie's snapshot assertions mark a test incomplete when they
+  create its snapshot).
+- **A dataset that throws** while it is built now fails its own test, as in real Pest (measured:
+  the test fails, the suite continues, exit 2), where it was an uncaught fatal for the whole run.
+  Found by TypePHP (D-136).
+
+### D-134: declared equivalent mutants, and a mutator for shapes
+
+**Equivalent mutants.** A mutant no test can kill — an operator whose change cannot be observed —
+had no way to be declared, so it stayed in the score as noise. The notation is harvested from
+phpcpd-next, which uses it to say a clone is deliberate: `@crucible-equivalent <reason>` on the
+declaration that follows, a `// crucible-equivalent-start <reason>` … `-end` region, a
+`// crucible-equivalent-line <reason>`. A reason is required; a marker without one declares nothing
+and is reported (`STALE`), as is a marker that covers no mutant. A declared mutant is generated,
+never run, listed with its reason under its own heading and counted — phpcpd-next's "demote, never
+hide" — and it leaves the score's denominator, because no test could ever kill it.
+
+**The shape mutator.** `ShapeMutator` drops one string-keyed element from a returned array literal
+— `return ['id' => …, 'email' => …]` without 'email' — so a survivor says no test checks that key is
+there: the gap a DTO export or an API payload keeps quietly. toMatchShape() is what kills it. A
+mutation may now stand for a span of tokens, not only one. In the default catalog.
+
+Not built, with the reason: value-swap mutators (a value replaced by another of its declared type)
+need types the token stream does not have; discarding mutants PHPStan rejects before running them
+(the Trivial Compiler Equivalence idea) waits for mutators that produce type-invalid code — the
+operator mutators almost never do.
+
+✓ `EquivalentMarkersTest`, `ShapeMutatorTest` (every mutant still parses, `TOKEN_PARSE`).
+
+### D-135: the command line, held still
+
+Conformance proves Crucible's outcomes against PHPUnit; nothing held Crucible's own command line —
+its notes, its early exits, what it prints and in which order. `conformance/cli/` runs 40 cases
+through the real binary, each on a fresh copy of a fixture project, and compares stdout, stderr and
+the exit code with a recorded snapshot (`composer conformance:cli`, `--update` to re-record, the
+diff read). Normalised: durations, timing bars, the paths of the project copy and of Crucible, and
+the run tree's sibling order — FoldingTree orders siblings by time, and a fixture's tests all take
+next to nothing, so the order is noise; each node's children are compared as a set, each subtree
+kept under its parent. ✓ Snapshots unchanged with a test made slower on purpose, which flips the
+real order.
+
+What it found first: a `crucible.php` that throws ended the run as an uncaught fatal with a stack
+trace, from every command that loads it. The Loader now reports it — `crucible.php could not be
+loaded: RuntimeException: … (line 5)`, exit 1. ✓ `LoaderTest` (failed before).
+
+### D-136: PHPDoc at run time — measured, and nothing built
+
+The research note's largest idea was checking a project's PHPDoc types against the real values its
+tests pass (typeguard's pytest plugin, for PHP). TypePHP already does it — Composer-autoloader
+instrumentation of parameter, return and property PHPDoc types, throwing on a violation — so the
+plan was to orchestrate it, and to measure before deciding what, if anything, Crucible adds.
+
+Measured on spatie/laravel-data (a DTO library, PHPDoc-typed throughout) with TypePHP 0.10.9
+(released 2026-09-24):
+
+- **Calls from the tests checked** (its default `include`): the run stopped at discovery. TypePHP
+  flagged `Exists::__construct(where: ['fake'])` in the suite's own dataset — a negative test that
+  passes an invalid value on purpose, to assert the library's `InvalidArgumentException` later. The
+  PHPDoc is right and the test is right; enforcing contracts on calls a test makes breaks exactly the
+  tests that exercise error paths.
+- **Only the library's own calls checked** (`include: ['src/**']`): the run could not start.
+  TypePHP's rewrite of `src/Support/DataContainer.php` does not compile ("Cannot use isset() on the
+  result of an expression") — the original line, `isset(static::$instance)`, is valid.
+
+So Crucible adds nothing now: no switch, no recipe. Two lessons are kept: a run-time contract check
+belongs on the code under test, never on the calls a test makes; and the value of the idea stands —
+the first run found a real boundary where a declared type and a real value disagree.
+
+What the measurement did change: the dataset that threw at discovery was an uncaught fatal for the
+whole run, and is now its own test's failure (D-133).
+
+
+### D-137: one run, one reading — the revision that removed the second copies
+
+D-124..D-136 each added a feature; read together, several did the same thing in more than one
+place, and some of those copies disagreed. This revision took each concept to one implementation.
+Where one of the copies was better, the others were raised to it.
+
+**Running PHPStan.** Four places located the binary, decided the extension include, spawned the
+process and read the JSON. One of them was lint-inline, and it read stdout then stderr from two
+pipes: the order that blocks once a child fills the pipe nobody is reading. The five tests that
+prove the extension had copies too, with the same two-pipe read. Now there is one path.
+`Phpstan::analyse()` writes output to files and reads the report once. `PhpstanNeon::analysis()`
+renders the configuration Crucible writes for itself. The tests reach both through one helper. The
+same measure removed a second divergence. PHPStan can report an error in no file: a broken include,
+an unreadable path. lint-inline dropped such errors and printed "clean"; type tests made them an
+error. Both now report them.
+
+**Narrowing.** The Pest matchers carried their own type table beside `AssertConditions` (D-049), so
+`toBeString()` and `assertIsString()` could answer differently about the same guarantee. Each type
+matcher is now its assertion, translated by `AssertConditions`. The chain's value and the variable
+passed to `expect()` go through the same function. `toBeList()` was the better copy: a list of the
+value's elements, sound on an array type that can be empty. So `assertIsList()` now reads that way
+too. phpstan-phpunit's answer there is `*NEVER*`, which is unsound because the empty array is both,
+and probe 30 records it as a named divergence. `toBeArray()` now answers PHPStan's own `is_array()`
+reading, `array<mixed, mixed>`, the same as phpstan-phpunit's `assertIsArray()`. pest-plugin-phpstan's
+`array<int|string, mixed>` is recorded beside it. Where the two incumbents disagree with each
+other, Crucible gives both dialects one answer. The two assert extensions had identical bodies and
+now call one method. `assertMatchesShape()` intersects with the value, as `toMatchShape()` does,
+instead of replacing it.
+
+**Folding results in.** The Vitest runner and the type-test runner each emitted, counted, and
+reported a suite that could not run on their own. `FoldIn` does it once, and `RunSummary::of()`
+turns an outcome into a tally.
+
+**Harvested from PHPStan's own test harness** (`TypeInferenceTestCase`, `FileAssertRule`). Type
+tests read the whole assertion family: `assertNativeType()`, `assertSuperType()` and
+`assertVariableCertainty()` were not tests, and a mismatch on one landed in the file's catch-all
+entry. A `*.types.php` file with no assertion is now the file's own error, because a type test that
+tests nothing is not a pass. Taken from the harness's rules, not its code: it runs PHPStan inside a
+PHPUnit process, and type tests run it as a child.
+
+**Smaller copies.** The conformance scripts share `run_process()`, which moved out of `run.php`, so
+the CLI harness no longer reads two pipes either. Probe 30 analyses through `Phpstan::analyse()`.
+TypeTestRunner skips tokens with `PhpToken::isIgnorable()`, as ShapeMutator does. `TypeExpression`
+types each part by kind (`$name`, `$literal`, `$min`/`$max`) instead of one `mixed` value, built
+through named constructors.
+
+**Imports, read as PHP reads them.** The same revision measured `UsesResolver` (D-050, D-067): a
+group import (`use Tests\{TestCase, Other};`) or a comma list (`use A, B;`) fell through to the
+namespace prefix, so a Pest file that imported its base class that way gave every closure a `$this`
+of a class that does not exist. Its import reader now follows the grammar: groups, lists, aliases
+inside groups, and `function`/`const` entries skipped inside a group as they are outside one.
+PHP-Parser's name resolver was the first choice and was measured out. PHPStan exposes only its own
+namespace to other processes, so the resolver could then be tested only by spawning PHPStan.
+
+**One vocabulary for the chain's steps.** The chain's value and the variable each kept a list of the
+steps that change the subject, and the lists had drifted: one said `each`, the other did not. Under
+that split, `expect($list)->each()->toBeString()` typed the chain `string` and a second matcher
+after `->each` typed it `*NEVER*`, while the variable threw away what `toBeArray()` had proved
+before the spread. `ExpectationSteps` now says what each step does to the matchers after it:
+`and()` and `json()` start another subject; `->each` and `each()` without a callback spread over the
+items, to the end of the statement; `each($callback)`, `when()`, `unless()` and `sequence()` keep
+the value. Both extensions read it, and a step that ends the reading keeps what came before it.
+Probe 30 records the one row where that says more than the incumbent (`pest.andAborts.subject`).
+
+**Measured with Crucible's own mutation testing.** The new code that runs in process was
+mutation-tested: 74.4% of 371 covered mutants were killed. The survivors were tests that ran a line
+without checking it, and three were defects:
+- A colon before a marker's reason lost the reason in the declaration form and hid the marker in
+  the line form, although `reason()` was written to strip that colon.
+- `Gen::of('non-empty-array<numeric-string, int>')` drew `[]`: every key it drew was one PHP
+  rewrites to an int, so it was dropped. A non-empty type now draws again, and is refused when no
+  array can fill it.
+- A one-member union branch in `TypeExpression` was dead code, because the parser never builds one.
+  The branch is gone.
+
+The re-run raised the score to 84.5%, and its survivors found a fourth defect, in the mutation
+runner itself. `EquivalentMarkers` still had 26 survivors that the exact-ranges test plainly kills:
+applied by hand, the test fails; run by `crucible mutate`, it passed. The cold worker arms the
+mutated class's autoloader before discovery, and the loader was never asked for the class. Discovery
+had already `require`d the file, because the inline dialect's pre-filter took any `@crucible`
+substring for a doctest, and the file's own docblock says `@crucible-equivalent`. A loaded class
+cannot be replaced, so every mutant of any file that declares an equivalent mutant read as escaped:
+the feature defeated the score it was built to clean. The pre-filter now uses the doctest grammar,
+one pattern (`InlineBuilder::DOCTEST`) that the builder and the PHPStan shadow also read, where
+there had been three copies.
+
+The rest became tests of the edges the survivors named: range bounds, quoted and integer shape keys,
+the exact span `ShapeMutator` drops, and the refusal position.
+
+**The gates finish.** `composer lint` passed its 300-second Composer limit on the full tree:
+Pint costs about 0.8 s a file here. It now runs in parallel against a cache (`.pint.cache`),
+without the limit: 40 s cold, 7 s warm. The fixture trees whose line numbers are the expected
+output (probe 30's fixture, the CLI projects) are excluded, like the arch fixture. Rector now covers
+the conformance code that phpstan.neon analyses. Its one wrong suggestion there, `isset` to
+`property_exists` on a `SimpleXMLElement`, never applied, and one rewrite it produced did not parse
+(`'\is_string'` became `\\is_string(...)`); both were caught by running the scripts.
+`composer analyse:matchers` had the same limit and a 656-second run, so it could not finish through
+Composer either; it and `analyse:arch` now run without the limit. Its first complete run found a
+test that depends on speed: `MapViewTest` read "the last write" as the turned page. That is true
+only while the redraw throttle swallows every frame after the turn, and under coverage it does not.
+The test now asserts the latest range drawn, which holds at any speed.
+
+**The reports people read, and Crucible's own.** The logo comes from one place, `Version::logo()`
+(`assets/crucible.svg`, which ships), and appears only where a person reads the report: the HTML
+coverage pages and the testdox page, embedded so each stays one file, and the PDF, beside the title.
+The machine formats stay exactly as the incumbents' writers make them. `PdfRenderer` draws a
+masthead only when it is given one, so its layout tests still test layout. The PDF's title line holds
+the logo, the title and the verdict badge, centred on one height, with the byline beneath it as a
+quiet paragraph. The testdox page shows the same verdict, decided by the same `Badge::forRun()`.
+Rendering them found two defects:
+- `PdfPrimitives::line()`, documented as writing "one flowing line", never flowed: a long
+  paragraph ran off the page. It now wraps through the `flow()` the report already had.
+- `--log-pdf` and `--report pdf:…` wrote into one map keyed by format, so one path was dropped
+  without a word. Two paths for one format are now refused, naming both.
+
+Crucible's own suite is shown on the site in every format, as a sample: `.github/scripts/reports.php`
+runs it once, writes each format into one directory and an index from what the run actually
+produced, and the maintainer copies it to the site's `reports/latest/`. Built offline on purpose — a
+sample needs no deploy key and no release job. The six formats that record absolute file paths
+(Clover, OpenClover, Cobertura, Crap4J, coverage XML, coverage PHP) stay out of it — their paths
+would be the maintainer's machine — and the index names them and says why.
+
+**Declined, with the reason.**
+- EquivalentMarkers keeps its own scan. `SourceAnalysis` knows class methods, and a marker covers
+  any declaration, so a split would make two branches.
+- Discovery was not taught to exclude `*.types.php`. It already routes by content, and a types file
+  is neither a class nor Pest; the test written for that change passed on the old code, so the
+  change had no case.
+- The agreement test's run-time corpus now travels by `require` (D-107), not `eval()`. The one eval
+  point stays `GeneratedCode`.
+
+**Gates.** Full PHPStan went from 21 errors to none. One Rector rewrite was refused: handing a
+cause's code on in `Loader`, which catches any `Throwable`. A `PDOException`'s code is a string, and
+the rewrite turned a configuration that cannot reach its database into a fatal `TypeError`. The code
+is handed on only when it is an int. The test that proves it fails on the rewrite.
+
 ---
 
 ## Closing the planned record

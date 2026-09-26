@@ -12,9 +12,7 @@ namespace LucianoPereira\Crucible\PHPStan;
 
 use LucianoPereira\Crucible\Assert\Assert;
 use Override;
-use PhpParser\Node\Expr\ConstFetch;
 use PhpParser\Node\Expr\StaticCall;
-use PhpParser\Node\Name;
 use PHPStan\Analyser\Scope;
 use PHPStan\Analyser\SpecifiedTypes;
 use PHPStan\Analyser\TypeSpecifier;
@@ -33,6 +31,8 @@ final class AssertStaticMethodTypeSpecifyingExtension implements StaticMethodTyp
 {
     private TypeSpecifier $typeSpecifier;
 
+    public function __construct(private readonly ExpectationNarrowing $narrowing) {}
+
     #[Override]
     public function setTypeSpecifier(TypeSpecifier $typeSpecifier): void
     {
@@ -49,18 +49,12 @@ final class AssertStaticMethodTypeSpecifyingExtension implements StaticMethodTyp
     public function isStaticMethodSupported(MethodReflection $staticMethodReflection, StaticCall $node, TypeSpecifierContext $context): bool
     {
         // Assertions narrow as statements, never inside a condition.
-        return $context->null() && AssertConditions::supports($staticMethodReflection->getName());
+        return $context->null() && ExpectationNarrowing::readsAssertion($staticMethodReflection->getName());
     }
 
     #[Override]
     public function specifyTypes(MethodReflection $staticMethodReflection, StaticCall $node, Scope $scope, TypeSpecifierContext $context): SpecifiedTypes
     {
-        $condition = AssertConditions::condition($staticMethodReflection->getName(), $node->getArgs());
-
-        // No sound condition (named or unpacked arguments): narrow
-        // from `true`, which specifies nothing.
-        $condition ??= new ConstFetch(new Name('true'));
-
-        return $this->typeSpecifier->specifyTypesInCondition($scope, $condition, TypeSpecifierContext::createTruthy());
+        return $this->narrowing->afterAssertion($staticMethodReflection->getName(), $node->getArgs(), $scope, $this->typeSpecifier);
     }
 }

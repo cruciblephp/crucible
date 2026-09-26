@@ -83,6 +83,19 @@ reported rather than silently doing nothing.
 | `--test-id-filter-file <file>` | Only the ids listed in the file, one per line (`#` comments allowed) |
 | `--test-files-file <file>` | Only the files listed in the file, absolute or working-directory-relative |
 
+**The folded JavaScript suite.** A `->vitest()` suite is named `vitest` (or what its `name:` says),
+and `--testsuite` and `--exclude-testsuite` select it like any PHP suite: `--exclude-testsuite vitest`
+runs the PHP tests alone, `--testsuite vitest` the JS tests alone. An option that only selects PHP
+tests — `--filter`, `--group`, `--covers`, `--uses`, `--requires-ext`, the test-id and test-file lists,
+`--todos` — leaves the JS suite out unless `--testsuite` names it, and prints a line saying so, so
+arming one PHP test never waits on the whole JS suite. Named, the suite takes `--filter` through to
+Vitest as its own test-name pattern: `--testsuite unit,vitest --filter cart` runs the matching tests of
+both, and the JS tests the pattern leaves out are not reported at all.
+
+**Type tests** (`->typeTests('tests/Types')`) are a folded suite too, named `types`, with the same
+rules: `--exclude-testsuite types` leaves the PHPStan analysis out of a quick run, `--testsuite types`
+runs only it, and a PHP-only selection leaves it out with a line saying so.
+
 `--covers App\Cart` matches `#[CoversClass(Cart::class)]` and also
 `#[CoversMethod(Cart::class, 'add')]`; naming the method as `App\Cart::add` matches only the
 latter. `*.pest.php` and `*.crucible.php` files are always discovered whatever `--test-suffix`
@@ -259,6 +272,13 @@ without the package fails naming the package rather than fataling on a missing c
 
 The plugin never decides anything: it reports the clones it found against the threshold it was given,
 and Crucible owns the verdict, the message and the exit-code vote (DESIGN.md D-078).
+
+Duplication that is deliberate design is marked where it lives, and the check does not count it:
+`@phpcpd-ignore-clone <reason>` on the declaration (one side of the pair is enough), or a
+`// phpcpd-ignore-start` … `// phpcpd-ignore-end` region. With the markers in place, `maxClones: 0` holds.
+A phpcpd-next acknowledgment ledger ("we know, not this quarter") does not change the count:
+phpcpd-next's own rule is that an acknowledged clone is still reported, still counted, and still gates,
+and the check keeps the tool's rule rather than inventing a second one.
 
 ---
 

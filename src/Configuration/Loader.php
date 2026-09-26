@@ -12,10 +12,12 @@ namespace LucianoPereira\Crucible\Configuration;
 
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+use Throwable;
 
 use function array_any;
 use function get_debug_type;
 use function is_file;
+use function is_int;
 use function sprintf;
 
 /**
@@ -36,7 +38,26 @@ final readonly class Loader
     {
         $path = $this->locate($workingDirectory, $explicitPath);
 
-        $result = require $path;
+        // Loading is a require, so whatever the file throws — an exception,
+        // a ParseError from a typo — would escape as a fatal with a stack
+        // trace. It is a configuration that cannot load, and says so.
+        try {
+            $result = require $path;
+        } catch (Throwable $throwable) {
+            // The cause's code, as every rethrow in Crucible hands it on —
+            // unless it is not an int: this catches any Throwable, and a
+            // PDOException's code is a string ('HY000') that would throw a
+            // TypeError from this handler instead of the message below.
+            $code = $throwable->getCode();
+
+            throw new ConfigurationException(sprintf(
+                '%s could not be loaded: %s: %s (line %d)',
+                $path,
+                $throwable::class,
+                $throwable->getMessage(),
+                $throwable->getLine(),
+            ), is_int($code) ? $code : 0, $throwable);
+        }
 
         if ($result instanceof Builder) {
             $result = $result->build();

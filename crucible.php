@@ -13,6 +13,8 @@ return Crucible::configure()
     // The documented examples are executable: they run in the ordinary
     // suite, so every example in MANUAL.md is proven rather than asserted.
     ->testSuite('examples', 'examples')
+    // The type-test example runs too, through PHPStan (D-130).
+    ->typeTests('examples/07-type-tests')
     ->source(include: ['src'])
     // The browser tier, pointed at the gitignored oracle install;
     // tests that visit() skip themselves when it is absent.

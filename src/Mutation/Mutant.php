@@ -29,7 +29,9 @@ final readonly class Mutant
      * @param non-empty-string $class         the FQCN the file declares — the autoload key the applier intercepts
      * @param positive-int     $line          the mutated line
      * @param non-empty-string $mutatorId     which mutator produced it (e.g. "arithmetic:+→-")
-     * @param string           $mutatedSource the complete mutated file contents
+     * @param string            $mutatedSource the complete mutated file contents
+     * @param ?non-empty-string  $equivalent    the reason a marker in the source declares this mutant equivalent
+     *                                          (D-134): generated and counted, never run
      */
     public function __construct(
         public string $file,
@@ -37,5 +39,6 @@ final readonly class Mutant
         public int $line,
         public string $mutatorId,
         public string $mutatedSource,
+        public ?string $equivalent = null,
     ) {}
 }

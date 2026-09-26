@@ -10,9 +10,17 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\CLI;
 
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+
 use function array_splice;
 use function explode;
+use function file_get_contents;
 use function implode;
+use function in_array;
+use function is_array;
+use function is_dir;
+use function is_file;
+use function json_decode;
 use function preg_match;
 use function str_contains;
 use function str_ends_with;
@@ -34,15 +42,13 @@ final readonly class PhpstanNeon
      * A fresh phpstan.neon: the extension wired, the paths taken
      * from what the crucible configuration already declares.
      *
-     * @param non-empty-string       $include
+     * @param ?non-empty-string      $include null = the installer wires it
      * @param list<non-empty-string> $paths
      */
-    public static function create(string $include, array $paths): string
+    public static function create(?string $include, array $paths): string
     {
         $lines = [
-            'includes:',
-            '    - ' . $include,
-            '',
+            ...self::includes($include === null ? [] : [$include]),
             'parameters:',
             '    # Crucible\'s own position: max, honestly earned. Lower it to',
             '    # get started on an existing suite, raise it back as the',
@@ -56,6 +62,72 @@ final readonly class PhpstanNeon
         }
 
         return implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * A configuration Crucible writes for its own analysis — type tests
+     * (D-130), lint-inline's shadow files (D-052) — never for a person to
+     * edit: the extension include, then each parameter, a list parameter
+     * as a neon list. An empty list is left out; PHPStan reads an empty
+     * `paths:` as null and refuses it.
+     *
+     * @param list<string>                                  $includes   none when phpstan/extension-installer loads the extension
+     * @param array<non-empty-string, string|list<string>> $parameters
+     * @param list<class-string>                            $rules      rules registered on their own, outside any include
+     */
+    public static function analysis(array $includes, array $parameters, array $rules = []): string
+    {
+        $lines = [...self::includes($includes), 'parameters:'];
+
+        foreach ($parameters as $name => $value) {
+            if (!is_array($value)) {
+                $lines[] = '    ' . $name . ': ' . $value;
+
+                continue;
+            }
+
+            if ($value !== []) {
+                $lines[] = '    ' . $name . ':';
+
+                foreach ($value as $item) {
+                    $lines[] = '        - ' . $item;
+                }
+            }
+        }
+
+        if ($rules !== []) {
+            $lines = [...$lines, '', 'rules:'];
+
+            foreach ($rules as $rule) {
+                $lines[] = '    - ' . $rule;
+            }
+        }
+
+        return implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * The include block. Crucible's extension is left out when
+     * phpstan/extension-installer loads it (D-127) — an include written
+     * as well loads it twice.
+     *
+     * @param list<string> $includes
+     *
+     * @return list<string>
+     */
+    private static function includes(array $includes): array
+    {
+        if ($includes === []) {
+            return [];
+        }
+
+        $lines = ['includes:'];
+
+        foreach ($includes as $include) {
+            $lines[] = '    - ' . $include;
+        }
+
+        return [...$lines, ''];
     }
 
     /**
@@ -106,5 +178,33 @@ final readonly class PhpstanNeon
         $prefix = "includes:\n    - " . $include . "\n\n";
 
         return $prefix . $existing . (str_ends_with($existing, "\n") || $existing === '' ? '' : "\n");
+    }
+
+    /**
+     * Whether phpstan/extension-installer is installed and has not been
+     * told to skip Crucible (its `ignore` list in the project's
+     * composer.json). When it has, the installer loads extension.neon
+     * (D-127), and a configuration that includes it as well is refused
+     * by PHPStan: a file included twice.
+     *
+     * The working directory's vendor/, not Composer\InstalledVersions:
+     * that answers for the autoloader this process started from, which
+     * is the project's only when Crucible runs from the project's own
+     * vendor/bin. The question here is about the project being analysed.
+     */
+    public static function installerLoadsExtension(WorkingDirectory $workingDirectory): bool
+    {
+        if (!is_dir($workingDirectory->path . '/vendor/phpstan/extension-installer')) {
+            return false;
+        }
+
+        $manifest = is_file($workingDirectory->path . '/composer.json')
+            ? json_decode((string) file_get_contents($workingDirectory->path . '/composer.json'), true)
+            : null;
+        $extra     = is_array($manifest) && is_array($manifest['extra'] ?? null) ? $manifest['extra'] : [];
+        $installer = is_array($extra['phpstan/extension-installer'] ?? null) ? $extra['phpstan/extension-installer'] : [];
+        $ignored   = is_array($installer['ignore'] ?? null) ? $installer['ignore'] : [];
+
+        return !in_array('cruciblephp/crucible', $ignored, true);
     }
 }

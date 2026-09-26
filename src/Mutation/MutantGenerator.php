@@ -40,6 +40,7 @@ final readonly class MutantGenerator
             new ArithmeticMutator(),
             new ComparisonMutator(),
             new LogicalMutator(),
+            new ShapeMutator(),
         ];
     }
 
@@ -52,11 +53,12 @@ final readonly class MutantGenerator
     public function generate(string $file, string $class, string $source): array
     {
         $tokens  = array_values(PhpToken::tokenize($source));
+        $markers = EquivalentMarkers::scan($source);
         $mutants = [];
 
         foreach ($this->mutators as $mutator) {
             foreach ($mutator->mutate($tokens) as $mutation) {
-                $mutants[] = new Mutant($file, $class, $mutation->line, $mutator->id(), $this->rebuild($tokens, $mutation));
+                $mutants[] = new Mutant($file, $class, $mutation->line, $mutator->id(), $this->rebuild($tokens, $mutation), $markers->reasonFor($mutation->line));
             }
         }
 
@@ -71,6 +73,10 @@ final readonly class MutantGenerator
         $source = '';
 
         foreach ($tokens as $index => $token) {
+            if ($index > $mutation->index && $index < $mutation->index + $mutation->span) {
+                continue;
+            }
+
             $source .= $index === $mutation->index ? $mutation->replacement : $token->text;
         }
 

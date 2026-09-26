@@ -8,7 +8,10 @@
         "xunit",
         "phpunit-compatible",
         "laravel",
-        "test-framework"
+        "test-framework",
+        "phpstan",
+        "phpstan-extension",
+        "static analysis"
     ],
     "homepage": "https://cruciblephp.com",
     "license": "MIT",
@@ -55,6 +58,11 @@
         "crucible"
     ],
     "extra": {
+        "phpstan": {
+            "includes": [
+                "phpstan/extension.neon"
+            ]
+        },
         "laravel": {
             "providers": [
                 "LucianoPereira\\Crucible\\Bridge\\Laravel\\CrucibleServiceProvider"
@@ -70,8 +78,14 @@
         "rector/rector": "^2.5"
     },
     "scripts": {
-        "lint": "pint --test",
-        "lint:fix": "pint",
+        "lint": [
+            "Composer\\Config::disableProcessTimeout",
+            "pint --test --parallel --cache-file=.pint.cache"
+        ],
+        "lint:fix": [
+            "Composer\\Config::disableProcessTimeout",
+            "pint --parallel --cache-file=.pint.cache"
+        ],
         "analyse": "phpstan analyse --memory-limit=1G",
         "analyse:oracles": "php phpstan/oracles.php",
         "analyse:generated": "php phpstan/generated.php",
@@ -79,8 +93,15 @@
         "refactor:check": "rector --dry-run",
         "test": "php crucible",
         "conformance": "php conformance/run.php",
-        "analyse:matchers": "php conformance/probes/28-pest-matchers/ownership.php",
-        "analyse:arch": "php conformance/probes/28-pest-matchers/compare-arch.php",
+        "conformance:cli": "php conformance/cli/run.php",
+        "analyse:matchers": [
+            "Composer\\Config::disableProcessTimeout",
+            "php conformance/probes/28-pest-matchers/ownership.php"
+        ],
+        "analyse:arch": [
+            "Composer\\Config::disableProcessTimeout",
+            "php conformance/probes/28-pest-matchers/compare-arch.php"
+        ],
         "check": [
             "@lint",
             "@refactor:check",

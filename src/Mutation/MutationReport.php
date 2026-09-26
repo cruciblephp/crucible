@@ -41,11 +41,13 @@ final readonly class MutationReport
     }
 
     /**
-     * Mutants a test exercised — everything but the not-covered ones.
+     * Mutants a test exercised — everything but the not-covered ones and
+     * the ones declared equivalent (D-134), which no test could kill and
+     * so do not count against the score.
      */
     public function covered(): int
     {
-        return $this->total() - $this->count(MutationOutcome::NotCovered);
+        return $this->total() - $this->count(MutationOutcome::NotCovered) - $this->count(MutationOutcome::Equivalent);
     }
 
     /**

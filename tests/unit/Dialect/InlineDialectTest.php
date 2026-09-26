@@ -58,6 +58,16 @@ final class InlineDialectTest extends TestCase
         ));
     }
 
+    public function testOnlyARealDoctestMakesDiscoveryLoadASourceFile(): void
+    {
+        // A file discovery loads has its classes declared before any test
+        // asks for them, so a mutated class can no longer take their place.
+        // `@crucible-equivalent` made every mutant of a file read escaped.
+        self::assertFalse(InlineBuilder::hasMarkers("<?php\n/**\n * @crucible-equivalent the loop ends first\n */\nfunction f(): int { return 1; }\n"));
+        self::assertFalse(InlineBuilder::hasMarkers("<?php\n\$x = 1; // crucible-equivalent-line wording\n"));
+        self::assertTrue(InlineBuilder::hasMarkers("<?php\n/**\n * @crucible f() === 1\n */\nfunction f(): int { return 1; }\n"));
+    }
+
     public function testReturnsClaimComparesWithEqualitySemantics(): void
     {
         $result = $this->run('Inline/Temperature.php', 'Temperature::toFahrenheit#check 1');

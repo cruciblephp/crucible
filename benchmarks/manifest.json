@@ -72,6 +72,29 @@
             "status": "measured",
             "platform": {
                 "extensions": []
+            },
+            "speed": {
+                "measured": "2026-09-26",
+                "claim": "On this suite, Crucible 1.1.0 ran the same 1338 tests in 81.4% less wall time than Crucible 1.0.1 (median 61.08s vs 328.52s, 5.38x). Most of the gap is discovery: 1.0.1 spent about 185-210s before its first test (D-133).",
+                "method": "One checkout, one vendor/: spatie/laravel-data 4.23.0 set up by this case's steps, Crucible reached through vendor/cruciblephp/crucible, switched between the published 1.0.1 (composer create-project cruciblephp/crucible:1.0.1) and 1.1.0 before each run. PHP 8.5.10 CLI with -d xdebug.mode=off (xdebug stays loaded, as it is on this machine) and -d opcache.enable_cli=0, sequential (no --parallel), output to a file so no TTY view is drawn, .crucible.cache removed before every run. One untimed warm-up of each version, then three rounds alternating 1.0.1, 1.1.0. Wall-clock from process start to exit.",
+                "commands": {
+                    "crucible": "php -d xdebug.mode=off -d opcache.enable_cli=0 vendor/bin/crucible"
+                },
+                "seconds": {
+                    "crucible-1.0.1": [
+                        299.48,
+                        328.52,
+                        344.19
+                    ],
+                    "crucible-1.1.0": [
+                        61.08,
+                        52.61,
+                        66.47
+                    ]
+                },
+                "verified": "Every timed run exit 0 with 'Tests: 1338. Passed: 1326, Failed: 0, Errors: 0, Skipped: 11, Incomplete: 1' on both versions. The slowest 1.1.0 run (66.47s) beat the fastest 1.0.1 run (299.48s) by 4.5x. 1.0.1 slowed each round (299 -> 328 -> 344s) where 1.1.0 did not; the median is reported for that reason.",
+                "scope": "One suite, one machine, two versions of Crucible. It says 1.1.0 is faster than 1.0.1 on a Pest suite built on Orchestra Testbench, where 1.0.1's discovery and per-class lifecycle cost the most; it is not a comparison with Pest.",
+                "counts_note": "With xdebug in develop mode the same checkout reports 1324 passed and 3 incomplete, the parity recorded above; with xdebug off both versions report 1326 passed and 1 incomplete. The two tests that move depend on the xdebug mode, not on the version."
             }
         },
         "phpcpd": {

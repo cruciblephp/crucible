@@ -17,19 +17,12 @@ use PhpParser\Node\Expr\ArrowFunction;
 use PhpParser\Node\Expr\Closure;
 use PhpParser\Node\Expr\FuncCall;
 use PhpParser\Node\Expr\MethodCall;
-use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
 use PhpParser\Node\Name;
 use PHPStan\Analyser\Scope;
 use PHPStan\Rules\Rule;
-use PHPStan\Rules\RuleErrorBuilder;
 use PHPStan\Type\ObjectType;
 use PHPStan\Type\Type;
-use PHPStan\Type\VerbosityLevel;
-
-use function count;
-use function is_string;
-use function sprintf;
 
 /**
  * The acceptance half the closure-type extension point cannot do
@@ -37,8 +30,10 @@ use function sprintf;
  * DECLARED parameter type cannot accept what its generator produces
  * is reported — `forAll(Gen::int())->check(fn (string $s) => ...)`
  * is wrong at the keyboard, not at the first drawn case. Undeclared
- * parameters stay the inference extension's job; extra parameters
- * beyond the generators are reported too (they would draw nothing).
+ * parameters stay the inference extension's job; a required parameter no
+ * generator feeds is reported too. The acceptance itself is DataRows',
+ * shared with every dataset form (D-137), so a draw and a row are judged
+ * by one rule.
  *
  * @implements Rule<Node\Expr\CallLike>
  */
@@ -53,56 +48,43 @@ final readonly class PropertyParameterRule implements Rule
     #[Override]
     public function processNode(Node $node, Scope $scope): array
     {
-        [$types, $closure, $spelling] = $this->propertyCall($node, $scope);
+        $call = $this->propertyCall($node, $scope);
+
+        if ($call === null) {
+            return [];
+        }
+
+        [$types, $closure, $spelling] = $call;
 
         if ($types === null || $closure === null) {
             return [];
         }
 
-        $errors     = [];
-        $parameters = $closure->getParams();
+        // One acceptance rule for every value that feeds a closure (D-137):
+        // a generator's draw here, a dataset row there. This rule once used
+        // its own, stricter reading and reported Gen::int() into a float
+        // parameter, which PHP passes even under strict types.
+        $values = [];
 
-        if (count($parameters) > count($types)) {
-            $errors[] = RuleErrorBuilder::message(sprintf(
-                '%s declares %d parameters but only %d generator(s) feed it.',
-                $spelling,
-                count($parameters),
-                count($types),
-            ))->identifier('crucible.propertyArity')->line($closure->getStartLine())->build();
+        foreach ($types as $position => $type) {
+            $values[$position] = [$type, $closure->getStartLine()];
         }
 
-        foreach ($parameters as $index => $parameter) {
-            if ($parameter->type === null || !isset($types[$index])) {
-                continue;
-            }
-
-            $declared = $scope->getFunctionType($parameter->type, false, false);
-            $expected = $types[$index];
-
-            if ($declared->isSuperTypeOf($expected)->yes()) {
-                continue;
-            }
-
-            $name = $parameter->var instanceof Variable && is_string($parameter->var->name)
-                ? '$' . $parameter->var->name
-                : sprintf('#%d', $index + 1);
-
-            $errors[] = RuleErrorBuilder::message(sprintf(
-                '%s parameter %s declares %s, but its generator produces %s.',
-                $spelling,
-                $name,
-                $declared->describe(VerbosityLevel::typeOnly()),
-                $expected->describe(VerbosityLevel::typeOnly()),
-            ))->identifier('crucible.propertyParameter')->line($parameter->getStartLine())->build();
-        }
-
-        return $errors;
+        return DataRows::check(
+            DataRows::fromNodes($closure->getParams(), $scope),
+            $values,
+            $spelling,
+            'its generator',
+            $closure->getStartLine(),
+            $scope,
+            'crucible.property',
+        );
     }
 
     /**
-     * @return array{?list<Type>, ?(ArrowFunction|Closure), string}
+     * @return ?array{?list<Type>, ?(ArrowFunction|Closure), non-empty-string} null when the node is neither call
      */
-    private function propertyCall(Node $node, Scope $scope): array
+    private function propertyCall(Node $node, Scope $scope): ?array
     {
         if ($node instanceof MethodCall
             && $node->name instanceof Identifier
@@ -138,6 +120,6 @@ final readonly class PropertyParameterRule implements Rule
             ];
         }
 
-        return [null, null, ''];
+        return null;
     }
 }

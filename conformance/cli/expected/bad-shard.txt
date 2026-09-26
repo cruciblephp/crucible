@@ -1,0 +1,10 @@
+argv: --shard 3/2
+exit: 1
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Configuration: <project>/crucible.php
+
+Option --shard expects M/N with 1 <= M <= N, got "3/2".
+--- stderr
+

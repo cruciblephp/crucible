@@ -16,6 +16,9 @@ crucible --testsuite examples
 | [`02-pest-dialect`](02-pest-dialect/basics.pest.php) | `test`/`it`/`describe`, hooks, `expect()` chains, datasets, `->fails()` |
 | [`03-doubles`](03-doubles/PaymentsTest.php) | Stubs vs mocks, expectations, defaults for unconfigured methods |
 | [`04-architecture`](04-architecture/rules.pest.php) | `arch()` rules — targeting, layering, `ignoring()` |
+| [`05-shapes`](05-shapes/shapes.pest.php) | `toMatchShape()` and `Gen::of()` from one PHPStan type string |
+| [`06-equivalent-mutants`](06-equivalent-mutants/InventoryTest.php) | Declaring a mutant no test can kill, with its reason |
+| [`07-type-tests`](07-type-tests/ids.types.php) | Type tests: `assertType()` and `crucible-type-error`, run through PHPStan |
 
 The architecture examples are not toys: they run against Crucible's own source, which is what
 `->source()` points at in this repository. If Crucible's layering drifts, those examples fail.

@@ -90,6 +90,12 @@ final class AliasNarrowingFixture extends \PHPUnit\Framework\TestCase
         )->check(function (string $wrong): void {}); // acceptance sentinel
 
         \property('sugar acceptance', \LucianoPereira\Crucible\Property\Gen::string(), function (int $alsoWrong): void {}); // acceptance sentinel
+
+        // Not a sentinel: PHP passes an int to a float parameter even
+        // under strict types, so this closure takes what its generator
+        // produces (D-137).
+        \LucianoPereira\Crucible\Property\Property::forAll(\LucianoPereira\Crucible\Property\Gen::int())
+            ->check(function (float $widened): void {});
     }
 
     private function half(int $value): int

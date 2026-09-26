@@ -38,6 +38,7 @@ use LucianoPereira\Crucible\Assert\Constraint\IsType;
 use LucianoPereira\Crucible\Assert\Constraint\LessThan;
 use LucianoPereira\Crucible\Assert\Constraint\LogicalNot;
 use LucianoPereira\Crucible\Assert\Constraint\MatchesRegularExpression;
+use LucianoPereira\Crucible\Assert\Constraint\MatchesShape;
 use LucianoPereira\Crucible\Assert\Constraint\ObjectHasProperty;
 use LucianoPereira\Crucible\Assert\Constraint\StringContains;
 use LucianoPereira\Crucible\Assert\Constraint\StringEndsWith;
@@ -124,8 +125,13 @@ use const FILTER_VALIDATE_URL;
  * not a modifier is a higher-order expectation: `expect($user)->name`
  * is `expect($user->name)`.
  *
- * @property-read Expectation $each
- * @property-read Expectation $not
+ * The value's type rides the chain for the analyser (D-128): see
+ * `ExpectationChainReturnTypeExtension`.
+ *
+ * @template-covariant TValue = mixed
+ *
+ * @property-read Expectation<TValue> $each
+ * @property-read Expectation<TValue> $not
  */
 final class Expectation
 {
@@ -198,6 +204,9 @@ final class Expectation
      */
     private bool $shouldReset = false;
 
+    /**
+     * @param TValue $value
+     */
     public function __construct(
         public readonly mixed $value,
     ) {}
@@ -298,10 +307,10 @@ final class Expectation
     {
         $this->assert(new IsJson());
 
-        /** @var string $json */
+        // IsJson has just refused anything but a JSON string.
         $json = $this->value;
 
-        return new self(json_decode($json, true));
+        return new self(is_string($json) ? json_decode($json, true) : null);
     }
 
     /**
@@ -498,6 +507,17 @@ final class Expectation
     public function toBeList(): self
     {
         return $this->assert(new IsList());
+    }
+
+    /**
+     * The value fits a PHPStan type string (D-131):
+     * `expect($json)->toMatchShape('array{id: positive-int, tags: list<string>}')`.
+     * Checked here at run time; narrowed to the same type for the
+     * analyser, the chain's value and the subject alike.
+     */
+    public function toMatchShape(string $shape): self
+    {
+        return $this->assert(new MatchesShape($shape));
     }
 
     public function toBeBool(): self

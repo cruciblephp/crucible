@@ -56,7 +56,7 @@ final class RunReportDocument
     {
         $blocks   = [new Heading(1, [new Text($title)])];
         $blocks[] = Badge::forRun($event->summary, $flaky);
-        $blocks[] = new Paragraph([new Text(sprintf('Crucible %s by %s', Version::NUMBER, Version::AUTHOR))]);
+        $blocks[] = new Paragraph([new Text(sprintf('Crucible %s by %s', Version::NUMBER, Version::AUTHOR))], quiet: true);
         $blocks[] = new Paragraph([new Text(self::strip($event))]);
         $blocks[] = self::proportionBar($event);
 

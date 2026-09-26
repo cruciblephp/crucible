@@ -1,0 +1,26 @@
+argv: 
+exit: 2
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Configuration: <project>/crucible.php
+
+.FES
+
+1) tests/MixedOutcomesTest.php::testFails [fail]
+Failed asserting that 2 is identical to 1.
+
+2) tests/MixedOutcomesTest.php::testErrors [error]
+boom
+
+3) tests/MixedOutcomesTest.php::testSkips [skip]
+not today
+
+Passed
+                                    tests      time   share
+tests                                   1    <t>s   <bar>
++- MixedOutcomes                        1    <t>s   <bar>
+
+Tests: 4. Passed: 1, Failed: 1, Errors: 1, Skipped: 1, Incomplete: 0, Risky: 0. Time: <t>s
+--- stderr
+

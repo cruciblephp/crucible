@@ -37,6 +37,19 @@ final readonly class RunSummary
         public int $untested = 0,
     ) {}
 
+    /** One test's outcome, as a tally. */
+    public static function of(Outcome $outcome): self
+    {
+        return match ($outcome) {
+            Outcome::Passed     => new self(passed: 1),
+            Outcome::Failed     => new self(failed: 1),
+            Outcome::Errored    => new self(errored: 1),
+            Outcome::Skipped    => new self(skipped: 1),
+            Outcome::Incomplete => new self(incomplete: 1),
+            Outcome::Risky      => new self(risky: 1),
+        };
+    }
+
     public function total(): int
     {
         return $this->passed + $this->failed + $this->errored

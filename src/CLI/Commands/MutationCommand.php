@@ -22,6 +22,7 @@ use LucianoPereira\Crucible\Exceptions\Exception;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Mutation\ColdMutantExecutor;
 use LucianoPereira\Crucible\Mutation\CoveringTestRunner;
+use LucianoPereira\Crucible\Mutation\EquivalentMarkers;
 use LucianoPereira\Crucible\Mutation\Mutant;
 use LucianoPereira\Crucible\Mutation\MutantApplier;
 use LucianoPereira\Crucible\Mutation\MutantGenerator;
@@ -390,8 +391,26 @@ final class MutationCommand
                 continue;
             }
 
-            foreach ($generator->generate($absolute, $class, $source) as $mutant) {
+            $fileMutants = $generator->generate($absolute, $class, $source);
+
+            foreach ($fileMutants as $mutant) {
                 $mutants[] = $mutant;
+            }
+
+            // A marker that declares nothing is reported, not trusted
+            // (D-134): one covering no mutant (the code moved or the
+            // mutators changed), or one giving no reason.
+            foreach (EquivalentMarkers::scan($source)->ranges as $range) {
+                $covers = array_filter($fileMutants, static fn(Mutant $m): bool => $m->line >= $range['from'] && $m->line <= $range['to']) !== [];
+
+                if ($range['reason'] === null || !$covers) {
+                    printf(
+                        '  STALE    %s:%d  crucible-equivalent %s' . PHP_EOL,
+                        $relative,
+                        $range['line'],
+                        $range['reason'] === null ? 'gives no reason, so declares nothing' : 'covers no mutant; remove it',
+                    );
+                }
             }
         }
 
@@ -594,13 +613,33 @@ final class MutationCommand
             print PHP_EOL;
         }
 
+        $equivalent = array_values(array_filter(
+            $report->verdicts,
+            static fn(MutationVerdict $verdict): bool => $verdict->outcome === MutationOutcome::Equivalent,
+        ));
+
+        // Declared equivalents are listed, never hidden (D-134): the
+        // decision stays in front of whoever reads the report.
+        foreach (array_slice($equivalent, 0, 20) as $verdict) {
+            printf('  EQUIVALENT  %s:%d  %s — %s' . PHP_EOL, $this->relativeTo($verdict->mutant->file, $workingDirectory), $verdict->mutant->line, $verdict->mutant->mutatorId, (string) $verdict->reason);
+        }
+
+        if (count($equivalent) > 20) {
+            printf('  … and %d more declared equivalent.' . PHP_EOL, count($equivalent) - 20);
+        }
+
+        if ($equivalent !== []) {
+            print PHP_EOL;
+        }
+
         printf(
-            'Killed: %d  Escaped: %d  Errored: %d  Timed out: %d  Not covered: %d' . PHP_EOL,
+            'Killed: %d  Escaped: %d  Errored: %d  Timed out: %d  Not covered: %d  Declared equivalent: %d' . PHP_EOL,
             $report->count(MutationOutcome::Killed),
             count($escaped),
             $report->count(MutationOutcome::Errored),
             $report->count(MutationOutcome::TimedOut),
             $report->count(MutationOutcome::NotCovered),
+            count($equivalent),
         );
         printf('MSI: %.1f%% over %d covered mutant(s).' . PHP_EOL, $report->score(), $report->covered());
 

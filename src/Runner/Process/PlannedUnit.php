@@ -25,6 +25,8 @@ final readonly class PlannedUnit
      * @param list<string> $dependsOn names this unit's tests depend on that no test of its own provides
      * @param list<string> $provides  names of its own tests that some other unit depends on
      * @param bool         $preserveGlobalState a test here asked for the parent's globals and constants
+     * @param bool         $isolated            the unit exists because its tests asked for their own process;
+     *                                          false for a --parallel unit, which is only a share of the work
      */
     public function __construct(
         public WorkUnit $unit,
@@ -32,6 +34,7 @@ final readonly class PlannedUnit
         public array $dependsOn = [],
         public array $provides = [],
         public bool $preserveGlobalState = false,
+        public bool $isolated = false,
     ) {}
 
     /**
@@ -39,6 +42,6 @@ final readonly class PlannedUnit
      */
     public function providing(array $provides): self
     {
-        return new self($this->unit, $this->expected, $this->dependsOn, $provides, $this->preserveGlobalState);
+        return new self($this->unit, $this->expected, $this->dependsOn, $provides, $this->preserveGlobalState, $this->isolated);
     }
 }

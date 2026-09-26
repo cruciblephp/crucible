@@ -1,0 +1,10 @@
+argv: --test-id-filter-file nope.txt
+exit: 1
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Configuration: <project>/crucible.php
+
+The listing file "nope.txt" does not exist.
+--- stderr
+

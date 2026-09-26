@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-09-25 (D-001..D-123). Every entry traces to a `DESIGN.md` decision
+_As of 2026-09-26 (D-001..D-137). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -282,6 +282,27 @@ against Crucible's own class only._
 | `TestCase::transformException()` exists and is applied as the incumbent applies it, so Orchestra Testbench test cases load instead of failing discovery with a fatal error | D-122 |
 | `PHPUnit\Framework\Constraint\LogicalNot` is aliased, so Laravel's `assertDatabaseMissing()` runs, and a framework constraint's failure reads as the incumbent's sentence, negated without touching the data it quotes | D-123 |
 | The `phpcpd-next/phpcpd` benchmark moved from v1.4 to v2.0, its latest release, and re-measured on 1.0.1: 710 of 710, against the incumbent's `OK (710 tests, 55330 assertions)` | `benchmarks/manifest.json` |
+
+## 1.1.0
+
+| Shipped | Records |
+|---|---|
+| A test run in its own process that writes to STDERR errors, with that text as the message, as under the incumbent — the output was dropped, silently. A `--parallel` worker's STDERR reaches the console as it would in process; fixture `12-separate-process` holds it against the real runner | D-124 |
+| The folded Vitest suite has a name (`vitest` by default): `--testsuite` and `--exclude-testsuite` select it, a PHP-only selection such as `--filter` leaves it out with a line saying so, and a named suite takes `--filter` through as `--testNamePattern`. `--list-suites` lists it | D-125 |
+| The console no longer prints OK over a failed run-scoped check | D-126 |
+| Crucible's PHPStan extension is declared to `phpstan/extension-installer`, which loads it with no include line; `crucible phpstan-init` knows, and names a manual include that would now load it twice | D-127 |
+| The PHPStan extension is held against phpstan-phpunit and pest-plugin-phpstan by probe 30 (a recorded table, re-proved against the live incumbents): `expect()` is generic and type matchers narrow the chain, `assertArrayHasKey`, `assertObjectHasProperty` and `assertContainsOnlyInstancesOf` narrow, and `check()`/`property()`/`table()` are declared by `phpstan/crucible-dialect.neon` instead of for every project | D-128 |
+| `expect($x)->toBeString();` narrows `$x` itself, negated forms too; dataset rows, `#[TestWith]`, `#[TestWithJson]`, `#[Check]` claims and `table()` rows are checked against the parameters they feed | D-129 |
+| Type tests: `assertType()` calls and `// crucible-type-error <identifier>` lines in `*.types.php` files are tests in the run, a folded suite named `types` | D-130 |
+| `toMatchShape()` and `assertMatchesShape()`: a PHPStan type string checked at run time and narrowed for the analyser, agreeing with PHPStan's reading on 81 values | D-131 |
+| `Gen::of('<type>')` draws values of a type string; `Gen::shape()`; minimum lengths for strings and lists | D-132 |
+| Pest files get their class's `setUpBeforeClass()`/`tearDownAfterClass()` in Pest's order; discovery no longer stalls with the real PHPUnit installed; a dataset that throws fails its own test instead of the run | D-133 |
+| Declared equivalent mutants (`@crucible-equivalent <reason>`, regions, lines), counted and listed, out of the score; `ShapeMutator` drops a returned array's keys one at a time | D-134 |
+| The command-line snapshot harness (`composer conformance:cli`); a configuration that throws is reported, not a fatal | D-135 |
+| PHPDoc checked at run time: measured with TypePHP 0.10.9, nothing built | D-136 |
+| One PHPStan run and one narrowing path: lint-inline reports errors PHPStan places in no file; each Pest type matcher narrows as its assertion does, and `assertIsList()` reads as `toBeList()`; type tests read PHPStan's whole assertion family and error on a file that asserts nothing; `uses()` and `pest()->in()` read group and comma-list imports as PHP does; a spread `each` leaves the value to the items in both the chain and the variable; `Gen::of()` refuses a non-empty type no array can fill | D-137 |
+| spatie/laravel-data's 1,338 tests in 61.08 s against 1.0.1's 328.52 s, median of three alternated runs: 5.4× faster, most of it discovery | `benchmarks/manifest.json` |
+| The reports people read carry the logo — HTML coverage, testdox, PDF — and a sample of Crucible's own suite is on the site, in every format that records no local path (`.github/scripts/reports.php`, cruciblephp.com/reports) | D-137 |
 
 ## Design inputs honored
 

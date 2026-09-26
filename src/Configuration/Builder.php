@@ -29,6 +29,7 @@ use LucianoPereira\Crucible\Reporting\TeamCityReporter;
 use LucianoPereira\Crucible\Reporting\TestDoxReporter;
 use LucianoPereira\Crucible\Runner\Backoff;
 use LucianoPereira\Crucible\Runner\RetryPolicy;
+use LucianoPereira\Crucible\Types\TypeTestSuite;
 use LucianoPereira\Crucible\Vitest\VitestSuite;
 
 use function array_is_list;
@@ -112,6 +113,9 @@ final class Builder
 
     /** @var list<VitestSuite> */
     private array $vitestSuites = [];
+
+    /** @var list<TypeTestSuite> */
+    private array $typeTestSuites = [];
 
     /** @var list<ImpactRule> */
     private array $impactRules = [];
@@ -719,12 +723,37 @@ final class Builder
      *
      *     ->vitest('resources/js')
      *
+     * The suite is named `vitest` unless told otherwise, and that name is
+     * what `--testsuite` and `--exclude-testsuite` select it by (D-125).
+     *
      * @param non-empty-string  $directory the JS project root (holds package.json and vitest)
      * @param ?non-empty-string $binary    the vitest executable; null = `<directory>/node_modules/.bin/vitest`
+     * @param non-empty-string  $name      the suite's name on the command line
      */
-    public function vitest(string $directory = '.', ?string $binary = null): self
+    public function vitest(string $directory = '.', ?string $binary = null, string $name = 'vitest'): self
     {
-        $this->vitestSuites[] = new VitestSuite($directory, $binary);
+        $this->vitestSuites[] = new VitestSuite($directory, $binary, name: $name);
+
+        return $this;
+    }
+
+    /**
+     * Type tests (D-130): every `assertType('list<int>', $value)` call in a
+     * `*.types.php` file under $directory is a test, and so is every line
+     * marked `// crucible-type-error <identifier>`. PHPStan analyses the
+     * files once — through the project's own phpstan.neon when there is
+     * one — and each assertion folds into the run with its own verdict.
+     *
+     *     ->typeTests('tests/Types')
+     *
+     * @param non-empty-string  $directory     where the *.types.php files live
+     * @param non-empty-string  $name          the suite's name on the command line
+     * @param ?non-empty-string $phpstan       the phpstan executable; null = vendor/bin/phpstan
+     * @param ?non-empty-string $configuration a phpstan configuration; null = phpstan.neon(.dist) when present
+     */
+    public function typeTests(string $directory = 'tests', string $name = 'types', ?string $phpstan = null, ?string $configuration = null): self
+    {
+        $this->typeTestSuites[] = new TypeTestSuite($directory, $name, $phpstan, $configuration);
 
         return $this;
     }
@@ -899,6 +928,7 @@ final class Builder
             commandGates: $this->commandGates,
             extensions: $this->extensions,
             vitest: $this->vitestSuites,
+            typeTests: $this->typeTestSuites,
             impactRules: $this->impactRules,
             reportFormats: $this->reportFormats,
             subscribers: $this->subscribers,

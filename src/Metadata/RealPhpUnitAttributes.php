@@ -20,6 +20,7 @@ use function basename;
 use function count;
 use function glob;
 use function in_array;
+use function is_array;
 use function is_int;
 
 /**
@@ -120,6 +121,16 @@ final class RealPhpUnitAttributes
      */
     private static function candidates(): array
     {
+        // The attribute files do not change during a run, and this is asked
+        // once per method of every test class: a glob per call was hundreds
+        // of thousands of them on a Pest suite over Laravel's TestCase,
+        // which never finished discovering.
+        static $memo = null;
+
+        if (is_array($memo)) {
+            return $memo;
+        }
+
         $files = glob(__DIR__ . '/../Attributes/*.php');
 
         $candidates = [];
@@ -137,7 +148,7 @@ final class RealPhpUnitAttributes
             $candidates[$name] = $crucibleClass;
         }
 
-        return $candidates;
+        return $memo = $candidates;
     }
 
     /**

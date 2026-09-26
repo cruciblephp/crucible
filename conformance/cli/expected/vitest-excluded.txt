@@ -1,0 +1,18 @@
+argv: --exclude-testsuite vitest
+exit: 0
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Configuration: <project>/crucible.php
+
+..
+
+Passed
+                                    tests      time   share
+tests                                   2    <t>s   <bar>
++- Calculator                           2    <t>s   <bar>
+
+Tests: 2. Passed: 2, Failed: 0, Errors: 0, Skipped: 0, Incomplete: 0, Risky: 0. Time: <t>s
+OK
+--- stderr
+

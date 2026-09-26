@@ -41,6 +41,20 @@ final readonly class HookPlanner
      */
     public static function forClass(ReflectionClass $class): HookPlan
     {
+        // A class's hooks are fixed once it is declared; Pest asks per test,
+        // and every test of a file shares one class (D-133). A readonly
+        // class holds no static property, so the memo is the method's.
+        /** @var array<class-string, HookPlan> $plans */
+        static $plans = [];
+
+        return $plans[$class->getName()] ??= self::plan($class);
+    }
+
+    /**
+     * @param ReflectionClass<object> $class
+     */
+    private static function plan(ReflectionClass $class): HookPlan
+    {
         $parser = new MetadataParser();
         $before = $preConditions = $postConditions = $after = [];
 

@@ -11,36 +11,32 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\CLI\Commands;
 
 use LucianoPereira\Crucible\CLI\CliOptions;
+use LucianoPereira\Crucible\CLI\Phpstan;
+use LucianoPereira\Crucible\CLI\PhpstanNeon;
 use LucianoPereira\Crucible\Configuration\Loader;
 use LucianoPereira\Crucible\Dialect\Inline\DoctestShadow;
 use LucianoPereira\Crucible\Exceptions\Exception;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Runner\TestDiscoverer;
 
+use function array_filter;
+use function array_map;
+use function array_values;
 use function count;
-use function fclose;
 use function file_get_contents;
 use function file_put_contents;
 use function glob;
-use function is_array;
 use function is_dir;
 use function is_file;
-use function is_int;
-use function is_resource;
 use function is_string;
-use function json_decode;
 use function mkdir;
 use function printf;
-use function proc_close;
-use function proc_open;
 use function str_replace;
 use function str_starts_with;
-use function stream_get_contents;
 use function strlen;
 use function substr;
 use function unlink;
 
-use const PHP_BINARY;
 use const PHP_EOL;
 
 /**
@@ -116,121 +112,60 @@ final class LintInlineCommand
             return 0;
         }
 
-        $include = null;
-
-        foreach (['vendor/cruciblephp/crucible/phpstan/extension.neon', 'phpstan/extension.neon'] as $candidate) {
-            if (is_file($workingDirectory->path . '/' . $candidate)) {
-                $include = $workingDirectory->path . '/' . $candidate;
-
-                break;
-            }
-        }
-
-        $neon = $include !== null ? "includes:\n    - " . $include . "\n\n" : '';
-        $neon .= "parameters:\n    level: max\n    paths:\n        - " . $shadowRoot
-            . "\n    tmpDir: " . $shadowRoot . '/.cache' . "\n";
-
         // The origin sources are scanned, not analyzed: the doctests
         // reference their own file's symbols, and scanning keeps them
         // resolvable even where no autoloader covers them.
-        $scanDirectories = [];
+        $scanDirectories = array_values(array_filter(
+            array_map($workingDirectory->absolute(...), $loaded->configuration->source->includeDirectories),
+            is_dir(...),
+        ));
+        $scanFiles = array_values(array_filter(
+            array_map($workingDirectory->absolute(...), $loaded->configuration->source->includeFiles),
+            is_file(...),
+        ));
 
-        foreach ($loaded->configuration->source->includeDirectories as $directory) {
-            $absolute = $workingDirectory->absolute($directory);
-
-            if (is_dir($absolute)) {
-                $scanDirectories[] = $absolute;
-            }
-        }
-
-        if ($scanDirectories !== []) {
-            $neon .= "    scanDirectories:\n";
-
-            foreach ($scanDirectories as $directory) {
-                $neon .= '        - ' . $directory . "\n";
-            }
-        }
-
-        $scanFiles = [];
-
-        foreach ($loaded->configuration->source->includeFiles as $file) {
-            $absolute = $workingDirectory->absolute($file);
-
-            if (is_file($absolute)) {
-                $scanFiles[] = $absolute;
-            }
-        }
-
-        if ($scanFiles !== []) {
-            $neon .= "    scanFiles:\n";
-
-            foreach ($scanFiles as $file) {
-                $neon .= '        - ' . $file . "\n";
-            }
-        }
+        $neon = PhpstanNeon::analysis(Phpstan::extensionIncludes($workingDirectory), [
+            'level'           => 'max',
+            'paths'           => [$shadowRoot],
+            'tmpDir'          => $shadowRoot . '/.cache',
+            'scanDirectories' => $scanDirectories,
+            'scanFiles'       => $scanFiles,
+        ]);
 
         file_put_contents($shadowRoot . '/phpstan.neon', $neon);
 
-        $command = [
-            PHP_BINARY,
-            $workingDirectory->path . '/vendor/bin/phpstan',
-            'analyse',
-            '--configuration', $shadowRoot . '/phpstan.neon',
-            '--error-format', 'json',
-            '--no-progress',
-        ];
+        $arguments = ['--configuration=' . $shadowRoot . '/phpstan.neon'];
 
         if (is_file($workingDirectory->path . '/vendor/autoload.php')) {
-            $command[] = '--autoload-file';
-            $command[] = $workingDirectory->path . '/vendor/autoload.php';
+            $arguments[] = '--autoload-file=' . $workingDirectory->path . '/vendor/autoload.php';
         }
 
-        $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $workingDirectory->path);
+        $report = Phpstan::analyse($workingDirectory->path . '/vendor/bin/phpstan', $arguments, $workingDirectory);
 
-        if (!is_resource($process)) {
-            print 'PHPStan could not be started.' . PHP_EOL;
+        if (is_string($report)) {
+            print $report . PHP_EOL;
 
             return 1;
         }
 
-        $output = stream_get_contents($pipes[1]);
-        $errors = stream_get_contents($pipes[2]);
-
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        proc_close($process);
-
-        $decoded = json_decode($output === false ? '' : $output, true);
-
-        if (!is_array($decoded) || !is_array($decoded['files'] ?? null)) {
-            print 'PHPStan produced no result.' . PHP_EOL . ($errors === false ? '' : $errors);
-
-            return 1;
+        // Errors PHPStan places in no file — a broken include, an
+        // unreadable path — are findings too: a doctest run that did not
+        // analyse is not clean.
+        foreach ($report->general as $error) {
+            print $error . PHP_EOL;
         }
 
-        $findings = 0;
+        $findings = count($report->general);
 
-        foreach ($decoded['files'] as $reportedFile => $entry) {
-            if (!is_string($reportedFile) || !is_array($entry) || !is_array($entry['messages'] ?? null)) {
-                continue;
-            }
+        foreach ($report->messages as $message) {
+            $findings++;
 
-            $mapping = $shadows[$reportedFile] ?? null;
+            $mapping = $shadows[$message->file] ?? null;
 
-            foreach ($entry['messages'] as $message) {
-                if (!is_array($message) || !is_string($message['message'] ?? null)) {
-                    continue;
-                }
-
-                $findings++;
-
-                $line = is_int($message['line'] ?? null) ? $message['line'] : 0;
-
-                if ($mapping !== null) {
-                    printf('%s:%d %s' . PHP_EOL, $mapping['origin'], $mapping['lines'][$line] ?? $line, $message['message']);
-                } else {
-                    printf('%s:%d %s' . PHP_EOL, $reportedFile, $line, $message['message']);
-                }
+            if ($mapping !== null) {
+                printf('%s:%d %s' . PHP_EOL, $mapping['origin'], $mapping['lines'][$message->line] ?? $message->line, $message->message);
+            } else {
+                printf('%s:%d %s' . PHP_EOL, $message->file, $message->line, $message->message);
             }
         }
 

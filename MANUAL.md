@@ -210,6 +210,23 @@ Writing `->name->toBe('Ada')->roles->toHaveCount(2)` fails, because after `->nam
 no `roles` on the string `'Ada'`. That example is in the suite precisely because the first
 draft of this manual got it wrong.
 
+### Shapes
+
+A DTO's export, a JSON response, a `validated()` array: the keys and their types are what drift.
+[`examples/05-shapes`](examples/05-shapes/shapes.pest.php) states the shape once, as a PHPStan
+type string:
+
+```php
+expect($user)->toMatchShape('array{id: positive-int, email: non-empty-string, tags: list<string>}');
+```
+
+Crucible checks the value when the test runs and names the first place it stops fitting —
+`$.email: expected non-empty-string, got ''`. PHPStan, with Crucible's extension, then knows
+the shape: after that line `$user['tags']` is `list<string>`. `$this->assertMatchesShape($type,
+$value)` is the PHPUnit-dialect spelling. The reading follows PHPStan's: a shape allows keys it
+does not name, and class names in the string are fully qualified. It is for structure whose
+values vary; for exact values, `toMatchArray()` says more.
+
 ---
 
 ## 5. Datasets
@@ -227,6 +244,22 @@ it('uppercases', function (string $input, string $expected): void {
 
 Two `->with()` calls multiply — the Cartesian product, not a zip. In the PHPUnit dialect the
 same thing is `#[DataProvider]`, expanded at discovery time.
+
+With Crucible's PHPStan extension, a row the test cannot take is reported before anything runs:
+`['1', 2, 3]` for `function (int $a, int $b, int $sum)`, or a row with too few values. The same
+check covers `#[TestWith]`, `#[TestWithJson]`, `#[Check(args:, returns:)]` and `table()`.
+
+Property tests draw their data from generators, and `Gen::of()` draws from a type string — the
+same grammar as `toMatchShape()`, so a failing case shrinks to the smallest value the type allows:
+
+```php
+property(
+    'draws data from the same type',
+    Gen::of('array{id: positive-int, email: non-empty-string, tags: list<string>}'),
+    fn (array $input) => expect(exportUser($input['id'], $input['email'], $input['tags']))
+        ->toMatchShape('array{id: positive-int, email: non-empty-string, tags: list<string>}'),
+);
+```
 
 ---
 
@@ -408,6 +441,40 @@ Covering tests run **fastest first**, so the cheapest test gets the first chance
 Coverage older than the source it maps is a lie, so a stale index warns rather than reporting
 a confident wrong score.
 
+Besides operators, a returned array literal loses one string key at a time: a survivor says no
+test checks that the key is there — the gap `toMatchShape()` closes.
+
+Some survivors cannot be killed: a change no test could observe. Declare them where they are,
+with the reason, and they leave the score while staying in the report —
+[`examples/06-equivalent-mutants`](examples/06-equivalent-mutants/InventoryTest.php):
+
+```php
+/**
+ * @param list<string> $items
+ *
+ * @crucible-equivalent the loop returns before the bound matters
+ */
+public function first(array $items): ?string
+{
+    for ($i = 0; $i < count($items); $i++) {
+        return $items[$i];
+    }
+
+    return null;
+}
+
+public function restock(int $count): int
+{
+    $this->log[] = 'restocked ' . ($count + 1); // crucible-equivalent-line the log wording is not behaviour
+
+    return $count;
+}
+```
+
+The reason follows a space or a colon (`@crucible-equivalent: <reason>`).
+`// crucible-equivalent-start <reason>` … `// crucible-equivalent-end` marks a region. A marker
+without a reason declares nothing, and a marker that covers no mutant is reported as stale.
+
 ---
 
 ## 12. JavaScript suites
@@ -420,6 +487,15 @@ A normal `crucible` run then also runs Vitest and folds every JS test into the s
 tally and exit code. Under `--changed` the JS suite narrows through `vitest related`, letting
 Vitest's own module graph decide — Crucible orchestrates rather than reimplementing a second
 dependency walk.
+
+The suite is named `vitest`, and selected by that name:
+
+```bash
+crucible --exclude-testsuite vitest          # the PHP tests alone
+crucible --testsuite vitest                  # the JS tests alone
+crucible --filter Cart                       # PHP tests matching Cart; the JS suite is left out, and a line says so
+crucible --testsuite unit,vitest --filter Cart   # both, filtered: Vitest gets the pattern as its own
+```
 
 ---
 
@@ -438,6 +514,56 @@ The NDJSON event stream is the contract: one versioned event per line, unbuffere
 reporter is a listener over it, and so can yours be.
 
 Sharding is hash-stable — adding or removing tests never moves the others between shards.
+
+### PHPStan
+
+Crucible's own PHPStan extension needs no wiring with `phpstan/extension-installer`: Crucible
+declares it, and the installer loads it. Without the installer, `crucible phpstan-init` writes the
+one include line. It covers what a migrated suite had from phpstan-phpunit and pest-plugin-phpstan
+— assertions narrow, `expect()` is generic and its type matchers narrow the chain, `$this` is typed
+in Pest closures — held line by line against both by probe 30. And some things neither does:
+
+- after `expect($x)->toBeString();` the variable `$x` itself is a string, not only the chain;
+- dataset rows, `#[TestWith]`, `#[TestWithJson]`, `#[Check]` and `table()` rows are checked
+  against the parameters they feed;
+- `toMatchShape()` narrows to its type string, and `Gen::of()` produces it.
+
+A matcher narrows exactly as its assertion does: `toBeString()` is `assertIsString()`, and
+`toBeList()` and `assertIsList()` both read a list of the value's elements. Narrowing stops where the
+matchers stop being about the value: after `and()` or `json()`, and after a spread `each`
+(`->each`, or `each()` without a callback), whose matchers are about the items. What the matchers
+before that point proved still holds.
+
+The crucible dialect's own globals — `check()`, `property()`, `table()` — are declared by a second
+file, so a project with its own global `check()` is never read as Crucible's:
+
+```yaml
+includes:
+    - vendor/cruciblephp/crucible/phpstan/crucible-dialect.neon
+```
+
+### Type tests
+
+```php
+->typeTests('tests/Types')
+```
+
+Every call to one of PHPStan's assertion functions — `assertType()`, `assertNativeType()`,
+`assertSuperType()`, `assertVariableCertainty()` — in a `*.types.php` file under that directory is a
+test in the run, and so is every line ending `// crucible-type-error <identifier>`, which passes
+only when PHPStan reports that error there —
+[`examples/07-type-tests`](examples/07-type-tests/ids.types.php):
+
+```php
+assertType('list<int>', ids());
+
+$sum = ids()[0] + 'x'; // crucible-type-error binaryOp.invalid
+```
+
+PHPStan analyses the files once, through your phpstan.neon. An error on no assertion's line, or a
+file with no assertion at all, is the file's own errored entry: a type test that tests nothing is
+not a pass. The suite is named `types`, so `--exclude-testsuite types` keeps a quick edit loop
+quick.
 
 ---
 

@@ -4,6 +4,7 @@ includes:
     # Dogfood: Crucible's own extension (D-049) — assert narrowing and
     # the analysis-time compatibility aliases.
     - phpstan/extension.neon
+    - phpstan/crucible-dialect.neon
 
 parameters:
     level: max
@@ -17,6 +18,17 @@ parameters:
         # caused was being fixed. Analysed here so the next copy is
         # caught by a gate rather than by reading.
         - conformance/probes/28-pest-matchers
+        # Probe 30's driver (D-128). Its fixture/ is not analysed here:
+        # every line of it is a dumpType() call by design.
+        - conformance/probes/30-extension-types/probe.php
+        - conformance/probes/30-extension-types/compare.php
+        - conformance/probes/30-extension-types/regenerate.php
+        - conformance/probes/30-extension-types/divergences.php
+        # The child-process runner every conformance script shares.
+        - conformance/process.php
+        # The command-line snapshot harness; its projects/ are fixtures.
+        - conformance/cli/run.php
+        - conformance/cli/cases.php
     excludePaths:
         # Everything excluded here compiles against something Crucible
         # deliberately does not depend on, so this config — the one that

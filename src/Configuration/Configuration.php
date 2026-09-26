@@ -15,6 +15,7 @@ use LucianoPereira\Crucible\Extension\CommandGate;
 use LucianoPereira\Crucible\Extension\Extension;
 use LucianoPereira\Crucible\Impact\ImpactRule;
 use LucianoPereira\Crucible\Runner\RetryPolicy;
+use LucianoPereira\Crucible\Types\TypeTestSuite;
 use LucianoPereira\Crucible\Vitest\VitestSuite;
 
 /**
@@ -36,6 +37,7 @@ final readonly class Configuration
      * @param list<CommandGate>      $commandGates external tools orchestrated after the suite; each votes the exit code by its own exit status
      * @param list<Extension>        $extensions   PHP-native plugins (D-078); dispatched by role — a Check inspects the project after the suite and votes the exit code
      * @param list<VitestSuite>      $vitest       JavaScript suites (D-079) run through Vitest after the PHP suite; their results fold into the same run
+     * @param list<TypeTestSuite>    $typeTests    type-test suites (D-130): assertType() calls analysed by PHPStan, each a test in the run
      * @param list<Quirk>            $quirks       incumbent bugs to reproduce rather than correct, each named individually
      * @param list<ImpactRule>       $impactRules  declared path → groups rules (D-083) for files the dependency graph cannot reach; additive only
      * @param array<string, array{class: class-string, params: array<string, mixed>}> $reportFormats report-format plugins, keyed by format key; a class-string + params registration (not an Extension instance), resolved by ReportFormatRegistry — deliberately separate from `extensions` above
@@ -90,6 +92,7 @@ final readonly class Configuration
         public array $commandGates = [],
         public array $extensions = [],
         public array $vitest = [],
+        public array $typeTests = [],
         public array $impactRules = [],
         public array $reportFormats = [],
         public array $subscribers = [],

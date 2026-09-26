@@ -18,9 +18,13 @@ final readonly class Paragraph implements Block
 {
     /**
      * @param list<Run> $runs
+     * @param bool      $quiet a secondary line — a byline, a note — that a
+     *                         rendering with type sizes sets smaller and
+     *                         muted; plain text everywhere else
      */
     public function __construct(
         public array $runs,
+        public bool $quiet = false,
     ) {}
 
     public static function sample(): self

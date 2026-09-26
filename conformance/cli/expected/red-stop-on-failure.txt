@@ -1,0 +1,20 @@
+argv: --stop-on-failure
+exit: 1
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Configuration: <project>/crucible.php
+
+.F
+
+1) tests/MixedOutcomesTest.php::testFails [fail]
+Failed asserting that 2 is identical to 1.
+
+Passed
+                                    tests      time   share
+tests                                   1    <t>s   <bar>
++- MixedOutcomes                        1    <t>s   <bar>
+
+Tests: 2. Passed: 1, Failed: 1, Errors: 0, Skipped: 0, Incomplete: 0, Risky: 0. Time: <t>s
+--- stderr
+

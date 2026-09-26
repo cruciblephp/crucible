@@ -72,6 +72,27 @@ final class LoaderTest extends TestCase
         (new Loader())->load(new WorkingDirectory(self::FIXTURES . '/wrong-return'));
     }
 
+    public function testAConfigurationThatThrowsIsReportedNotFatal(): void
+    {
+        // Loading is a require: whatever the file throws used to escape as an
+        // uncaught fatal with a stack trace, from every command that loads it.
+        $this->expectException(ConfigurationException::class);
+        $this->expectExceptionMessage('could not be loaded: RuntimeException: this configuration cannot load');
+
+        (new Loader())->load(new WorkingDirectory(self::FIXTURES . '/throwing-config'));
+    }
+
+    public function testAConfigurationThrowingAStringCodeIsReportedNotATypeError(): void
+    {
+        // The cause's code is handed on, as every rethrow does; a string
+        // one (PDO's SQLSTATE) would make that hand-off throw a TypeError
+        // in place of the diagnosis.
+        $this->expectException(ConfigurationException::class);
+        $this->expectExceptionMessage('could not be loaded: PDOException: SQLSTATE[HY000] [2002] Connection refused');
+
+        (new Loader())->load(new WorkingDirectory(self::FIXTURES . '/string-code-config'));
+    }
+
     public function testExistsChecksDefaultFileNames(): void
     {
         $loader = new Loader();

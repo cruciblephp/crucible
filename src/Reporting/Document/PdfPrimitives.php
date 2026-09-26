@@ -156,15 +156,20 @@ final class PdfPrimitives
     }
 
     /**
-     * Writes one flowing line at the cursor and advances it.
+     * Writes flowing text at the cursor and advances it: one line when it
+     * fits, wrapped at word boundaries by flow() when it does not, so a
+     * long paragraph stays inside the right margin instead of running
+     * off the page.
      *
      * @param ?array{float, float, float} $rgb
      */
     public function line(string $font, float $size, string $text, ?array $rgb = null, float $indent = 0.0): void
     {
-        $this->ensure($size * 1.4);
-        $this->text(self::MARGIN + $indent, $this->y - $size, $font, $size, $this->encode($text), $rgb);
-        $this->y -= $size * 1.4;
+        foreach ($this->flow($this->encode($text), self::WIDTH - 2 * self::MARGIN - $indent, $font, $size) as $row) {
+            $this->ensure($size * 1.4);
+            $this->text(self::MARGIN + $indent, $this->y - $size, $font, $size, $row, $rgb);
+            $this->y -= $size * 1.4;
+        }
     }
 
     /**

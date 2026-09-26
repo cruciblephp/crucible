@@ -1,0 +1,8 @@
+argv: --order-by sideways
+exit: 1
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Unknown --order-by value "sideways": use default, defects, duration, random, reverse or size.
+--- stderr
+

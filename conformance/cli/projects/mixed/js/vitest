@@ -1,0 +1,26 @@
+#!/usr/bin/env php
+<?php
+
+// A stand-in for Vitest: answers with a fixed JSON report, honouring
+// --testNamePattern the way Vitest does (unmatched tests come back skipped).
+$pattern = null;
+$output  = null;
+
+foreach (array_slice($argv, 1) as $arg) {
+    if (str_starts_with($arg, '--testNamePattern=')) {
+        $pattern = substr($arg, 18);
+    }
+
+    if (str_starts_with($arg, '--outputFile=')) {
+        $output = substr($arg, 13);
+    }
+}
+
+$tests = [];
+
+foreach (['cart adds an item', 'cart totals'] as $name) {
+    $matched = $pattern === null || preg_match('/' . $pattern . '/', $name) === 1;
+    $tests[] = ['fullName' => $name, 'status' => $matched ? 'passed' : 'skipped'];
+}
+
+file_put_contents((string) $output, json_encode(['testResults' => [['name' => __DIR__ . '/cart.test.js', 'assertionResults' => $tests]]]));

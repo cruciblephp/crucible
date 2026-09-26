@@ -64,4 +64,16 @@ final readonly class MutationVerdict
     {
         return new self($mutant, MutationOutcome::NotCovered);
     }
+
+    /**
+     * Declared equivalent by a marker in the source (D-134): no test can
+     * kill it, so it is not run — but it is counted and listed, with the
+     * reason the marker gives, never dropped.
+     *
+     * @param non-empty-string $reason
+     */
+    public static function equivalent(Mutant $mutant, string $reason): self
+    {
+        return new self($mutant, MutationOutcome::Equivalent, reason: $reason);
+    }
 }

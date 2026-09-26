@@ -12,7 +12,9 @@ namespace LucianoPereira\Crucible\PHPStan;
 
 use PhpParser\Node\Arg;
 use PhpParser\Node\Expr;
+use PhpParser\Node\Expr\ArrowFunction;
 use PhpParser\Node\Expr\BinaryOp\BooleanAnd;
+use PhpParser\Node\Expr\BinaryOp\BooleanOr;
 use PhpParser\Node\Expr\BinaryOp\Identical;
 use PhpParser\Node\Expr\BinaryOp\NotIdentical;
 use PhpParser\Node\Expr\BooleanNot;
@@ -20,8 +22,10 @@ use PhpParser\Node\Expr\ConstFetch;
 use PhpParser\Node\Expr\Empty_;
 use PhpParser\Node\Expr\FuncCall;
 use PhpParser\Node\Expr\Instanceof_;
+use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Name;
 use PhpParser\Node\Name\FullyQualified;
+use PhpParser\Node\Param;
 
 use function array_key_exists;
 use function array_values;
@@ -77,6 +81,9 @@ final class AssertConditions
         'assertNull', 'assertNotNull', 'assertEmpty', 'assertNotEmpty',
         'assertSame', 'assertNotSame', 'assertInstanceOf', 'assertNotInstanceOf',
         'assertIsList', 'assertCount', 'assertNotCount',
+        'assertArrayHasKey', 'assertArrayNotHasKey',
+        'assertObjectHasProperty', 'assertObjectNotHasProperty',
+        'assertContainsOnlyInstancesOf',
     ];
 
     public static function supports(string $method): bool
@@ -84,6 +91,25 @@ final class AssertConditions
         return array_key_exists($method, self::IS_FUNCTIONS)
             || array_key_exists($method, self::IS_NOT_FUNCTIONS)
             || in_array($method, self::OTHER_METHODS, true);
+    }
+
+    /**
+     * The arguments as a list, or null when one is named or unpacked:
+     * then the position of none of them can be trusted.
+     *
+     * @param array<Arg> $args
+     *
+     * @return ?list<Arg>
+     */
+    public static function positional(array $args): ?array
+    {
+        foreach ($args as $arg) {
+            if ($arg->name !== null || $arg->unpack) {
+                return null;
+            }
+        }
+
+        return array_values($args);
     }
 
     /**
@@ -95,13 +121,11 @@ final class AssertConditions
      */
     public static function condition(string $method, array $args): ?Expr
     {
-        foreach ($args as $arg) {
-            if ($arg->name !== null || $arg->unpack) {
-                return null;
-            }
-        }
+        $args = self::positional($args);
 
-        $args = array_values($args);
+        if ($args === null) {
+            return null;
+        }
 
         if (array_key_exists($method, self::IS_FUNCTIONS)) {
             return self::isCall(self::IS_FUNCTIONS[$method], $args);
@@ -112,22 +136,27 @@ final class AssertConditions
         }
 
         return match ($method) {
-            'assertTrue'          => self::comparedTo('true', $args, negated: false),
-            'assertNotTrue'       => self::comparedTo('true', $args, negated: true),
-            'assertFalse'         => self::comparedTo('false', $args, negated: false),
-            'assertNotFalse'      => self::comparedTo('false', $args, negated: true),
-            'assertNull'          => self::comparedTo('null', $args, negated: false),
-            'assertNotNull'       => self::comparedTo('null', $args, negated: true),
-            'assertEmpty'         => isset($args[0]) ? new Empty_($args[0]->value) : null,
-            'assertNotEmpty'      => self::not(isset($args[0]) ? new Empty_($args[0]->value) : null),
-            'assertSame'          => isset($args[1]) ? new Identical($args[0]->value, $args[1]->value) : null,
-            'assertNotSame'       => isset($args[1]) ? new NotIdentical($args[0]->value, $args[1]->value) : null,
-            'assertInstanceOf'    => self::instanceOf($args),
-            'assertNotInstanceOf' => self::not(self::instanceOf($args)),
-            'assertIsList'        => self::isList($args),
-            'assertCount'         => self::count($args, negated: false),
-            'assertNotCount'      => self::count($args, negated: true),
-            default               => null,
+            'assertTrue'                    => self::comparedTo('true', $args, negated: false),
+            'assertNotTrue'                 => self::comparedTo('true', $args, negated: true),
+            'assertFalse'                   => self::comparedTo('false', $args, negated: false),
+            'assertNotFalse'                => self::comparedTo('false', $args, negated: true),
+            'assertNull'                    => self::comparedTo('null', $args, negated: false),
+            'assertNotNull'                 => self::comparedTo('null', $args, negated: true),
+            'assertEmpty'                   => isset($args[0]) ? new Empty_($args[0]->value) : null,
+            'assertNotEmpty'                => self::not(isset($args[0]) ? new Empty_($args[0]->value) : null),
+            'assertSame'                    => isset($args[1]) ? new Identical($args[0]->value, $args[1]->value) : null,
+            'assertNotSame'                 => isset($args[1]) ? new NotIdentical($args[0]->value, $args[1]->value) : null,
+            'assertInstanceOf'              => self::instanceOf($args),
+            'assertNotInstanceOf'           => self::not(self::instanceOf($args)),
+            'assertIsList'                  => self::isList($args),
+            'assertCount'                   => self::count($args, negated: false),
+            'assertNotCount'                => self::count($args, negated: true),
+            'assertArrayHasKey'             => self::arrayHasKey($args),
+            'assertArrayNotHasKey'          => self::not(self::arrayHasKey($args)),
+            'assertObjectHasProperty'       => self::objectHasProperty($args),
+            'assertObjectNotHasProperty'    => self::not(self::objectHasProperty($args)),
+            'assertContainsOnlyInstancesOf' => self::containsOnlyInstancesOf($args),
+            default                         => null,
         };
     }
 
@@ -205,6 +234,69 @@ final class AssertConditions
         return $negated
             ? new NotIdentical($count, $args[0]->value)
             : new Identical($count, $args[0]->value);
+    }
+
+    /**
+     * assertArrayHasKey($key, $array) accepts an array or an ArrayAccess:
+     * for the array, array_key_exists() — which PHPStan reads as
+     * hasOffset and non-empty; an ArrayAccess learns nothing it did not
+     * already say about itself.
+     *
+     * @param array<int, Arg> $args
+     */
+    private static function arrayHasKey(array $args): ?Expr
+    {
+        if (!isset($args[1])) {
+            return null;
+        }
+
+        return new BooleanOr(
+            new Instanceof_($args[1]->value, new FullyQualified('ArrayAccess')),
+            new FuncCall(new FullyQualified('array_key_exists'), [new Arg($args[0]->value), new Arg($args[1]->value)]),
+        );
+    }
+
+    /**
+     * assertObjectHasProperty($name, $object) guarantees
+     * property_exists($object, $name).
+     *
+     * @param array<int, Arg> $args
+     */
+    private static function objectHasProperty(array $args): ?Expr
+    {
+        return isset($args[1])
+            ? new FuncCall(new FullyQualified('property_exists'), [new Arg($args[1]->value), new Arg($args[0]->value)])
+            : null;
+    }
+
+    /**
+     * assertContainsOnlyInstancesOf($class, $haystack): an array whose
+     * filter by `instanceof $class` is itself — PHPStan reads the
+     * filtered type back onto the haystack. A Traversable is accepted by
+     * the assertion and learns nothing.
+     *
+     * @param array<int, Arg> $args
+     */
+    private static function containsOnlyInstancesOf(array $args): ?Expr
+    {
+        if (!isset($args[1])) {
+            return null;
+        }
+
+        $item   = new Variable('crucibleItem');
+        $filter = new FuncCall(new FullyQualified('array_filter'), [
+            new Arg($args[1]->value),
+            new Arg(new ArrowFunction([
+                'static' => true,
+                'params' => [new Param($item)],
+                'expr'   => new Instanceof_($item, $args[0]->value),
+            ])),
+        ]);
+
+        return new BooleanOr(
+            new Instanceof_($args[1]->value, new FullyQualified('Traversable')),
+            new Identical($args[1]->value, $filter),
+        );
     }
 
     private static function not(?Expr $condition): ?Expr

@@ -10,6 +10,8 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Coverage;
 
+use LucianoPereira\Crucible\Version;
+
 use function dirname;
 use function explode;
 use function file_get_contents;
@@ -51,6 +53,8 @@ final readonly class HtmlReport
     private const string STYLE = <<<'CSS'
         body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 2rem; color: #1a1a1a; background: #fff; }
         h1 { font-size: 1.2rem; } h1 a { color: inherit; }
+        h1 { display: flex; align-items: center; gap: .45rem; }
+        .logo svg { display: block; width: 1.6em; height: 1.6em; }
         table { border-collapse: collapse; width: 100%; max-width: 72rem; }
         th, td { text-align: left; padding: .35rem .75rem; border-bottom: 1px solid #e5e5e5; font-size: .85rem; }
         th { border-bottom: 2px solid #1a1a1a; }
@@ -141,8 +145,9 @@ final readonly class HtmlReport
         $totalPercent = $totals['executable'] > 0 ? 100 * $totals['covered'] / $totals['executable'] : 0.0;
 
         $index = sprintf(
-            "<!DOCTYPE html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\"><title>Crucible coverage</title><style>%s</style></head>\n<body>\n<h1>Crucible coverage <small>(%s)</small></h1>\n<table>\n<tr><th>File</th><th></th><th>Lines</th><th>Covered</th>%s</tr>\n%s<tr class=\"total\"><td>Total</td><td><span class=\"bar\"><span style=\"width:%.0f%%\"></span></span></td><td class=\"num\">%.2f%%</td><td class=\"num\">%d/%d</td>%s</tr>\n</table>\n</body>\n</html>\n",
+            "<!DOCTYPE html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\"><title>Crucible coverage</title><style>%s</style></head>\n<body>\n<h1>%sCrucible coverage <small>(%s)</small></h1>\n<table>\n<tr><th>File</th><th></th><th>Lines</th><th>Covered</th>%s</tr>\n%s<tr class=\"total\"><td>Total</td><td><span class=\"bar\"><span style=\"width:%.0f%%\"></span></span></td><td class=\"num\">%.2f%%</td><td class=\"num\">%d/%d</td>%s</tr>\n</table>\n</body>\n</html>\n",
             self::STYLE,
+            Version::logoHtml(),
             htmlspecialchars($driver, ENT_QUOTES),
             $withBranches ? '<th>Branches</th>' : '',
             $rows,
@@ -277,12 +282,14 @@ final readonly class HtmlReport
         $home = str_repeat('../', substr_count($relative, '/') + 1) . 'index.html';
 
         file_put_contents($target, sprintf(
-            "<!DOCTYPE html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\"><title>%s — Crucible coverage</title><style>%s</style></head>\n<body>\n<h1><a href=\"%s\">Crucible coverage</a> / %s</h1>\n<pre>%s</pre>\n</body>\n</html>\n",
+            "<!DOCTYPE html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\"><title>%s — Crucible coverage</title><style>%s</style></head>\n<body>\n<h1>%s<a href=\"%s\">Crucible coverage</a> / %s</h1>\n<pre>%s</pre>\n</body>\n</html>\n",
             htmlspecialchars($relative, ENT_QUOTES),
             self::STYLE,
+            Version::logoHtml(),
             $home,
             htmlspecialchars($relative, ENT_QUOTES),
             $body,
         ));
     }
+
 }

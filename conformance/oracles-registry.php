@@ -75,9 +75,12 @@ return [
             . ' && composer init --no-interaction --name=crucible/pest-oracle --require-dev="pestphp/pest:^5.0"'
             . ' && composer config allow-plugins.pestphp/pest-plugin true'
             . ' && composer install'
+            // The incumbents' PHPStan extensions, for probe 30 (D-128):
+            // what a migrated suite's analysis knew before Crucible.
+            . ' && composer require --dev --no-interaction phpstan/phpstan phpstan/phpstan-phpunit pestphp/pest-plugin-phpstan'
             . ' && mkdir -p tests'
             . ' && printf \'<?xml version="1.0"?><phpunit cacheDirectory=".phpunit.cache" colors="false"><testsuites><testsuite name="probe"><directory>tests</directory></testsuite></testsuites></phpunit>\' > phpunit.xml)',
-        'unlocks' => 'the Pest 5 value-matcher parity probe, re-proved against the real Pest',
+        'unlocks' => 'the Pest 5 value-matcher parity probe, re-proved against the real Pest; probe 30, the PHPStan extension against phpstan-phpunit and pest-plugin-phpstan',
     ],
     'sarif-schema' => [
         // A single normative file, fetched rather than committed: it is

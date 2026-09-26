@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Reporting;
 
+use LucianoPereira\Crucible\Event\CheckFinished;
 use LucianoPereira\Crucible\Event\Envelope;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunFinished;
@@ -52,6 +53,9 @@ final class ConsoleReporter implements ProgressViewContract
 
     private int $flaky = 0;
 
+    /** Run-scoped checks that did not pass: the run failed, so it is not OK (D-126). */
+    private int $failedChecks = 0;
+
     private readonly Style $style;
 
     /**
@@ -85,6 +89,12 @@ final class ConsoleReporter implements ProgressViewContract
             if ($event->flaky()) {
                 $this->flaky++;
             }
+
+            return;
+        }
+
+        if ($event instanceof CheckFinished && $event->outcome !== Outcome::Passed) {
+            $this->failedChecks++;
 
             return;
         }
@@ -210,7 +220,7 @@ final class ConsoleReporter implements ProgressViewContract
             )));
         }
 
-        if ($this->results && !$this->compact && count($model->problems) === 0) {
+        if ($this->results && !$this->compact && count($model->problems) === 0 && $this->failedChecks === 0) {
             fwrite($this->stream, $summary->hasIssues()
                 ? $this->style->yellow('OK, but there were issues!') . "\n"
                 : $this->style->green('OK') . "\n");

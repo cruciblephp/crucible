@@ -26,4 +26,5 @@ enum MutationOutcome: string
     case Errored    = 'errored';
     case TimedOut   = 'timed_out';
     case NotCovered = 'not_covered';
+    case Equivalent = 'equivalent';
 }

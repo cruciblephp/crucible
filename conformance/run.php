@@ -28,39 +28,7 @@ if (!\is_file($root . '/phpunit-main/vendor/autoload.php')) {
     exit(2);
 }
 
-/**
- * stderr goes to a temp file, not a second pipe: draining pipes in
- * sequence deadlocks the moment a child writes more than the 64K pipe
- * buffer to the one not being read, and a crashing child (a fatal with
- * a deep stack trace) does exactly that. A hang here reads as "the
- * suite is slow" and costs far more than the file.
- *
- * @return array{int, string}
- */
-function run_process(array $command, string $cwd): array
-{
-    $errorFile = \tempnam(\sys_get_temp_dir(), 'crucible-conformance-stderr-');
-
-    if ($errorFile === false) {
-        return [255, ''];
-    }
-
-    $process = \proc_open($command, [1 => ['pipe', 'w'], 2 => ['file', $errorFile, 'w']], $pipes, $cwd);
-
-    if ($process === false) {
-        \unlink($errorFile);
-
-        return [255, ''];
-    }
-
-    $stdout = (string) \stream_get_contents($pipes[1]);
-    $exit   = \proc_close($process);
-    $stderr = (string) \file_get_contents($errorFile);
-
-    \unlink($errorFile);
-
-    return [$exit, $stdout . $stderr];
-}
+require __DIR__ . '/process.php';
 
 /**
  * Per-test outcomes from the oracle's JUnit report, keyed
@@ -358,11 +326,12 @@ foreach ($fixtures as $fixture) {
     }
 
     // Side A: the oracle.
-    [$oracleExit, $oracleOutput] = \run_process(
+    [$oracleExit, $oracleStdout, $oracleStderr] = \run_process(
         ['php', $oracleWrapper, '--log-junit', $tmp . '/junit.xml', ...$extraArgs, $fixture . '/tests'],
         $tmp,
     );
-    $oracle = \oracle_outcomes($tmp . '/junit.xml');
+    $oracleOutput = $oracleStdout . $oracleStderr;
+    $oracle       = \oracle_outcomes($tmp . '/junit.xml');
 
     // Side B: Crucible, through the compat aliases.
     \file_put_contents($tmp . '/crucible-config.php', \sprintf(

@@ -2,6 +2,36 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.1.0 — 2026-09-26
+
+- Fixed a process-isolated test's STDERR, which was dropped: the test now errors with that output as its message, as under PHPUnit, and a `--parallel` worker's STDERR reaches the console
+- Added a name to the folded Vitest suite, so `--testsuite` and `--exclude-testsuite` select it; `--filter` and the other PHP-only selections leave it out unless `--testsuite` names it, and a named suite takes `--filter` through to Vitest
+- Added Crucible's PHPStan extension to `phpstan/extension-installer`, which now loads it with no include line; `crucible phpstan-init` says so, and flags a manual include that would load it twice
+- Fixed the console printing OK when a run-scoped check failed
+- Added a generic `expect()` for PHPStan, type matchers that narrow the chain, and narrowing for `assertArrayHasKey`, `assertObjectHasProperty` and `assertContainsOnlyInstancesOf`, held against phpstan-phpunit and pest-plugin-phpstan by a new probe
+- Changed the PHPStan extension to leave `check()`, `property()` and `table()` to `phpstan/crucible-dialect.neon`, so a project's own global `check()` is no longer read as Crucible's
+- Added subject narrowing: after `expect($x)->toBeString();` PHPStan knows `$x` is a string
+- Added PHPStan rules that check dataset rows, `#[TestWith]`, `#[TestWithJson]`, `#[Check]` and `table()` rows against the parameters they feed
+- Added type tests: `assertType()` in `*.types.php` files, run as a folded `types` suite, with a negative form
+- Added `toMatchShape()` and `assertMatchesShape()` for PHPStan type strings, narrowed for the analyser
+- Added `Gen::of()`, `Gen::shape()`, and minimum lengths for `Gen::string()` and `Gen::listOf()`
+- Fixed Pest files never getting their class's `setUpBeforeClass()` and `tearDownAfterClass()`, which made suites on Orchestra Testbench slow down with every test
+- Fixed discovery stalling when the real PHPUnit is installed
+- Fixed a dataset that throws while it is built stopping the whole run; it now fails its own test
+- Fixed a `crucible.php` that throws ending in a fatal error instead of a message
+- Added declared equivalent mutants and a mutator that drops a returned array's keys
+- Changed `toBeArray()` to narrow as `assertIsArray()` does, and `assertIsList()` to narrow as `toBeList()` does, so each guarantee has one reading in both dialects
+- Added `assertNativeType()`, `assertSuperType()` and `assertVariableCertainty()` to type tests; a `*.types.php` file with no assertion is now an error
+- Fixed `crucible lint-inline` reporting clean when PHPStan could not load its configuration
+- Fixed group and comma-list imports (`use Tests\{TestCase, …};`, `use A, B;`) in Pest files, which gave closures' `$this` a class that does not exist
+- Fixed PHPStan narrowing after a spread `each`: `expect($list)->each()->toBeString()` no longer makes the chain a string or `*NEVER*`, and what the matchers before a spread or an `and()` proved about the variable now holds
+- Fixed `Gen::of()` drawing an empty array for a `non-empty-array` whose keys PHP rewrites; it now draws again, and refuses a type no array can fill, such as `non-empty-array<numeric-string, int>`
+- Fixed `@crucible-equivalent: reason` and `crucible-equivalent-line: reason`: a colon before the reason lost it, or hid the marker
+- Fixed `crucible mutate` reporting every mutant of a file as escaped when the file declared an equivalent mutant: discovery read `@crucible-equivalent` as a doctest and loaded the file, so a mutated class could never take the original's place
+- Added the Crucible logo to the HTML coverage report, the testdox page and the PDF report; the PDF reads `[logo] Test report [OK]` on one line with the byline beneath, and the testdox page shows the run's verdict and colours only each test's mark
+- Fixed long lines in the PDF report running past the right margin; paragraphs now wrap
+- Fixed `--log-pdf` or `--log-markdown` together with `--report` for the same format dropping one of the two paths silently; asking one format for two paths is now refused
+
 ## v1.0.1 — 2026-09-25
 
 - Fixed the hook order to match PHPUnit: at the default priority, `#[Before]` hooks now run before `setUp()` and `#[After]` hooks after `tearDown()`, so a trait's `#[Before]` reset no longer wipes what `setUp()` wired

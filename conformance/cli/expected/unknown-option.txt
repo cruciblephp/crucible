@@ -1,0 +1,6 @@
+argv: --no-such-option
+exit: 1
+--- stdout
+Unknown option "--no-such-option". Run crucible --help for the list of options.
+--- stderr
+

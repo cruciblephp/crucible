@@ -59,6 +59,12 @@ final class PdfRenderer
 
     private PdfPrimitives $pdf;
 
+    /**
+     * @param string $masthead SVG markup drawn on the title's line, left of the title — the report's
+     *                         logo (Version::logo()); empty for none, so the layout alone can be tested
+     */
+    public function __construct(private readonly string $masthead = '') {}
+
     /** @var array<string, bool> files already shown on a RankedList — their tiles never repeat the time */
     private array $spotlight = [];
 
@@ -93,11 +99,7 @@ final class PdfRenderer
             // as if there were no TOC in front. Output is discarded.
             $this->pdf = new PdfPrimitives();
 
-            foreach ($document->blocks as $block) {
-                if (!$block instanceof Toc) {
-                    $this->block($block);
-                }
-            }
+            $this->body($document->blocks);
 
             $tocEntries = $this->pdf->bookmarkEntries();
 
@@ -126,11 +128,7 @@ final class PdfRenderer
             $this->pdf->ensure(PdfPrimitives::HEIGHT);
         }
 
-        foreach ($document->blocks as $block) {
-            if (!$block instanceof Toc) {
-                $this->block($block);
-            }
-        }
+        $this->body($document->blocks);
 
         return $this->pdf->document($title, $author, $producer, $createdAt);
     }
@@ -190,6 +188,61 @@ final class PdfRenderer
         return PdfPrimitives::WIDTH;
     }
 
+    /**
+     * Every block but the TOC, in order. A title followed by its badge is
+     * one line — `[logo] Test report [OK]` — the verdict read where the
+     * report is named.
+     *
+     * @param list<Block> $blocks
+     */
+    private function body(array $blocks): void
+    {
+        for ($i = 0, $count = count($blocks); $i < $count; $i++) {
+            $block = $blocks[$i];
+            $next  = $blocks[$i + 1] ?? null;
+
+            if ($block instanceof Heading && $block->level === 1 && $next instanceof Badge) {
+                $this->titleLine($block, $next);
+                $i++;
+            } elseif (!$block instanceof Toc) {
+                $this->block($block);
+            }
+        }
+    }
+
+    /**
+     * The logo, the title and the badge on one line, each centred on the
+     * same height: 14pt below the line's top, which the 26pt logo, the
+     * title's capitals (cap height 0.72 of 15pt) and the 20pt badge all
+     * share.
+     */
+    private function titleLine(Heading $heading, Badge $badge): void
+    {
+        $text = $this->runText($heading->runs);
+        $this->pdf->bookmark(1, $text);
+        $this->pdf->ensure(28.0 + 6.0);
+
+        $top    = $this->pdf->y;
+        $centre = $top - 14.0;
+        $x      = PdfPrimitives::MARGIN;
+
+        if ($this->masthead !== '') {
+            $this->pdf->svg($this->masthead, $x, $centre - 13.0, 26.0, 26.0);
+            $x += 26.0 + 9.0;
+        }
+
+        $title = $this->pdf->encode($text);
+        $this->pdf->text($x, $centre - 15.0 * 0.72 / 2, PdfPrimitives::BOLD, 15.0, $title);
+        $x += $this->pdf->measure($title, PdfPrimitives::BOLD, 15.0) + 12.0;
+
+        $label = $this->pdf->encode($badge->text);
+        $width = $this->pdf->measure($label, PdfPrimitives::BOLD, 11.0) + 16.0;
+        $this->pdf->box($x, $centre - 10.0, $width, 20.0, $this->tone($badge->tone));
+        $this->pdf->text($x + 8.0, $centre - 11.0 * 0.72 / 2, PdfPrimitives::BOLD, 11.0, $label, self::WHITE);
+
+        $this->pdf->y -= 28.0 + 6.0;
+    }
+
     private function heading(Heading $heading): void
     {
         $text = $this->runText($heading->runs);
@@ -197,7 +250,17 @@ final class PdfRenderer
 
         if ($heading->level === 1) {
             $this->pdf->ensure(15.0 * 1.4);
-            $this->pdf->text(PdfPrimitives::MARGIN, $this->pdf->y - 15.0, PdfPrimitives::BOLD, 15.0, $this->pdf->encode($text));
+
+            // The masthead shares the title's line, inside its height, so
+            // nothing below moves: only the title steps right of it.
+            $x = PdfPrimitives::MARGIN;
+
+            if ($this->masthead !== '') {
+                $this->pdf->svg($this->masthead, $x, $this->pdf->y - 18.0, 18.0, 18.0);
+                $x += 18.0 + 7.0;
+            }
+
+            $this->pdf->text($x, $this->pdf->y - 15.0, PdfPrimitives::BOLD, 15.0, $this->pdf->encode($text));
             $this->pdf->y -= 15.0 * 1.4;
 
             return;
@@ -208,7 +271,9 @@ final class PdfRenderer
 
     private function paragraph(Paragraph $paragraph): void
     {
-        $this->pdf->line(PdfPrimitives::HELVETICA, 10.5, $this->runText($paragraph->runs));
+        $paragraph->quiet
+            ? $this->pdf->line(PdfPrimitives::HELVETICA, 8.5, $this->runText($paragraph->runs), self::GRAY)
+            : $this->pdf->line(PdfPrimitives::HELVETICA, 10.5, $this->runText($paragraph->runs));
     }
 
     /**

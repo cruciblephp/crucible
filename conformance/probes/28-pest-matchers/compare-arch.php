@@ -119,7 +119,7 @@ foreach ($matchers as $matcher) {
         continue;
     }
 
-    if (\strpos($row['p'], 'f') === false) {
+    if (!\str_contains($row['p'], 'f')) {
         $uncompared[] = $matcher;
     }
 

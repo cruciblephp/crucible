@@ -1,0 +1,19 @@
+argv: --exclude-group slow
+exit: 0
+--- stdout
+crucible 1.1.0 by Luciano Federico Pereira.
+
+Configuration: <project>/crucible.php
+
+...
+
+Passed
+                                    tests      time   share
+tests                                   3    <t>s   <bar>
++- Calculator                           1    <t>s   <bar>
++- strings.pest                         2    <t>s   <bar>
+
+Tests: 3. Passed: 3, Failed: 0, Errors: 0, Skipped: 0, Incomplete: 0, Risky: 0. Time: <t>s
+OK
+--- stderr
+

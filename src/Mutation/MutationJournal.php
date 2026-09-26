@@ -237,6 +237,10 @@ final class MutationJournal
                 ),
                 MutationOutcome::TimedOut   => MutationVerdict::timedOut($mutant, $duration),
                 MutationOutcome::NotCovered => MutationVerdict::notCovered($mutant),
+                MutationOutcome::Equivalent => MutationVerdict::equivalent(
+                    $mutant,
+                    is_string($reason) && $reason !== '' ? $reason : 'unknown',
+                ),
             };
         }
 

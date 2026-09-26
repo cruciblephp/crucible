@@ -174,7 +174,25 @@ final readonly class PestBuilder
                 ...($call->expectedOutcome instanceof ExpectedOutcome ? [$call->expectedOutcome] : []),
             );
 
-            foreach ($this->rows($call, dirname($file)) as $datasetKey => $arguments) {
+            // A dataset that throws while it is built fails its own test,
+            // not the run: real Pest reports the test and runs the rest of
+            // the suite. An uncaught throw here was a fatal for everything.
+            try {
+                $rows = $this->rows($call, dirname($file));
+            } catch (Throwable $datasetError) {
+                $definitions[] = new TestDefinition(
+                    new TestId($relative, $call->name()),
+                    static function () use ($datasetError): never {
+                        throw $datasetError;
+                    },
+                    $metadata,
+                    $call->dependsOn,
+                );
+
+                continue;
+            }
+
+            foreach ($rows as $datasetKey => $arguments) {
                 // PHP silently converts numeric-string array keys back
                 // to ints; the TestId wants the string form.
                 $datasetKey = (string) $datasetKey;
@@ -190,17 +208,35 @@ final readonly class PestBuilder
             }
         }
 
+        // A Pest file is a class (D-133): real Pest generates one extending
+        // the uses() class, and the runner calls its setUpBeforeClass() and
+        // tearDownAfterClass() around the file — the parent's first on the
+        // way in, the file's beforeAll() hooks after; afterAll() before the
+        // parent's on the way out. A base class that clears per-class state
+        // there (Orchestra Testbench) otherwise never clears it.
+        // The uses() class need not be a TestCase, so either may be absent.
+        $setUp    = method_exists($class, 'setUpBeforeClass') ? static fn(): mixed => $class::setUpBeforeClass() : null;
+        $tearDown = method_exists($class, 'tearDownAfterClass') ? static fn(): mixed => $class::tearDownAfterClass() : null;
+
         return new TestGroup(
             $relative,
             $definitions,
-            $state->beforeAll === [] ? null : static function () use ($state): void {
+            $state->beforeAll === [] && $setUp === null ? null : static function () use ($state, $setUp): void {
+                if ($setUp !== null) {
+                    $setUp();
+                }
+
                 foreach ($state->beforeAll as $hook) {
                     $hook();
                 }
             },
-            $state->afterAll === [] ? null : static function () use ($state): void {
+            $state->afterAll === [] && $tearDown === null ? null : static function () use ($state, $tearDown): void {
                 foreach ($state->afterAll as $hook) {
                     $hook();
+                }
+
+                if ($tearDown !== null) {
+                    $tearDown();
                 }
             },
         );
@@ -349,6 +385,7 @@ final readonly class PestBuilder
         }
 
         require __DIR__ . '/functions.php';
+        require __DIR__ . '/crucible-functions.php';
         self::vocabularyIsOurs(true);
     }
 
