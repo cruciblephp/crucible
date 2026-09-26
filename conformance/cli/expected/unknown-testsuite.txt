@@ -1,7 +1,7 @@
 argv: --testsuite nope
 exit: 1
 --- stdout
-crucible 1.1.0 by Luciano Federico Pereira.
+crucible 1.1.1 by Luciano Federico Pereira.
 
 The requested test suite "nope" is not configured.
 --- stderr

@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Watch;
 
+use LucianoPereira\Crucible\Runner\Process\NullDevice;
 use LucianoPereira\Crucible\Test\TestId;
 
 use function array_any;
@@ -222,7 +223,7 @@ final class WatchLoop
         // sharing the descriptor: proc_open'd children do not share
         // the parent's file offset, so direct fd sharing scrambles
         // (and overwrites) redirected output.
-        $process = proc_open($command, [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        $process = proc_open($command, [0 => ['file', NullDevice::path(), 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
 
         if (!is_resource($process)) {
             $this->out('[watch] Could not start the test run.' . PHP_EOL);

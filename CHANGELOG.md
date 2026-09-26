@@ -2,6 +2,10 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.1.1 — 2026-09-26
+
+- Fixed type tests and `crucible lint-inline` failing to start PHPStan on Windows, and `crucible flakes`, `compat-check` runs, Vitest suites, the watch loop and Git coverage details opening `/dev/null` there; Windows uses its own null device, `NUL`
+
 ## v1.1.0 — 2026-09-26
 
 - Fixed a process-isolated test's STDERR, which was dropped: the test now errors with that output as its message, as under PHPUnit, and a `--parallel` worker's STDERR reaches the console

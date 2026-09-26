@@ -1,7 +1,7 @@
 argv: --log-pdf a.pdf --report pdf:b.pdf
 exit: 1
 --- stdout
-crucible 1.1.0 by Luciano Federico Pereira.
+crucible 1.1.1 by Luciano Federico Pereira.
 
 Report format "pdf" is asked for twice, at b.pdf and at a.pdf: one path per format.
 --- stderr

@@ -1,7 +1,7 @@
 argv: --view nosuchview
 exit: 1
 --- stdout
-crucible 1.1.0 by Luciano Federico Pereira.
+crucible 1.1.1 by Luciano Federico Pereira.
 
 Progress view "nosuchview" is not registered — add it via ->progressView() in crucible.php.
 --- stderr

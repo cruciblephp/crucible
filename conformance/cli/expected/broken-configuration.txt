@@ -1,7 +1,7 @@
 argv: 
 exit: 1
 --- stdout
-crucible 1.1.0 by Luciano Federico Pereira.
+crucible 1.1.1 by Luciano Federico Pereira.
 
 <project>/crucible.php could not be loaded: RuntimeException: this configuration cannot load (line 5)
 --- stderr

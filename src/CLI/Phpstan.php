@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\CLI;
 
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+use LucianoPereira\Crucible\Runner\Process\NullDevice;
 
 use function array_find;
 use function file_get_contents;
@@ -106,7 +107,7 @@ final readonly class Phpstan
 
         $process = @proc_open(
             [PHP_BINARY, $binary, 'analyse', '--error-format=json', '--no-progress', '--no-interaction', ...$arguments],
-            [['file', '/dev/null', 'r'], ['file', $out, 'w'], ['file', $err, 'w']],
+            [['file', NullDevice::path(), 'r'], ['file', $out, 'w'], ['file', $err, 'w']],
             $pipes,
             $workingDirectory->path,
         );

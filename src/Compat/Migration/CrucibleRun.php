@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Compat\Migration;
 
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+use LucianoPereira\Crucible\Runner\Process\NullDevice;
 
 use function dirname;
 use function file;
@@ -83,7 +84,7 @@ final readonly class CrucibleRun
     {
         $process = proc_open(
             self::command($binary, $extraArgs, $eventsFile),
-            [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']],
+            [0 => ['file', NullDevice::path(), 'r'], 1 => ['file', NullDevice::path(), 'w'], 2 => ['file', NullDevice::path(), 'w']],
             $pipes,
             $workingDirectory->path,
         );

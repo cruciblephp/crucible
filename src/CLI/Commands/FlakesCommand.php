@@ -13,6 +13,7 @@ namespace LucianoPereira\Crucible\CLI\Commands;
 use LucianoPereira\Crucible\CLI\CliOptions;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Flakiness\OrderDependencyHunter;
+use LucianoPereira\Crucible\Runner\Process\NullDevice;
 
 use function array_slice;
 use function file;
@@ -146,7 +147,7 @@ final class FlakesCommand
     {
         $process = proc_open(
             [PHP_BINARY, $binary, ...$arguments, '--log-events-json', $eventFile],
-            [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']],
+            [0 => ['file', NullDevice::path(), 'r'], 1 => ['file', NullDevice::path(), 'w'], 2 => ['file', NullDevice::path(), 'w']],
             $pipes,
             $workingDirectory->path,
         );

@@ -17,6 +17,7 @@ use LucianoPereira\Crucible\Event\TestFinished;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Runner\FoldIn;
 use LucianoPereira\Crucible\Runner\NameFilter;
+use LucianoPereira\Crucible\Runner\Process\NullDevice;
 use LucianoPereira\Crucible\Test\TestId;
 
 use function array_filter;
@@ -108,7 +109,7 @@ final readonly class VitestRunner
         // spawn warning is suppressed rather than leaked to the console.
         $process = @proc_open(
             $command,
-            [STDIN, ['file', '/dev/null', 'w'], ['file', $stderr, 'w']],
+            [STDIN, ['file', NullDevice::path(), 'w'], ['file', $stderr, 'w']],
             $pipes,
             $directory,
         );

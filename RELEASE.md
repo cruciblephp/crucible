@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-09-26 (D-001..D-137). Every entry traces to a `DESIGN.md` decision
+_As of 2026-09-26 (D-001..D-137, 1.1.1). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -303,6 +303,12 @@ against Crucible's own class only._
 | One PHPStan run and one narrowing path: lint-inline reports errors PHPStan places in no file; each Pest type matcher narrows as its assertion does, and `assertIsList()` reads as `toBeList()`; type tests read PHPStan's whole assertion family and error on a file that asserts nothing; `uses()` and `pest()->in()` read group and comma-list imports as PHP does; a spread `each` leaves the value to the items in both the chain and the variable; `Gen::of()` refuses a non-empty type no array can fill | D-137 |
 | spatie/laravel-data's 1,338 tests in 61.08 s against 1.0.1's 328.52 s, median of three alternated runs: 5.4× faster, most of it discovery | `benchmarks/manifest.json` |
 | The reports people read carry the logo — HTML coverage, testdox, PDF — and a sample of Crucible's own suite is on the site, in every format that records no local path (`.github/scripts/reports.php`, cruciblephp.com/reports) | D-137 |
+
+## 1.1.1
+
+| Shipped | Records |
+|---|---|
+| A child process's discarded descriptor opens the platform's null device — `NUL` on Windows — so PHPStan (type tests, `lint-inline`), `flakes`, `compat-check`, Vitest and the watch loop start there | `Runner\Process\NullDevice` |
 
 ## Design inputs honored
 

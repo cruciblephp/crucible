@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Coverage;
 
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+use LucianoPereira\Crucible\Runner\Process\NullDevice;
 
 use function is_dir;
 use function proc_close;
@@ -60,7 +61,7 @@ final readonly class GitInformation
     {
         $process = proc_open(
             ['git', ...$arguments],
-            [1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']],
+            [1 => ['pipe', 'w'], 2 => ['file', NullDevice::path(), 'w']],
             $pipes,
             $workingDirectory->path,
         );
