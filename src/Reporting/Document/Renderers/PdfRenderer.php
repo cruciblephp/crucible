@@ -57,6 +57,9 @@ final class PdfRenderer
     private const array GRAY  = [0.46, 0.46, 0.46];
     private const array WHITE = [1.0, 1.0, 1.0];
 
+    /** Helvetica's capital height, as a fraction of its size: what centres a line of capitals. */
+    private const float CAP_HEIGHT = 0.72;
+
     private PdfPrimitives $pdf;
 
     /**
@@ -212,9 +215,8 @@ final class PdfRenderer
 
     /**
      * The logo, the title and the badge on one line, each centred on the
-     * same height: 14pt below the line's top, which the 26pt logo, the
-     * title's capitals (cap height 0.72 of 15pt) and the 20pt badge all
-     * share.
+     * same height, 14pt below the line's top: the 26pt logo, the title's
+     * capitals (CAP_HEIGHT of 15pt) and the 20pt badge all share it.
      */
     private function titleLine(Heading $heading, Badge $badge): void
     {
@@ -232,13 +234,13 @@ final class PdfRenderer
         }
 
         $title = $this->pdf->encode($text);
-        $this->pdf->text($x, $centre - 15.0 * 0.72 / 2, PdfPrimitives::BOLD, 15.0, $title);
+        $this->pdf->text($x, $centre - 15.0 * self::CAP_HEIGHT / 2, PdfPrimitives::BOLD, 15.0, $title);
         $x += $this->pdf->measure($title, PdfPrimitives::BOLD, 15.0) + 12.0;
 
         $label = $this->pdf->encode($badge->text);
         $width = $this->pdf->measure($label, PdfPrimitives::BOLD, 11.0) + 16.0;
         $this->pdf->box($x, $centre - 10.0, $width, 20.0, $this->tone($badge->tone));
-        $this->pdf->text($x + 8.0, $centre - 11.0 * 0.72 / 2, PdfPrimitives::BOLD, 11.0, $label, self::WHITE);
+        $this->pdf->text($x + 8.0, $centre - 11.0 * self::CAP_HEIGHT / 2, PdfPrimitives::BOLD, 11.0, $label, self::WHITE);
 
         $this->pdf->y -= 28.0 + 6.0;
     }

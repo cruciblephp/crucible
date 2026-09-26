@@ -40,6 +40,15 @@ use function hrtime;
 #[CoversClass(FlakinessLog::class)]
 final class RetryAndQuarantineTest extends TestCase
 {
+    /** The fixed backoff a #[Retry] declares in testARetryAttributeCarriesItsOwnBackoff. */
+    private const float BACKOFF_SECONDS = 0.03;
+
+    /**
+     * How early a sleep may wake: Windows' coarser timer returns from a 30ms
+     * usleep() up to a fraction of a millisecond short (measured: 0.3ms).
+     */
+    private const float SLEEP_SLACK_SECONDS = 0.001;
+
     /**
      * @param non-empty-string $name
      */
@@ -162,16 +171,14 @@ final class RetryAndQuarantineTest extends TestCase
         $started = hrtime(true);
 
         $event = $this->finished(
-            $this->definition('shaped by its attribute', $this->flakyBody(2), new Retry(1, Backoff::Fixed, 0.03)),
+            $this->definition('shaped by its attribute', $this->flakyBody(2), new Retry(1, Backoff::Fixed, self::BACKOFF_SECONDS)),
         );
 
         $elapsed = (hrtime(true) - $started) / 1e9;
 
         self::assertSame(Outcome::Passed, $event->outcome);
-        // The 30ms backoff was waited: without it the retry takes well under
-        // a millisecond. Not an exact floor — Windows wakes a sleep a fraction
-        // of a millisecond early on its coarser timer.
-        self::assertGreaterThan(0.025, $elapsed);
+        // The backoff was waited, to within how early a sleep can wake.
+        self::assertGreaterThanOrEqual(self::BACKOFF_SECONDS - self::SLEEP_SLACK_SECONDS, $elapsed);
     }
 
     public function testTheRetryBudgetRunsOut(): void
