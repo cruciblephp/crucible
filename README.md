@@ -156,4 +156,4 @@ and defects-first scheduling, VMVM-style state isolation, Ekstazi-style impact s
 Federico Pereira and are **not** covered by that licence — see [LICENSE](LICENSE). Fork the
 software freely; do not ship it under this name or mark.
 
-© 2026 Luciano Federico Pereira · [cruciblephp.com](https://cruciblephp.com)
+© 2026 Luciano Federico Pereira · [cruciblephp.com](https://www.cruciblephp.com)
