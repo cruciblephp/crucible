@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\Tests\Vitest;
 
 use DateTimeImmutable;
 use LucianoPereira\Crucible\Attributes\CoversClass;
+use LucianoPereira\Crucible\Attributes\RequiresOperatingSystem;
 use LucianoPereira\Crucible\Clock\FrozenClock;
 use LucianoPereira\Crucible\Event\Emitter;
 use LucianoPereira\Crucible\Event\Outcome;
@@ -43,10 +44,15 @@ use const PHP_BINARY;
  * Vitest reports as skipped — are not reported at all. Proven against a
  * stand-in binary that records its argv and answers with a fixed report,
  * so no Node install is needed.
+ *
+ * Skipped on Windows: the stand-in is a `#!` script, which Windows cannot
+ * execute. A real Windows install is a .cmd and runs through VitestRunner
+ * unchanged.
  */
 #[CoversClass(VitestRunner::class)]
 #[CoversClass(VitestSuite::class)]
 #[CoversClass(NameFilter::class)]
+#[RequiresOperatingSystem('^(?!WIN)')]
 final class VitestRunnerTest extends TestCase
 {
     /** @var non-empty-string */

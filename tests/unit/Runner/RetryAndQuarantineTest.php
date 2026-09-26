@@ -168,7 +168,10 @@ final class RetryAndQuarantineTest extends TestCase
         $elapsed = (hrtime(true) - $started) / 1e9;
 
         self::assertSame(Outcome::Passed, $event->outcome);
-        self::assertGreaterThanOrEqual(0.03, $elapsed);
+        // The 30ms backoff was waited: without it the retry takes well under
+        // a millisecond. Not an exact floor — Windows wakes a sleep a fraction
+        // of a millisecond early on its coarser timer.
+        self::assertGreaterThan(0.025, $elapsed);
     }
 
     public function testTheRetryBudgetRunsOut(): void
