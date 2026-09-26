@@ -64,6 +64,14 @@ use function is_int;
  */
 final class RealPhpUnitAttributes
 {
+    /**
+     * candidates(), once per process: the attribute files do not change
+     * during a run.
+     *
+     * @var ?array<string, class-string<CrucibleAttribute>>
+     */
+    private static ?array $candidates = null;
+
     private const array EXCLUDED = ['Before', 'PreCondition', 'PostCondition', 'After'];
 
     /**
@@ -125,10 +133,8 @@ final class RealPhpUnitAttributes
         // once per method of every test class: a glob per call was hundreds
         // of thousands of them on a Pest suite over Laravel's TestCase,
         // which never finished discovering.
-        static $memo = null;
-
-        if (is_array($memo)) {
-            return $memo;
+        if (is_array(self::$candidates)) {
+            return self::$candidates;
         }
 
         $files = glob(__DIR__ . '/../Attributes/*.php');
@@ -148,7 +154,7 @@ final class RealPhpUnitAttributes
             $candidates[$name] = $crucibleClass;
         }
 
-        return $memo = $candidates;
+        return self::$candidates = $candidates;
     }
 
     /**

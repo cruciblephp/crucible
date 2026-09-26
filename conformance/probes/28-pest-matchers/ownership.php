@@ -82,7 +82,7 @@ $covered = [];
 $swept   = [];
 $unowned = [];
 
-foreach (\probeSurface() as $matcher => $required) {
+foreach (\array_keys(\probeSurface()) as $matcher) {
     if (!isset($ranges[$matcher])) {
         \printf("BROKEN    %s is on the surface but has no source range\n", $matcher);
 
