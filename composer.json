@@ -25,6 +25,12 @@
         "issues": "https://github.com/cruciblephp/crucible/issues",
         "source": "https://github.com/cruciblephp/crucible"
     },
+    "funding": [
+        {
+            "type": "opencollective",
+            "url": "https://opencollective.com/crucible-free-software"
+        }
+    ],
     "config": {
         "platform": {
             "php": "8.3.0"

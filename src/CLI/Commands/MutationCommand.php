@@ -32,6 +32,7 @@ use LucianoPereira\Crucible\Mutation\MutationReport;
 use LucianoPereira\Crucible\Mutation\MutationRunner;
 use LucianoPereira\Crucible\Mutation\MutationVerdict;
 use LucianoPereira\Crucible\Mutation\WarmMutantExecutor;
+use LucianoPereira\Crucible\Runner\ProcessSetup;
 use LucianoPereira\Crucible\Runner\ResultCache;
 use LucianoPereira\Crucible\Runner\TestDiscoverer;
 use LucianoPereira\Crucible\Test\TestGroup;
@@ -172,6 +173,21 @@ final class MutationCommand
         $covered = array_keys($index->toArray());
 
         $this->warnIfCoverageStale($mapFile, $covered, $workingDirectory);
+
+        // Set up as a run does, before any suite file loads; the warm forks inherit it.
+        try {
+            $note = ProcessSetup::compatibility($loaded->configuration);
+        } catch (Exception $e) {
+            print $e->getMessage() . PHP_EOL;
+
+            return 1;
+        }
+
+        if ($note !== null) {
+            print $note . PHP_EOL . PHP_EOL;
+        }
+
+        ProcessSetup::phpSettings($loaded->configuration, $workingDirectory, includePaths: $options->includePaths);
 
         // Discovery is hoisted above mutant generation because mutates()
         // lives in test metadata, and the warm executor below needs the

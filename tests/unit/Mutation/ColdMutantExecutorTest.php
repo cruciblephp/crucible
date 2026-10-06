@@ -135,6 +135,33 @@ final class ColdMutantExecutorTest extends TestCase
         self::assertSame(MutationOutcome::Escaped, $verdict->outcome);
     }
 
+    public function testAMutantOfAFileWithInlineChecksIsKilledColdly(): void
+    {
+        $this->write($this->dir . '/src/Calculator.php', <<<'PHP'
+            <?php
+            namespace ColdFixture;
+            use LucianoPereira\Crucible\Attributes\Check;
+            final class Calculator
+            {
+                #[Check(args: [2, 2], returns: 4)]
+                public static function add(int $a, int $b): int
+                {
+                    return $a + $b;
+                }
+            }
+            PHP);
+
+        $this->write($this->dir . '/crucible.php', <<<'PHP'
+            <?php
+            use LucianoPereira\Crucible\Configuration\Crucible;
+            return Crucible::configure()->bootstrap('bootstrap.php')->testSuite('cold', 'tests')->source(include: ['src']);
+            PHP);
+
+        $verdict = $this->executor()->execute($this->mutant('return $a - $b;'), [self::COVERING_ID]);
+
+        self::assertSame(MutationOutcome::Killed, $verdict->outcome);
+    }
+
     public function testAMutantNoTestCoversIsNotCovered(): void
     {
         $verdict = $this->executor()->execute($this->mutant('return $a - $b;'), []);

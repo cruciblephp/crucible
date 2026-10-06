@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-09-26 (D-001..D-137, 1.1.1). Every entry traces to a `DESIGN.md` decision
+_As of 2026-10-06 (D-001..D-137, 1.1.2). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -309,6 +309,13 @@ against Crucible's own class only._
 | Shipped | Records |
 |---|---|
 | A child process's discarded descriptor opens the platform's null device — `NUL` on Windows — so PHPStan (type tests, `lint-inline`), `flakes`, `compat-check`, Vitest and the watch loop start there | `Runner\Process\NullDevice` |
+
+## 1.1.2
+
+| Shipped | Records |
+|---|---|
+| A cold mutation worker requires the mutant in place of a source file that inline discovery loads by path, so a class with `#[Check]` rows or doctests is judged by its tests | `Mutation\MutationAutoloader::replacing()` |
+| `crucible mutate` sets its process up as a run does before discovery — compatibility aliases, bootstrap, ini, env, constants — so a Laravel suite loads and the warm forks see the configuration's env | `Runner\ProcessSetup` |
 
 ## Design inputs honored
 

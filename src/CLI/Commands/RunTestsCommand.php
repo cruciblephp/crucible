@@ -12,7 +12,6 @@ namespace LucianoPereira\Crucible\CLI\Commands;
 
 use Closure;
 use LucianoPereira\Crucible\Architecture\Architecture;
-use LucianoPereira\Crucible\Assert\Differ;
 use LucianoPereira\Crucible\Attributes\Group;
 use LucianoPereira\Crucible\Attributes\Large;
 use LucianoPereira\Crucible\Attributes\Medium;
@@ -31,8 +30,6 @@ use LucianoPereira\Crucible\CLI\PostRunReport;
 use LucianoPereira\Crucible\Clock\Clock;
 use LucianoPereira\Crucible\Clock\SourceDateEpoch;
 use LucianoPereira\Crucible\Clock\SystemClock;
-use LucianoPereira\Crucible\Compat\MockeryCompatibility;
-use LucianoPereira\Crucible\Compat\PhpUnitCompatibility;
 use LucianoPereira\Crucible\Configuration\Configuration;
 use LucianoPereira\Crucible\Configuration\Crucible;
 use LucianoPereira\Crucible\Configuration\ExecutionOrder;
@@ -82,6 +79,7 @@ use LucianoPereira\Crucible\Runner\Process\DependencyValues;
 use LucianoPereira\Crucible\Runner\Process\EventParser;
 use LucianoPereira\Crucible\Runner\Process\Supervisor;
 use LucianoPereira\Crucible\Runner\Process\WorkerManifest;
+use LucianoPereira\Crucible\Runner\ProcessSetup;
 use LucianoPereira\Crucible\Runner\PropertyFailures;
 use LucianoPereira\Crucible\Runner\PropertyFailureWriter;
 use LucianoPereira\Crucible\Runner\Repetition;
@@ -111,20 +109,16 @@ use function array_pad;
 use function array_unique;
 use function array_values;
 use function class_exists;
-use function define;
-use function defined;
 use function explode;
 use function file;
 use function file_put_contents;
 use function fopen;
 use function fwrite;
-use function get_include_path;
 use function getcwd;
 use function glob;
 use function htmlspecialchars;
 use function implode;
 use function in_array;
-use function ini_set;
 use function is_dir;
 use function is_file;
 use function is_string;
@@ -134,11 +128,9 @@ use function mkdir;
 use function ob_end_clean;
 use function ob_start;
 use function printf;
-use function putenv;
 use function random_int;
 use function realpath;
 use function rtrim;
-use function set_include_path;
 use function sort;
 use function sprintf;
 use function str_ends_with;
@@ -1434,33 +1426,7 @@ final class RunTestsCommand
      */
     private function applyCompatibilityPolicy(Configuration $configuration): ?string
     {
-        // The Mockery-name aliases follow the same coexistence
-        // principle independently: on exactly when the real package
-        // is absent (D-060).
-        if (MockeryCompatibility::shouldAutoEnable()) {
-            MockeryCompatibility::load();
-        }
-
-        if ($configuration->phpunitCompatibility === true) {
-            PhpUnitCompatibility::load();
-
-            return null;
-        }
-
-        if ($configuration->phpunitCompatibility === false) {
-            return null;
-        }
-
-        // Auto policy: drop-in when the real PHPUnit is absent.
-        if (PhpUnitCompatibility::shouldAutoEnable()) {
-            PhpUnitCompatibility::load();
-
-            return null;
-        }
-
-        return 'Note: phpunit/phpunit is installed, so PHPUnit-namespace compatibility aliases are'
-            . PHP_EOL
-            . 'disabled. Tests must extend Crucible\'s TestCase, or opt in with ->phpunitCompatibility().';
+        return ProcessSetup::compatibility($configuration);
     }
 
     /**
@@ -1669,9 +1635,7 @@ final class RunTestsCommand
      */
     private function exportEnv(string $name, string $value): void
     {
-        putenv(sprintf('%s=%s', $name, $value));
-        $_ENV[$name]    = $value;
-        $_SERVER[$name] = $value;
+        ProcessSetup::exportEnv($name, $value);
     }
 
     /**
@@ -1976,48 +1940,6 @@ final class RunTestsCommand
      */
     private function applyPhpSettings(Configuration $configuration, WorkingDirectory $workingDirectory, Overrides $overrides = new Overrides(), array $includePaths = []): void
     {
-        // Before the bootstrap: a suite that relies on include_path expects
-        // it set by the time its own loader runs.
-        if ($includePaths !== []) {
-            $absolute = array_map(
-                $workingDirectory->absolute(...),
-                $includePaths,
-            );
-
-            set_include_path(implode(PATH_SEPARATOR, [...$absolute, get_include_path()]));
-        }
-
-        // Run-wide display state, set before any test can render a failure.
-        Differ::context($overrides->diffContext);
-
-        $bootstrap = $overrides->bootstrap ?? $configuration->bootstrap;
-
-        if ($bootstrap !== null) {
-            if (!str_starts_with($bootstrap, '/')) {
-                $bootstrap = $workingDirectory->path . '/' . $bootstrap;
-            }
-
-            if (is_file($bootstrap)) {
-                require_once $bootstrap;
-            }
-        }
-
-        foreach ($configuration->php->ini as $name => $value) {
-            ini_set($name, $value);
-        }
-
-        foreach ($configuration->php->env as $name => $value) {
-            // All three channels, like the spec's <env> handler:
-            // frameworks resolve env from $_SERVER first, and a parent
-            // process (artisan test) may have exported conflicting
-            // values there.
-            $this->exportEnv($name, $value);
-        }
-
-        foreach ($configuration->php->constants as $name => $value) {
-            if (!defined($name)) {
-                define($name, $value);
-            }
-        }
+        ProcessSetup::phpSettings($configuration, $workingDirectory, $overrides, $includePaths);
     }
 }

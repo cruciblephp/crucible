@@ -10,7 +10,10 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Mutation;
 
+use LucianoPereira\Crucible\Dialect\PhpUnit\ClassLocator;
+
 use function getenv;
+use function in_array;
 use function is_file;
 use function is_string;
 use function spl_autoload_register;
@@ -76,6 +79,25 @@ final class MutationAutoloader
     public function activate(string $class, string $file): void
     {
         $this->target = ['class' => $class, 'file' => $file];
+    }
+
+    /**
+     * The mutant to require in place of `$file` when it declares the mutated class, else null.
+     *
+     * @param non-empty-string $file
+     *
+     * @return ?non-empty-string
+     */
+    public static function replacing(string $file, ClassLocator $locator = new ClassLocator()): ?string
+    {
+        $class  = getenv(self::CLASS_ENV);
+        $mutant = getenv(self::FILE_ENV);
+
+        if (!is_string($class) || $class === '' || !is_string($mutant) || $mutant === '' || !is_file($mutant)) {
+            return null;
+        }
+
+        return in_array($class, $locator->classesIn($file), true) ? $mutant : null;
     }
 
     /**

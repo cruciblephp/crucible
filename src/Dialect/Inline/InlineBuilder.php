@@ -20,6 +20,7 @@ use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 use LucianoPereira\Crucible\Generated\GeneratedCode;
 use LucianoPereira\Crucible\Generated\GeneratedCodeException;
 use LucianoPereira\Crucible\Metadata\MetadataCollection;
+use LucianoPereira\Crucible\Mutation\MutationAutoloader;
 use LucianoPereira\Crucible\Test\TestDefinition;
 use LucianoPereira\Crucible\Test\TestGroup;
 use LucianoPereira\Crucible\Test\TestId;
@@ -100,7 +101,8 @@ final readonly class InlineBuilder
         $loaded   = $resolved !== false && in_array($resolved, get_included_files(), true);
         $before   = $loaded ? null : get_defined_functions()['user'];
 
-        require_once $file;
+        // A cold mutation worker loads the mutant in place of the original.
+        require_once MutationAutoloader::replacing($file, $this->locator) ?? $file;
 
         $declared = $this->functionsIn(
             $file,

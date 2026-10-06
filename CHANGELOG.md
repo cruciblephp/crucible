@@ -2,6 +2,12 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.1.2 — 2026-10-06
+
+- Fixed `crucible mutate` reporting every mutant of a class as escaped when its file carries an inline test (`#[Check]` or `@crucible`): discovery required the file by path, so the original class loaded before the mutant; a cold worker now loads the mutant in its place
+- Fixed `crucible mutate` stopping at discovery on a Laravel suite with `Class "PHPUnit\Framework\TestCase" not found`: it now loads the compatibility aliases and applies the configuration's bootstrap, ini, env and constants before discovery, as a run does, so feature tests boot on the configuration's env instead of the project's `.env`
+- Added Open Collective as a funding channel
+
 ## v1.1.1 — 2026-09-26
 
 - Fixed type tests and `crucible lint-inline` failing to start PHPStan on Windows, and `crucible flakes`, `compat-check` runs, Vitest suites, the watch loop and Git coverage details opening `/dev/null` there; Windows uses its own null device, `NUL`
