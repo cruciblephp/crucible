@@ -11,10 +11,13 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Dialect\Pest;
 
 use LucianoPereira\Crucible\Compat\PhpUnitCompatibility;
+use PHPUnit\Event\Facade as EventFacade;
 use PHPUnit\Framework\Assert as RealAssert;
 use PHPUnit\TextUI\CliArguments\Builder as CliArgumentsBuilder;
 use PHPUnit\TextUI\Configuration\Registry;
 use PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration;
+use ReflectionClass;
+use ReflectionMethod;
 use Throwable;
 
 use function class_exists;
@@ -61,7 +64,12 @@ final class RealPhpUnitBootstrap
         }
 
         try {
-            Registry::init((new CliArgumentsBuilder())->fromParameters([]), DefaultConfiguration::create());
+            // PHPUnit 13.4 passes the event emitter to both; earlier releases take none.
+            $init    = new ReflectionMethod(Registry::class, 'init');
+            $emitter = $init->getNumberOfParameters() > 2 ? [EventFacade::emitter()] : [];
+            $cli     = (new ReflectionClass(CliArgumentsBuilder::class))->newInstanceArgs($emitter)->fromParameters([]);
+
+            $init->invoke(null, $cli, DefaultConfiguration::create(), ...$emitter);
         } catch (Throwable) {
             // Best-effort, see class docblock.
         }

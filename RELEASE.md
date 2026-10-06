@@ -316,6 +316,7 @@ against Crucible's own class only._
 |---|---|
 | A cold mutation worker requires the mutant in place of a source file that inline discovery loads by path, so a class with `#[Check]` rows or doctests is judged by its tests | `Mutation\MutationAutoloader::replacing()` |
 | `crucible mutate` sets its process up as a run does before discovery — compatibility aliases, bootstrap, ini, env, constants — so a Laravel suite loads and the warm forks see the configuration's env | `Runner\ProcessSetup` |
+| PHPUnit's configuration is set for a real-PHPUnit `uses()` class under 13.4, which passes the event emitter to its CLI builder and `Registry::init()`, as under 13.3 | `Dialect\Pest\RealPhpUnitBootstrap` |
 
 ## Design inputs honored
 

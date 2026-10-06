@@ -6,6 +6,7 @@ Every release, as it ships. RELEASE.md is the full record of what shipped, each 
 
 - Fixed `crucible mutate` reporting every mutant of a class as escaped when its file carries an inline test (`#[Check]` or `@crucible`): discovery required the file by path, so the original class loaded before the mutant; a cold worker now loads the mutant in its place
 - Fixed `crucible mutate` stopping at discovery on a Laravel suite with `Class "PHPUnit\Framework\TestCase" not found`: it now loads the compatibility aliases and applies the configuration's bootstrap, ini, env and constants before discovery, as a run does, so feature tests boot on the configuration's env instead of the project's `.env`
+- Fixed Pest files whose `uses()` class extends the real PHPUnit `TestCase`, such as Orchestra Testbench's, under PHPUnit 13.4: its configuration was never set, as 13.4 passes the event emitter where earlier releases took none
 - Added Open Collective as a funding channel
 
 ## v1.1.1 — 2026-09-26
