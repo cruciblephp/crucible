@@ -5,7 +5,7 @@ declare(strict_types=1);
  * This file is part of Crucible.
  *
  * Copyright (c) 2026 Luciano Federico Pereira
- * All rights reserved.
+ * Licensed under the MIT License.
  *
  * Suite-level pest-dialect configuration (spec §3), exercised by the
  * dialect self-tests: a bare pest() hook is global to the suite tree,

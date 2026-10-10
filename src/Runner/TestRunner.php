@@ -5,7 +5,7 @@ declare(strict_types=1);
  * This file is part of Crucible.
  *
  * Copyright (c) 2026 Luciano Federico Pereira
- * All rights reserved.
+ * Licensed under the MIT License.
  */
 
 namespace LucianoPereira\Crucible\Runner;
@@ -405,6 +405,7 @@ final readonly class TestRunner
         // window; user code may reset it inside a test without
         // corrupting risky detection.
         Assert::resetAssertionCount();
+        Assert::forgetNoAssertionsDeclaration();
 
         $snapshot = $this->snapshotFor($definition->metadata);
 
@@ -549,8 +550,11 @@ final readonly class TestRunner
 
         // --do-not-report-useless-tests turns the whole classification off,
         // for a suite whose tests assert through something Crucible cannot
-        // see. #[DoesNotPerformAssertions] stays the per-test way to say it.
-        if ($this->options->reportUselessTests && !$performedAssertions && !$definition->metadata->has(DoesNotPerformAssertions::class)) {
+        // see. #[DoesNotPerformAssertions] stays the per-test way to say it,
+        // and expectNotToPerformAssertions() the in-body one.
+        $declaredNone = $definition->metadata->has(DoesNotPerformAssertions::class) || Assert::noAssertionsDeclared();
+
+        if ($this->options->reportUselessTests && !$performedAssertions && !$declaredNone) {
             return $this->settleCoverage($definition, [...$result, 'outcome' => Outcome::Risky, 'reason' => 'This test did not perform any assertions.'], $window);
         }
 

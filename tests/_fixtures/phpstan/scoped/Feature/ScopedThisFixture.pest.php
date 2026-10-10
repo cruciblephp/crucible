@@ -5,7 +5,7 @@ declare(strict_types=1);
  * This file is part of Crucible.
  *
  * Copyright (c) 2026 Luciano Federico Pereira
- * All rights reserved.
+ * Licensed under the MIT License.
  *
  * The D-067 pin: this file declares no uses() — $this arrives from
  * the ancestor Pest.php's pest()->extend(ScopedCase::class)

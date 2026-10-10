@@ -5,7 +5,7 @@ declare(strict_types=1);
  * This file is part of Crucible.
  *
  * Copyright (c) 2026 Luciano Federico Pereira
- * All rights reserved.
+ * Licensed under the MIT License.
  */
 
 namespace LucianoPereira\Crucible\Assert;
@@ -84,6 +84,8 @@ abstract class Assert
     /** @var int<0, max> */
     private static int $count = 0;
 
+    private static bool $noAssertionsDeclared = false;
+
     public static function assertThat(mixed $value, Constraint $constraint, string $message = ''): void
     {
         self::$count++;
@@ -134,6 +136,32 @@ abstract class Assert
     public static function resetAssertionCount(): void
     {
         self::$count = 0;
+    }
+
+    /**
+     * Engine-internal: the running test said, through
+     * expectNotToPerformAssertions(), that it asserts nothing. Kept
+     * here beside the counter because the runner never holds the
+     * TestCase instance, only the closure a dialect built around it.
+     */
+    public static function declareNoAssertions(): void
+    {
+        self::$noAssertionsDeclared = true;
+    }
+
+    public static function noAssertionsDeclared(): bool
+    {
+        return self::$noAssertionsDeclared;
+    }
+
+    /**
+     * Engine-internal: the runner opens each test's window with this,
+     * apart from resetAssertionCount(), which user code may call inside
+     * a test without withdrawing the test's declaration.
+     */
+    public static function forgetNoAssertionsDeclaration(): void
+    {
+        self::$noAssertionsDeclared = false;
     }
 
     // --- Identity & equality --------------------------------------------

@@ -5,7 +5,7 @@ declare(strict_types=1);
  * This file is part of Crucible.
  *
  * Copyright (c) 2026 Luciano Federico Pereira
- * All rights reserved.
+ * Licensed under the MIT License.
  */
 
 // A real Pest test file named *Test.php with no class at all — the

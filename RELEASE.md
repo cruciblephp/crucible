@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-10-06 (D-001..D-137, 1.1.2). Every entry traces to a `DESIGN.md` decision
+_As of 2026-10-10 (D-001..D-137, 1.1.3). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -317,6 +317,14 @@ against Crucible's own class only._
 | A cold mutation worker requires the mutant in place of a source file that inline discovery loads by path, so a class with `#[Check]` rows or doctests is judged by its tests | `Mutation\MutationAutoloader::replacing()` |
 | `crucible mutate` sets its process up as a run does before discovery — compatibility aliases, bootstrap, ini, env, constants — so a Laravel suite loads and the warm forks see the configuration's env | `Runner\ProcessSetup` |
 | PHPUnit's configuration is set for a real-PHPUnit `uses()` class under 13.4, which passes the event emitter to its CLI builder and `Registry::init()`, as under 13.3 | `Dialect\Pest\RealPhpUnitBootstrap` |
+
+## 1.1.3
+
+| Shipped | Records |
+|---|---|
+| `expectExceptionObject()` sets the class, message and code of one exception as three expectations, as under PHPUnit | `Framework\TestCase` |
+| `expectNotToPerformAssertions()` is read by the runner through `Assert`'s per-test state, in both dialects, and reset before each test | `Assert\Assert::declareNoAssertions()` |
+| `composer dump-autoload --strict-psr` passes on a checkout: every test class sits under the autoload rule, the nested-vendor fixtures are excluded from the classmap | `composer.json` |
 
 ## Design inputs honored
 

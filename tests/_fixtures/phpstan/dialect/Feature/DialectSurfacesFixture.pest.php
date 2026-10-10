@@ -5,7 +5,7 @@ declare(strict_types=1);
  * This file is part of Crucible.
  *
  * Copyright (c) 2026 Luciano Federico Pereira
- * All rights reserved.
+ * Licensed under the MIT License.
  *
  * Analyzed by the black-box extension test (D-049/D-050/D-060), never
  * executed. Three surfaces the other fixtures do not reach: the

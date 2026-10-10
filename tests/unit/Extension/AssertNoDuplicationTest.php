@@ -5,10 +5,10 @@ declare(strict_types=1);
  * This file is part of Crucible.
  *
  * Copyright (c) 2026 Luciano Federico Pereira
- * All rights reserved.
+ * Licensed under the MIT License.
  */
 
-namespace LucianoPereira\Crucible\Tests\Unit\Extension;
+namespace LucianoPereira\Crucible\Tests\Extension;
 
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;

@@ -5,7 +5,7 @@ declare(strict_types=1);
  * This file is part of Crucible.
  *
  * Copyright (c) 2026 Luciano Federico Pereira
- * All rights reserved.
+ * Licensed under the MIT License.
  */
 
 namespace LucianoPereira\Crucible;
@@ -18,7 +18,7 @@ use function trim;
 
 final class Version
 {
-    public const string NUMBER = '1.1.2';
+    public const string NUMBER = '1.1.3';
     public const string AUTHOR = 'Luciano Federico Pereira';
 
     /** The project's own home, for the places branding says more than a byline. */

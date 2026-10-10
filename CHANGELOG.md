@@ -2,6 +2,13 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.1.3 — 2026-10-10
+
+- Added `TestCase::expectExceptionObject()`, which sets the class, message and code of one exception object as three expectations, as under PHPUnit
+- Fixed `expectNotToPerformAssertions()` still reporting the test risky: the runner now reads the declaration, in the PHPUnit and Pest dialects, and it does not carry into the next test
+- Fixed `composer dump-autoload --strict-psr` failing on a repository checkout: one test class had a namespace outside the autoload rule, and the nested-vendor fixtures are now excluded from the classmap
+- Added Ko-fi as a funding channel beside Open Collective
+
 ## v1.1.2 — 2026-10-06
 
 - Fixed `crucible mutate` reporting every mutant of a class as escaped when its file carries an inline test (`#[Check]` or `@crucible`): discovery required the file by path, so the original class loaded before the mutant; a cold worker now loads the mutant in its place

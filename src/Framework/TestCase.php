@@ -5,7 +5,7 @@ declare(strict_types=1);
  * This file is part of Crucible.
  *
  * Copyright (c) 2026 Luciano Federico Pereira
- * All rights reserved.
+ * Licensed under the MIT License.
  */
 
 namespace LucianoPereira\Crucible\Framework;
@@ -247,9 +247,24 @@ abstract class TestCase extends Assert
         $this->expectedExceptionCode = $code;
     }
 
+    /**
+     * The incumbent's shorthand: the class, the message and the code of
+     * one exception object, set as the three expectations they are.
+     */
+    final protected function expectExceptionObject(Throwable $exception): void
+    {
+        $this->expectException($exception::class);
+        $this->expectExceptionMessage($exception->getMessage());
+        $this->expectExceptionCode($exception->getCode());
+    }
+
     final protected function expectNotToPerformAssertions(): void
     {
         $this->doesNotPerformAssertions = true;
+
+        // The runner reads the declaration from Assert: it holds the
+        // dialect's closure, never this instance.
+        self::declareNoAssertions();
     }
 
     // --- Test doubles -----------------------------------------------------------
