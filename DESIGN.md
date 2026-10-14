@@ -6309,6 +6309,62 @@ cause's code on in `Loader`, which catches any `Throwable`. A `PDOException`'s c
 the rewrite turned a configuration that cannot reach its database into a fatal `TypeError`. The code
 is handed on only when it is an int. The test that proves it fails on the rewrite.
 
+### D-138: `--reproducible` omits what time decides in the report formats
+
+The flag promised byte-identical reports and kept that promise only for JSON and SARIF, and only
+while every test passed. `GenericReportWriter` zeroed the context's runtime and dropped the
+generation date, but `RunReportDocument` still read every duration from the events, and durations
+decide content as well as structure: the summary's `· 1.017s`, the whole slowest-tests list, the
+tree's sibling order (descending time) and what folds away (below 1 ms and 0.1 %). The tree
+lists problems for JSON and SARIF too, and a parallel run delivers files in a different order each
+time. ✓ Measured on a scratch suite (8 classes × 3 tests, random sleeps): Markdown and PDF differed
+on every sequential run; with three failures and a skip, JSON and SARIF differed across five
+`--parallel 4` runs. The PDF carries no ID or date of its own, so time text was the only cause.
+
+**D1. Omitted, never zeroed.** A placeholder a consumer cannot recognise as one is wrong data, the
+rule `SourceDateEpoch` and the JSON `generatedAt` already follow. Under the flag no `0.000s` is
+printed, the JSON `summary.duration` key is omitted, and SARIF `endTimeUtc` is omitted
+(optional in 2.1.0, as `startTimeUtc` already was); `start + 0 ms` claimed an instant run.
+
+**D2. No time, no time-driven structure.** The slowest-tests section is omitted, as the timing
+notice already was. Siblings and tiles are ordered by path, and nothing folds, because the fold
+rule is a time threshold with nothing to fall back to. Finished tests are taken in path order
+before the document is built. The sort is stable, and a parallel unit is a whole file run by one
+worker, so a file's tests keep their run order.
+
+**D3. The report formats only.** JUnit, testdox, OTR, TeamCity and the event stream keep real
+durations: to their consumers a duration is a result (JUnit `time` is held against the
+incumbent's writer, D-100), and the result cache schedules from the stream's durations.
+
+**D4. Additive, and never fake.** The blocks are public to registered formats (D-098), so their
+property types stay. `FoldingTree` and `TileGrid` gain `timed` (default `true`), and the blocks and
+`ReportContext::$runtime` carry the real durations under the flag. A third-party format that
+ignores `timed` prints true numbers that do not reproduce, never zeros.
+
+✓ `ReproducibleOutputTest`: two runs with different durations and another file order write
+identical Markdown, PDF, JSON and SARIF; no time in the Markdown; no `duration` key; no `endTimeUtc`
+with `SOURCE_DATE_EPOCH` set. ✓ Without the flag, the four formats rendered from fixed events are
+byte-identical to 1.1.3's. ✓ The scratch suite: all four formats identical across three sequential
+runs, three `--parallel 4` runs, and parallel against sequential, with and without
+`SOURCE_DATE_EPOCH`.
+
+### D-139: migration mode fills the real runner's configuration
+
+D-122 recorded it and left it: with `phpunit/phpunit` installed and `->phpunitCompatibility()` on,
+Laravel's `HandleExceptions::flushHandlersState()` finds the real `PHPUnit\Runner\ErrorHandler`
+and calls `ErrorHandler::instance()`, which reads `ConfigurationRegistry::get()`, a singleton only
+the real runner's entry point fills. Every test that boots the framework errored in `tearDown()`.
+That is the state `compat-check` needs, both engines installed, so on a Laravel suite it reported
+every such test as drift. ✓ Measured on a Laravel 13 app with PHPUnit 12.5.39 beside Crucible:
+real `phpunit` 25/25; Crucible 4/25, 21 errors `Registry::get(): Return value must be of type
+...Configuration, null returned`; `compat-check` 21 drifted.
+
+`RealPhpUnitBootstrap::ensureConfigured()` already filled that registry with PHPUnit's own
+defaults for the Pest dialect's real-PHPUnit `uses()` classes. `PhpUnitCompatibility::load()` now
+calls it after aliasing whenever the real package is installed. After aliasing, so the
+fail-fast check still sees an untouched process. ✓ The same app: 25/25 sequentially and with
+`--parallel 3`, and `compat-check` reports no drift across all 25.
+
 ---
 
 ## Closing the planned record

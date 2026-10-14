@@ -17,6 +17,7 @@ use LucianoPereira\Crucible\Browser\Playwright\Page;
 use LucianoPereira\Crucible\Browser\Playwright\Session;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\TestCase;
+use LucianoPereira\Crucible\Tests\Bridge\Laravel\LaravelOracle;
 
 use function ctype_digit;
 use function dirname;
@@ -125,6 +126,10 @@ final class LivewireTest extends TestCase
 
         if (!is_dir($repo . '/livewire-oracle/vendor/livewire/livewire')) {
             $this->markTestSkipped('No Livewire oracle installed — see ORACLES.md.');
+        }
+
+        if (!LaravelOracle::runsHere($repo . '/livewire-oracle')) {
+            $this->markTestSkipped('The Laravel oracle does not run on this PHP (its Composer platform check refuses it).');
         }
 
         $this->boot($repo . '/livewire-oracle');

@@ -286,8 +286,9 @@ and the check keeps the tool's rule rather than inventing a second one.
 ## Reproducible output
 
 `--reproducible` normalises everything in a report that describes the **run** rather than the
-**result**, so two runs of the same code write byte-identical files and `cmp` answers the
-only question CI actually asks: did behaviour change?
+**result**, so two runs of the same code write byte-identical report files (`--report`, and
+`--log-markdown`/`--log-pdf`) and `cmp` answers the only question CI actually asks: did
+behaviour change? Sequential and `--parallel` runs write the same bytes.
 
 Without it the answer is always yes. A report restates when it ran and how long it took, and
 both move even when nothing else did — so a checksum over a report is useless as a change
@@ -295,13 +296,20 @@ detector, and a report cannot be committed as a golden file the way a snapshot c
 
 Two kinds of volatility, handled two ways, because one switch could not cover both:
 
-- **Timestamps** ride the injectable clock the event stream already uses, so the flag freezes
-  that clock at the Unix epoch and every emitter follows — the event stream, the JSON and
-  SARIF reports, and all four coverage writers. The epoch is deliberately not a
-  plausible-looking value: a report claiming it was generated in 1970 cannot be mistaken for
-  one that really was.
-- **Durations** deliberately do *not* come from that clock — they are monotonic, taken at the
-  call site — so they are normalised at the report boundary instead.
+- **Timestamps** come from `SOURCE_DATE_EPOCH`, the reproducible-builds convention: the date
+  the source last changed, identical for everyone rebuilding the same commit
+  (`SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)`). Unset, the report formats record no
+  generation time at all. The event stream and the coverage writers, whose timestamp field is
+  required, fall back to the Unix epoch, a value that cannot be mistaken for a real date.
+- **Durations** are monotonic, taken at the call site, so no clock can freeze them. The report
+  formats omit them, along with everything they decide: the summary's run time, the slowest
+  tests, the time-ordered tree (siblings are ordered by path instead, and nothing folds), the
+  JSON `summary.duration` and the SARIF `endTimeUtc`. Nothing is written as zero.
+
+What keeps real durations: JUnit, testdox, OTR, TeamCity and the event stream, where a
+duration is a result its consumer reads, and the result cache, which schedules from it. A
+third-party report format receives the real durations too, with the document's `timed` flag
+set to false, so one that ignores the flag prints true numbers, never fake ones.
 
 The console summary is untouched: it still reports the real elapsed time. The flag changes
 what is written for machines, not what is shown to you.

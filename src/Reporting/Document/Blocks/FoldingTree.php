@@ -20,10 +20,12 @@ use function count;
 use function explode;
 use function ltrim;
 use function str_starts_with;
+use function strcmp;
 use function strlen;
 use function strrpos;
 use function substr;
 use function uasort;
+use function uksort;
 
 /**
  * The passed-tests directory tree, sub-threshold tail folded into one
@@ -43,6 +45,8 @@ final readonly class FoldingTree implements Block
         public int $foldedDirectoryCount,
         public int $foldedTestCount,
         public float $foldedDuration,
+        /** false: ordered by label, nothing folds, no time printed (D-138) */
+        public bool $timed = true,
     ) {}
 
     /**
@@ -67,7 +71,7 @@ final readonly class FoldingTree implements Block
     /**
      * @param array<non-empty-string, list<TestFinished>> $sections
      */
-    public static function build(array $sections, float $runDuration): self
+    public static function build(array $sections, float $runDuration, bool $timed = true): self
     {
         $visible = [];
         $folded  = [];
@@ -79,8 +83,8 @@ final readonly class FoldingTree implements Block
         // into one closing line — except directories holding flagged
         // files: nothing referenced in Problems may disappear. A
         // fold of one is pointless; the line costs the same.
-        foreach (self::forest($sections) as $label => $node) {
-            $folding = $folding || ($node->time < 0.001 && $node->time < 0.001 * $runDuration);
+        foreach (self::forest($sections, $timed) as $label => $node) {
+            $folding = $folding || ($timed && $node->time < 0.001 && $node->time < 0.001 * $runDuration);
 
             if ($folding && !$node->holdsFlagged()) {
                 $folded[$label] = $node;
@@ -107,7 +111,7 @@ final readonly class FoldingTree implements Block
             $foldedTests += $node->subtreePassedCount();
         }
 
-        return new self($visible, count($folded), $foldedTests, $foldedTime);
+        return new self($visible, count($folded), $foldedTests, $foldedTime, $timed);
     }
 
     public static function sample(): self
@@ -128,13 +132,13 @@ final readonly class FoldingTree implements Block
      * The directory forest: every directory exactly once, children
      * nested under their parents, single-child chains collapsed into
      * one label ("tests/unit/"), siblings ordered by descending
-     * subtree time.
+     * subtree time, or by label when untimed.
      *
      * @param array<non-empty-string, list<TestFinished>> $sections
      *
      * @return array<string, FoldingNode>
      */
-    private static function forest(array $sections): array
+    private static function forest(array $sections, bool $timed): array
     {
         /** @var array<string, array<non-empty-string, list<TestFinished>>> $dirs */
         $dirs = [];
@@ -146,20 +150,20 @@ final readonly class FoldingTree implements Block
             $dirs[$dir][$file] = $tests;
         }
 
-        return self::branch($dirs, '');
+        return self::branch($dirs, '', $timed);
     }
 
     /**
      * The nodes directly under $prefix: each next segment becomes one
      * node holding its own files, its subtree, and its subtree time;
      * file-less single-child chains collapse into one label, and
-     * siblings sort by descending time.
+     * siblings sort by descending time, or by label when untimed.
      *
      * @param array<string, array<non-empty-string, list<TestFinished>>> $dirs directory (no trailing slash) => files
      *
      * @return array<string, FoldingNode>
      */
-    private static function branch(array $dirs, string $prefix): array
+    private static function branch(array $dirs, string $prefix, bool $timed): array
     {
         /** @var array<string, array<string, array<non-empty-string, list<TestFinished>>>> $bySegment */
         $bySegment = [];
@@ -192,7 +196,7 @@ final readonly class FoldingTree implements Block
             $path     = $prefix === '' ? $segment : $prefix . '/' . $segment;
             $label    = $segment;
             $files    = $subset[$path] ?? [];
-            $children = self::branch($subset, $path);
+            $children = self::branch($subset, $path, $timed);
 
             // Collapse the file-less single-child chain into one
             // label ("tests/unit") — internal separators kept, no
@@ -218,7 +222,11 @@ final readonly class FoldingTree implements Block
             $nodes[$label] = new FoldingNode($label, $time, $files, $children);
         }
 
-        uasort($nodes, static fn(FoldingNode $a, FoldingNode $b): int => $b->time <=> $a->time);
+        if ($timed) {
+            uasort($nodes, static fn(FoldingNode $a, FoldingNode $b): int => $b->time <=> $a->time);
+        } else {
+            uksort($nodes, strcmp(...));
+        }
 
         return $nodes;
     }

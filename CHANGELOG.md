@@ -2,6 +2,14 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.1.4 — 2026-10-14
+
+- Fixed `--reproducible` leaving test durations, the slowest-tests list and a time-based order in Markdown and PDF reports, and a time-based problem order in JSON and SARIF, so two runs of the same code, sequential or parallel, now write identical bytes
+- Changed `--reproducible` to omit the JSON report's run duration and the SARIF end time instead of writing a zero
+- Fixed a Laravel suite erroring in every test, and `compat-check` reporting each as drift, while `phpunit/phpunit` is still installed with `->phpunitCompatibility()` on
+- Added `--report`, the `--log-*` options and `--reproducible` to `php artisan test`, passed through to Crucible
+- Fixed the Laravel bridge tests failing on a repository checkout whose Laravel oracle needs a newer PHP than the one running them: they now skip, named, on Composer's own platform check
+
 ## v1.1.3 — 2026-10-10
 
 - Added `TestCase::expectExceptionObject()`, which sets the class, message and code of one exception object as three expectations, as under PHPUnit

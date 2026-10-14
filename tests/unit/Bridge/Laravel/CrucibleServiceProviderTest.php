@@ -39,6 +39,10 @@ final class CrucibleServiceProviderTest extends TestCase
         if (!is_dir(dirname(__DIR__, 4) . '/livewire-oracle/vendor/laravel/framework')) {
             self::markTestSkipped('No Laravel install available (livewire-oracle missing).');
         }
+
+        if (!LaravelOracle::runsHere(dirname(__DIR__, 4) . '/livewire-oracle')) {
+            self::markTestSkipped('The Laravel oracle does not run on this PHP (its Composer platform check refuses it).');
+        }
     }
 
     public function testTheArtisanTestCommandIsRegisteredOnBoot(): void

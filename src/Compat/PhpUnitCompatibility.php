@@ -15,6 +15,7 @@ use LucianoPereira\Crucible\Assert\Assert;
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Assert\Constraint\Constraint;
 use LucianoPereira\Crucible\Assert\Constraint\LogicalNot;
+use LucianoPereira\Crucible\Dialect\Pest\RealPhpUnitBootstrap;
 use LucianoPereira\Crucible\Double\MockBuilder;
 use LucianoPereira\Crucible\Double\Mocked;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
@@ -110,6 +111,11 @@ final class PhpUnitCompatibility
         }
 
         self::$loaded = true;
+
+        // Migration mode: frameworks still reach the real runner's singletons (D-139).
+        if (self::phpUnitIsInstalled()) {
+            RealPhpUnitBootstrap::ensureConfigured();
+        }
     }
 
     /**

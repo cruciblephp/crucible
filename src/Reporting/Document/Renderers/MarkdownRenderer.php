@@ -35,6 +35,7 @@ use LucianoPereira\Crucible\Reporting\Document\Tone;
 use LucianoPereira\Crucible\Reporting\PrettyName;
 use UnexpectedValueException;
 
+use function array_filter;
 use function array_map;
 use function implode;
 use function sprintf;
@@ -191,31 +192,30 @@ final readonly class MarkdownRenderer
         $out = '';
 
         foreach ($tree->visible as $label => $node) {
-            $out .= $this->node($label, $node);
+            $out .= $this->node($label, $node, $tree->timed);
         }
 
         if ($tree->foldedDirectoryCount > 0) {
             $out .= sprintf(
-                "+ %d more %s · %d %s · %.3fs\n\n",
+                "+ %d more %s · %d %s%s\n\n",
                 $tree->foldedDirectoryCount,
                 $tree->foldedDirectoryCount === 1 ? 'directory' : 'directories',
                 $tree->foldedTestCount,
                 $tree->foldedTestCount === 1 ? 'test' : 'tests',
-                $tree->foldedDuration,
+                $tree->timed ? sprintf(' · %.3fs', $tree->foldedDuration) : '',
             );
         }
 
         return $out;
     }
 
-    private function node(string $label, FoldingNode $node): string
+    private function node(string $label, FoldingNode $node, bool $timed): string
     {
-        $own = $node->ownPassedCount();
-        $out = sprintf(
-            "#### %s %s\n\n",
-            $label,
-            $own > 0 ? sprintf('(%d %s, %.3fs)', $own, $own === 1 ? 'test' : 'tests', $node->time) : sprintf('(%.3fs)', $node->time),
-        );
+        $own   = $node->ownPassedCount();
+        $count = $own > 0 ? sprintf('%d %s', $own, $own === 1 ? 'test' : 'tests') : '';
+        $time  = $timed ? sprintf('%.3fs', $node->time) : '';
+        $meta  = implode(', ', array_filter([$count, $time], static fn(string $part): bool => $part !== ''));
+        $out   = $meta === '' ? sprintf("#### %s\n\n", $label) : sprintf("#### %s (%s)\n\n", $label, $meta);
 
         // Every individual test, not just the file's aggregate — the
         // same per-test table the old flat "## Results" section
@@ -223,15 +223,15 @@ final readonly class MarkdownRenderer
         // losing that detail to match Pdf's compact tile grid.
         foreach ($node->files as $file => $tests) {
             $out .= sprintf("##### %s\n\n", PrettyName::ofFile($file));
-            $out .= "| Test | Outcome | Time |\n|------|---------|-----:|\n";
+            $out .= $timed ? "| Test | Outcome | Time |\n|------|---------|-----:|\n" : "| Test | Outcome |\n|------|---------|\n";
 
             foreach ($tests as $test) {
                 $out .= sprintf(
-                    "| %s | %s %s | %.3fs |\n",
+                    "| %s | %s %s |%s\n",
                     $this->cell(PrettyName::ofTest($test->test)),
                     $this->mark($test->outcome),
                     $test->outcome->value,
-                    $test->duration,
+                    $timed ? sprintf(' %.3fs |', $test->duration) : '',
                 );
             }
 
@@ -239,7 +239,7 @@ final readonly class MarkdownRenderer
         }
 
         foreach ($node->children as $childLabel => $child) {
-            $out .= $this->node($childLabel, $child);
+            $out .= $this->node($childLabel, $child, $timed);
         }
 
         return $out;
@@ -266,11 +266,11 @@ final readonly class MarkdownRenderer
 
         foreach ($grid->tiles as $tile) {
             $out .= sprintf(
-                "- %s — %d %s (%.3fs)\n",
+                "- %s — %d %s%s\n",
                 PrettyName::ofFile($tile->file),
                 $tile->passedCount,
                 $tile->passedCount === 1 ? 'test' : 'tests',
-                $tile->duration,
+                $grid->timed ? sprintf(' (%.3fs)', $tile->duration) : '',
             );
         }
 

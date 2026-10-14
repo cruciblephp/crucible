@@ -51,13 +51,14 @@ final class RunReportDocument
      *                                        value, passed in rather than read from the
      *                                        environment: a persisted report that varies with
      *                                        the ini of whoever rendered it is not a report
+     * @param bool             $timed        false: no time stated, none decides content or order (D-138)
      */
-    public static function build(RunModel $model, RunFinished $event, bool $flaky, string $title, ?string $timingNotice = null): Document
+    public static function build(RunModel $model, RunFinished $event, bool $flaky, string $title, ?string $timingNotice = null, bool $timed = true): Document
     {
         $blocks   = [new Heading(1, [new Text($title)])];
         $blocks[] = Badge::forRun($event->summary, $flaky);
         $blocks[] = new Paragraph([new Text(sprintf('Crucible %s by %s', Version::NUMBER, Version::AUTHOR))], quiet: true);
-        $blocks[] = new Paragraph([new Text(self::strip($event))]);
+        $blocks[] = new Paragraph([new Text(self::strip($event, $timed))]);
         $blocks[] = self::proportionBar($event);
 
         foreach (self::problemBlocks($model->problems) as $block) {
@@ -68,7 +69,7 @@ final class RunReportDocument
             $blocks[] = $block;
         }
 
-        $slowest = RankedList::build($model->sections, $event->duration);
+        $slowest = $timed ? RankedList::build($model->sections, $event->duration) : new RankedList([]);
 
         if ($slowest->entries !== []) {
             $blocks[] = new Heading(2, [new Text('Slowest tests')]);
@@ -81,12 +82,12 @@ final class RunReportDocument
         }
 
         $blocks[] = new Heading(2, [new Text('Results')]);
-        $blocks[] = FoldingTree::build($model->sections, $event->duration);
+        $blocks[] = FoldingTree::build($model->sections, $event->duration, $timed);
 
         return new Document($blocks);
     }
 
-    private static function strip(RunFinished $event): string
+    private static function strip(RunFinished $event, bool $timed): string
     {
         $summary = $event->summary;
         $flagged = $summary->total() - $summary->passed - $summary->untested;
@@ -101,7 +102,7 @@ final class RunReportDocument
             $strip .= sprintf(' · %d untested', $summary->untested);
         }
 
-        return $strip . sprintf(' · %.3fs', $event->duration);
+        return $timed ? $strip . sprintf(' · %.3fs', $event->duration) : $strip;
     }
 
     private static function proportionBar(RunFinished $event): ProportionBar

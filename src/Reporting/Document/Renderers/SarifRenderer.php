@@ -71,7 +71,8 @@ final readonly class SarifRenderer
 
     public function render(Document $document, ReportContext $context): string
     {
-        $problems = $this->foldingTree($document)->problems();
+        $tree     = $this->foldingTree($document);
+        $problems = $tree->problems();
 
         $sarif = [
             '$schema' => 'https://json.schemastore.org/sarif-2.1.0.json',
@@ -86,7 +87,7 @@ final readonly class SarifRenderer
                             'rules'          => $this->rules(),
                         ],
                     ],
-                    'invocations' => [$this->invocation($context)],
+                    'invocations' => [$this->invocation($context, $tree->timed)],
                     'results'     => array_map($this->result(...), $problems),
                 ],
             ],
@@ -114,15 +115,19 @@ final readonly class SarifRenderer
      *
      * @return array{executionSuccessful: bool, startTimeUtc?: string, endTimeUtc?: string}
      */
-    private function invocation(ReportContext $context): array
+    private function invocation(ReportContext $context, bool $timed): array
     {
         $invocation = ['executionSuccessful' => true];
 
         if ($context->createdAt instanceof DateTimeImmutable) {
+            $invocation['startTimeUtc'] = $context->createdAt->format('Y-m-d\TH:i:s.v\Z');
+        }
+
+        // Untimed, the end is omitted: start + 0 ms would claim an instant run (D-138).
+        if ($context->createdAt instanceof DateTimeImmutable && $timed) {
             $milliseconds = (int) round($context->runtime * 1000);
 
-            $invocation['startTimeUtc'] = $context->createdAt->format('Y-m-d\TH:i:s.v\Z');
-            $invocation['endTimeUtc']   = $context->createdAt
+            $invocation['endTimeUtc'] = $context->createdAt
                 ->modify(sprintf('+%d milliseconds', $milliseconds))
                 ->format('Y-m-d\TH:i:s.v\Z');
         }

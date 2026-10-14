@@ -42,6 +42,7 @@ use function array_values;
 use function count;
 use function implode;
 use function sprintf;
+use function substr;
 
 /**
  * Walks a `Document` to PDF 1.4 bytes via a composed `PdfPrimitives`
@@ -72,6 +73,8 @@ final class PdfRenderer
     private array $spotlight = [];
 
     private float $runtime = 0.0;
+
+    private bool $timed = true;
 
     public function render(
         Document $document,
@@ -433,6 +436,8 @@ final class PdfRenderer
 
     private function foldingTree(FoldingTree $tree): void
     {
+        $this->timed = $tree->timed;
+
         foreach ($tree->visible as $label => $node) {
             $this->node($label, $node, 0);
         }
@@ -440,12 +445,12 @@ final class PdfRenderer
         if ($tree->foldedDirectoryCount > 0) {
             $this->pdf->ensure(13.0);
             $this->pdf->text(PdfPrimitives::MARGIN, $this->pdf->y - 9.5, PdfPrimitives::HELVETICA, 9.0, $this->pdf->encode(sprintf(
-                '+ %d more %s · %d %s · %.3fs',
+                '+ %d more %s · %d %s%s',
                 $tree->foldedDirectoryCount,
                 $tree->foldedDirectoryCount === 1 ? 'directory' : 'directories',
                 $tree->foldedTestCount,
                 $tree->foldedTestCount === 1 ? 'test' : 'tests',
-                $tree->foldedDuration,
+                $tree->timed ? sprintf(' · %.3fs', $tree->foldedDuration) : '',
             )), self::GRAY);
             $this->pdf->y -= 13.0;
         }
@@ -474,9 +479,10 @@ final class PdfRenderer
         }
 
         $own  = $node->ownPassedCount();
+        $time = $this->timed ? sprintf(' · %.3fs', $node->time) : '';
         $meta = $own > 0
-            ? sprintf('· %d %s · %.3fs', $own, $own === 1 ? 'test' : 'tests', $node->time)
-            : sprintf('· %.3fs', $node->time);
+            ? sprintf('· %d %s%s', $own, $own === 1 ? 'test' : 'tests', $time)
+            : ($time === '' ? '' : substr($time, 1));
 
         $this->pdf->ensure(10.0 * 1.4 + 13.0);
         $bold = $this->pdf->encode($label);
@@ -485,7 +491,7 @@ final class PdfRenderer
         $this->pdf->y -= 10.0 * 1.4 + 2.0;
 
         if ($node->files !== []) {
-            $this->tileGrid(TileGrid::build($node->files), $this->WIDTH() - 2 * PdfPrimitives::MARGIN - $indent, $indent);
+            $this->tileGrid(TileGrid::build($node->files, $this->timed), $this->WIDTH() - 2 * PdfPrimitives::MARGIN - $indent, $indent);
         }
 
         foreach ($node->children as $childLabel => $child) {
@@ -506,10 +512,10 @@ final class PdfRenderer
         $name     = $this->pdf->encode('· ' . PrettyName::ofFile($file));
         $passed   = FoldingNode::passedCountOf($tests);
         $meta     = $this->pdf->encode(sprintf(
-            '· %d %s · %.3fs',
+            '· %d %s%s',
             $passed,
             $passed === 1 ? 'test' : 'tests',
-            FoldingNode::timeOf($tests),
+            $this->timed ? sprintf(' · %.3fs', FoldingNode::timeOf($tests)) : '',
         ));
         $nameX = PdfPrimitives::MARGIN + $indent + $this->pdf->measure($bold, PdfPrimitives::BOLD, 10.0) + 5.0;
         $rank  = FoldingNode::rankOf($tests);
@@ -538,7 +544,7 @@ final class PdfRenderer
         foreach ($grid->tiles as $tile) {
             $stat = (string) $tile->passedCount;
 
-            if ($this->runtime > 0.0 && $tile->duration > 0.02 * $this->runtime && !isset($this->spotlight[$tile->file])) {
+            if ($grid->timed && $this->runtime > 0.0 && $tile->duration > 0.02 * $this->runtime && !isset($this->spotlight[$tile->file])) {
                 $stat = sprintf('%s · %.3fs', $stat, $tile->duration);
             }
 

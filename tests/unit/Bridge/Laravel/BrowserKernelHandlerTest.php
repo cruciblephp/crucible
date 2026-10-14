@@ -46,6 +46,10 @@ final class BrowserKernelHandlerTest extends TestCase
             self::markTestSkipped('No Laravel install available (livewire-oracle missing).');
         }
 
+        if (!LaravelOracle::runsHere($root . '/livewire-oracle')) {
+            self::markTestSkipped('The Laravel oracle does not run on this PHP (its Composer platform check refuses it).');
+        }
+
         $output = shell_exec(sprintf(
             '%s %s %s %s 2>&1',
             PHP_BINARY,

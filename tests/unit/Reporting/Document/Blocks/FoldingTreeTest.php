@@ -145,6 +145,22 @@ final class FoldingTreeTest extends TestCase
         $this->assertSame(2, $tree->foldedDirectoryCount);
     }
 
+    public function testUntimedOrdersByLabelAndFoldsNothing(): void
+    {
+        $sections = [
+            'wee/ThreeTest.php' => [$this->passed('wee/ThreeTest.php', 'testWee', 0.000001)],
+            'slow/OneTest.php'  => [$this->passed('slow/OneTest.php', 'testSlow', 1.0)],
+            'tiny/TwoTest.php'  => [$this->passed('tiny/TwoTest.php', 'testTiny', 0.000001)],
+        ];
+
+        $tree = FoldingTree::build($sections, 1.000002, timed: false);
+
+        $this->assertSame(['slow', 'tiny', 'wee'], array_keys($tree->visible));
+        $this->assertSame(0, $tree->foldedDirectoryCount);
+        $this->assertFalse($tree->timed);
+        $this->assertSame(1.0, $tree->visible['slow']->time);
+    }
+
     public function testSampleReturnsAValidInstance(): void
     {
         $tree = FoldingTree::sample();

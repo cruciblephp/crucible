@@ -27,6 +27,8 @@ use function fopen;
 use function fwrite;
 use function is_string;
 use function sprintf;
+use function strcmp;
+use function usort;
 
 /**
  * The one `Listener` behind every registered report format — replaces
@@ -60,7 +62,7 @@ final class GenericReportWriter implements Listener
          * Two things this settles that freezing the clock cannot.
          *
          * Durations are deliberately NOT the Clock's business — they are
-         * monotonic, taken at the call site — so they are zeroed here.
+         * monotonic, taken at the call site — so the report omits them and all they decide (D-138).
          *
          * And the generation time is *omitted* rather than faked when the
          * environment names no `SOURCE_DATE_EPOCH`. Both formats mark the
@@ -92,7 +94,7 @@ final class GenericReportWriter implements Listener
     private function render(RunFinished $event): void
     {
         $title = $this->title ?? 'Test report';
-        $model = new RunModel($this->finished);
+        $model = new RunModel($this->reproducible ? $this->byFile($this->finished) : $this->finished);
         // A reproducible report is byte-stable across machines, so it
         // carries no note about this machine's profiler (D-041 kin).
         $document = RunReportDocument::build(
@@ -101,6 +103,7 @@ final class GenericReportWriter implements Listener
             $this->flaky,
             $title,
             $this->reproducible ? null : TimingOverhead::notice(),
+            timed: !$this->reproducible,
         );
 
         $context = new ReportContext(
@@ -108,7 +111,7 @@ final class GenericReportWriter implements Listener
             author: Version::AUTHOR,
             producer: sprintf('Crucible %s', Version::NUMBER),
             createdAt: $this->reproducible ? SourceDateEpoch::read() : $this->started,
-            runtime: $this->reproducible ? 0.0 : $event->duration,
+            runtime: $event->duration,
         );
 
         foreach ($this->keys as $key) {
@@ -130,5 +133,18 @@ final class GenericReportWriter implements Listener
             fwrite($stream, $rendered);
             fclose($stream);
         }
+    }
+
+    /**
+     * Path order, stable: a file's tests keep the order its one worker ran them in.
+     *
+     * @param  list<TestFinished>  $finished
+     * @return list<TestFinished>
+     */
+    private function byFile(array $finished): array
+    {
+        usort($finished, static fn(TestFinished $a, TestFinished $b): int => strcmp($a->test->file, $b->test->file));
+
+        return $finished;
     }
 }

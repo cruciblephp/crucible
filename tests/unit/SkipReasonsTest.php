@@ -57,6 +57,7 @@ final class SkipReasonsTest extends TestCase
         'No axe-core install available beside Playwright (npm install axe-core in the browser oracle).' => 'axe-core, the second package the browser oracle installs',
         'No Livewire oracle installed — see ORACLES.md.'                                                => 'the Livewire oracle application',
         'No Laravel install available (livewire-oracle missing).'                                       => 'a real laravel/framework, which the engine deliberately does not depend on',
+        'The Laravel oracle does not run on this PHP (its Composer platform check refuses it).'         => 'a PHP the oracle was resolved for: Composer installs it on the newest PHP and its dependencies may need more than the 8.3 floor',
         'The Livewire oracle did not start listening.'                                                  => 'the Livewire oracle, which serves over an ephemeral port',
         'Could not start the Livewire oracle.'                                                          => 'the Livewire oracle, which serves over an ephemeral port',
         'No free port for the Livewire oracle (set CRUCIBLE_LIVEWIRE_PORT to choose one).'              => 'a free TCP port, since the oracle binds one the OS hands out',

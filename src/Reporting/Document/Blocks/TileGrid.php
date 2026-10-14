@@ -15,7 +15,9 @@ use LucianoPereira\Crucible\Reporting\Document\Block;
 use LucianoPereira\Crucible\Reporting\Document\FoldingNode;
 use LucianoPereira\Crucible\Reporting\Document\TileEntry;
 
+use function strcmp;
 use function uasort;
+use function uksort;
 
 /**
  * A directory's own files, one tile each, sorted by descending
@@ -29,14 +31,20 @@ final readonly class TileGrid implements Block
      */
     public function __construct(
         public array $tiles,
+        /** false: ordered by path, no time printed (D-138) */
+        public bool $timed = true,
     ) {}
 
     /**
      * @param array<non-empty-string, list<TestFinished>> $files
      */
-    public static function build(array $files): self
+    public static function build(array $files, bool $timed = true): self
     {
-        uasort($files, static fn(array $a, array $b): int => FoldingNode::timeOf($b) <=> FoldingNode::timeOf($a));
+        if ($timed) {
+            uasort($files, static fn(array $a, array $b): int => FoldingNode::timeOf($b) <=> FoldingNode::timeOf($a));
+        } else {
+            uksort($files, strcmp(...));
+        }
 
         $tiles = [];
 
@@ -49,7 +57,7 @@ final readonly class TileGrid implements Block
             );
         }
 
-        return new self($tiles);
+        return new self($tiles, $timed);
     }
 
     public static function sample(): self

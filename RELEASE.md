@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-10-10 (D-001..D-137, 1.1.3). Every entry traces to a `DESIGN.md` decision
+_As of 2026-10-14 (D-001..D-139, 1.1.4). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -325,6 +325,15 @@ against Crucible's own class only._
 | `expectExceptionObject()` sets the class, message and code of one exception as three expectations, as under PHPUnit | `Framework\TestCase` |
 | `expectNotToPerformAssertions()` is read by the runner through `Assert`'s per-test state, in both dialects, and reset before each test | `Assert\Assert::declareNoAssertions()` |
 | `composer dump-autoload --strict-psr` passes on a checkout: every test class sits under the autoload rule, the nested-vendor fixtures are excluded from the classmap | `composer.json` |
+
+## 1.1.4
+
+| Shipped | Records |
+|---|---|
+| `--reproducible` reports are byte-identical across runs, sequential or parallel: no durations, no slowest tests, the tree ordered by path with nothing folded, the JSON duration and SARIF end time omitted rather than zeroed (D-138) | `Reporting\GenericReportWriter`, `Reporting\Document\Blocks\FoldingTree::$timed` |
+| Migration mode sets the real PHPUnit's configuration, so a Laravel suite runs, and `compat-check` compares it, while `phpunit/phpunit` is still installed (D-139) | `Compat\PhpUnitCompatibility::load()` |
+| `php artisan test` passes `--report`, every `--log-*` option and `--reproducible` through to the engine | `Bridge\Laravel\TestCommand` |
+| The Laravel oracle's tests skip, named, when Composer's platform check refuses the running PHP, instead of failing in the oracle's autoloader | `tests/unit/Bridge/Laravel/LaravelOracle.php` |
 
 ## Design inputs honored
 

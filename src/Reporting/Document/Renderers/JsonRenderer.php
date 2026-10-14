@@ -61,7 +61,8 @@ final readonly class JsonRenderer
                 'total'  => $passed + count($problems),
                 'passed' => $passed,
                 ...$this->outcomeTally($problems),
-                'duration' => $context->runtime,
+                // Omitted under --reproducible, for the same reason (D-138).
+                ...$tree->timed ? ['duration' => $context->runtime] : [],
             ],
             'problems' => array_map($this->problem(...), $problems),
         ];
