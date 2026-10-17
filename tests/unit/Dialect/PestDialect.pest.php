@@ -54,7 +54,7 @@ $log = new ArrayObject();
 });
 
 \test('common matchers', function (): void {
-    \expect(null)->toBeNull();
+    \expect()->toBeNull();
     \expect([])->toBeEmpty();
     \expect(1)->toBeTruthy();
     \expect('')->toBeFalsy();
@@ -604,8 +604,9 @@ $log = new ArrayObject();
         \expect(['a' => 1])->scoped(fn($e) => $e->toHaveKey('a'))->toHaveCount(1);
     });
 
+    // The bare form, as `pest --init` writes it into tests/Pest.php.
     \test('extend registers a custom matcher', function (): void {
-        \expect(null)->extend('toBeEspresso', function (): void {
+        \expect()->extend('toBeEspresso', function (): void {
             $this->toBe('espresso');
         });
 
@@ -617,14 +618,5 @@ $log = new ArrayObject();
     \test('test() with no description reaches the running test', function (): void {
         \expect(\test())->toBeInstanceOf(\LucianoPereira\Crucible\Dialect\Pest\RunningTest::class);
         \test()->assertSame(1, 1);
-    });
-
-    // The form `pest --init` writes into tests/Pest.php.
-    \test('extend registers a custom matcher from a bare expect()', function (): void {
-        \expect()->extend('toBeRistretto', function (): void {
-            $this->toBe('ristretto');
-        });
-
-        \expect('ristretto')->toBeRistretto();
     });
 });

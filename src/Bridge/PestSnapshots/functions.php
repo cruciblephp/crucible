@@ -219,38 +219,38 @@ if (!function_exists('Spatie\Snapshots\assertMatchesImageSnapshot')) {
 // The plain function form, \Spatie\Snapshots\assertMatchesSnapshot(),
 // has no such collision and works as expected — that's the spelling
 // to use for Spatie's specific file format.
-expect(null)->extend('toMatchFileHashSnapshot', function (): void {
+expect()->extend('toMatchFileHashSnapshot', function (): void {
     dispatch('assertMatchesFileHashSnapshot', [$this->value]);
 });
 
-expect(null)->extend('toMatchFileSnapshot', function (): void {
+expect()->extend('toMatchFileSnapshot', function (): void {
     dispatch('assertMatchesFileSnapshot', [$this->value]);
 });
 
-expect(null)->extend('toMatchHtmlSnapshot', function (): void {
+expect()->extend('toMatchHtmlSnapshot', function (): void {
     dispatch('assertMatchesHtmlSnapshot', [$this->value]);
 });
 
-expect(null)->extend('toMatchJsonSnapshot', function (): void {
+expect()->extend('toMatchJsonSnapshot', function (): void {
     dispatch('assertMatchesJsonSnapshot', [$this->value]);
 });
 
-expect(null)->extend('toMatchObjectSnapshot', function (): void {
+expect()->extend('toMatchObjectSnapshot', function (): void {
     dispatch('assertMatchesObjectSnapshot', [$this->value]);
 });
 
-expect(null)->extend('toMatchTextSnapshot', function (): void {
+expect()->extend('toMatchTextSnapshot', function (): void {
     dispatch('assertMatchesTextSnapshot', [$this->value]);
 });
 
-expect(null)->extend('toMatchXmlSnapshot', function (): void {
+expect()->extend('toMatchXmlSnapshot', function (): void {
     dispatch('assertMatchesXmlSnapshot', [$this->value]);
 });
 
-expect(null)->extend('toMatchYamlSnapshot', function (): void {
+expect()->extend('toMatchYamlSnapshot', function (): void {
     dispatch('assertMatchesYamlSnapshot', [$this->value]);
 });
 
-expect(null)->extend('toMatchImageSnapshot', function (float $threshold = 0.1, bool $includeAa = true): void {
+expect()->extend('toMatchImageSnapshot', function (float $threshold = 0.1, bool $includeAa = true): void {
     dispatch('assertMatchesImageSnapshot', [$this->value, $threshold, $includeAa]);
 });
