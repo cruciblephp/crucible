@@ -44,7 +44,18 @@ namespace LucianoPereira\Crucible\Configuration;
  */
 enum Quirk: string
 {
-    // No cases, and that is the parity claim rather than an omission.
+    /**
+     * `toThrow()` reads an interface name as a message fragment, as Pest
+     * does. ✓ Measured on Pest 4.7.8 with an InvalidArgumentException
+     * thrown: `toThrow(InvalidArgumentException::class)` passes and so
+     * does `not->toThrow(Throwable::class)`, which cannot both hold, since
+     * PHP's `instanceof` makes every InvalidArgumentException a Throwable.
+     * By default Crucible matches an interface as a type, in the string
+     * form and the closure form alike. D-143.
+     */
+    case ThrowInterfaceAsMessage = 'quirk_throw_interface_as_message';
+
+    // One case, and outside the matcher grid on purpose.
     //
     // Over 3,344 grid cells, 44 matchers and 76 corpus values, in both
     // forms, Crucible answers exactly as Pest 5.1.1 does. There is no

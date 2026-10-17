@@ -14,6 +14,8 @@ use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Test\TestId;
 
 use function array_any;
+use function sort;
+use function str_contains;
 use function str_starts_with;
 
 /**
@@ -27,11 +29,13 @@ final readonly class CoverageCollector
     private CoverageData $data;
 
     /**
-     * @param list<non-empty-string> $scope absolute directory prefixes (trailing slash) and files that count
+     * @param list<non-empty-string> $scope      absolute directory prefixes (trailing slash) and files that count
+     * @param list<non-empty-string> $testScope  the test directories, whose executed files a window lists as loaded
      */
     public function __construct(
         private CoverageDriver $driver,
         private array $scope,
+        private array $testScope = [],
     ) {
         $this->data = new CoverageData();
     }
@@ -51,14 +55,19 @@ final readonly class CoverageCollector
     {
         $window = $this->driver->stop();
         $lines  = [];
+        $loaded = [];
 
         foreach ($window->lines as $file => $values) {
-            if ($this->inScope($file)) {
+            if ($this->inScope($file, $this->scope)) {
                 $lines[$file] = $values;
+            } elseif ($this->inScope($file, $this->testScope) && !str_contains($file, '/vendor/') && array_any($values, static fn(int $value): bool => $value > 0)) {
+                $loaded[] = $file;
             }
         }
 
-        return new CoverageWindow($lines, $this->scoped($window->branches), $this->scoped($window->paths));
+        sort($loaded);
+
+        return new CoverageWindow($lines, $this->scoped($window->branches), $this->scoped($window->paths), $loaded);
     }
 
     /**
@@ -74,7 +83,7 @@ final readonly class CoverageCollector
         $kept = [];
 
         foreach ($entries as $file => $values) {
-            if ($this->inScope($file)) {
+            if ($this->inScope($file, $this->scope)) {
                 $kept[$file] = $values;
             }
         }
@@ -104,13 +113,16 @@ final readonly class CoverageCollector
         return $this->driver->name();
     }
 
-    private function inScope(string $file): bool
+    /**
+     * @param list<non-empty-string> $scope
+     */
+    private function inScope(string $file, array $scope): bool
     {
         // The driver reports the OS's own separator; a scope joined
         // with '/' on Windows would otherwise never match.
         $file = WorkingDirectory::native($file);
 
-        return array_any($this->scope, static function (string $prefix) use ($file): bool {
+        return array_any($scope, static function (string $prefix) use ($file): bool {
             $prefix = WorkingDirectory::native($prefix);
 
             return $file === $prefix || str_starts_with($file, $prefix);

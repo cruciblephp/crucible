@@ -10,6 +10,8 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Coverage;
 
+use function array_filter;
+use function array_values;
 use function count;
 use function is_array;
 use function is_int;
@@ -39,12 +41,14 @@ final class CoverageData
      * @param array<string, array<string, list<int>>>                  $tests    test id => executed file => executed lines (D-047)
      * @param array<string, array<string, array{line: int, hit: int}>> $branches file => branch id => first line + hit flag (D-062, xdebug only)
      * @param array<string, array<string, array{line: int, hit: int}>> $paths    file => path id => the same shape (--path-coverage, xdebug only)
+     * @param array<string, list<string>>                              $loaded   test id => test-directory files it executed outside the source scope
      */
     public function __construct(
         public array $lines = [],
         public array $tests = [],
         public array $branches = [],
         public array $paths = [],
+        public array $loaded = [],
     ) {}
 
     /**
@@ -83,6 +87,10 @@ final class CoverageData
 
         $this->tests[$testId] = $executed;
 
+        if ($observed->loaded !== []) {
+            $this->loaded[$testId] = $observed->loaded;
+        }
+
         foreach ($aggregate->lines as $file => $lines) {
             foreach ($lines as $line => $value) {
                 $this->lines[$file][$line] = max($this->lines[$file][$line] ?? $value, $value);
@@ -103,6 +111,10 @@ final class CoverageData
 
         foreach ($other->tests as $testId => $files) {
             $this->tests[$testId] = $files;
+        }
+
+        foreach ($other->loaded as $testId => $files) {
+            $this->loaded[$testId] = $files;
         }
 
         $this->branches = $this->mergedHits($this->branches, $other->branches);
@@ -234,6 +246,10 @@ final class CoverageData
             $payload['paths'] = $this->paths;
         }
 
+        if ($this->loaded !== []) {
+            $payload['loaded'] = $this->loaded;
+        }
+
         return json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
@@ -289,11 +305,20 @@ final class CoverageData
             $tests[$testId] = $perFile;
         }
 
+        $loaded = [];
+
+        foreach (is_array($decoded['loaded'] ?? null) ? $decoded['loaded'] : [] as $testId => $files) {
+            if (is_string($testId) && is_array($files)) {
+                $loaded[$testId] = array_values(array_filter($files, static fn(mixed $file): bool => is_string($file) && $file !== ''));
+            }
+        }
+
         return new self(
             $lines,
             $tests,
             self::hitsFrom($decoded['branches'] ?? null),
             self::hitsFrom($decoded['paths'] ?? null),
+            $loaded,
         );
     }
 

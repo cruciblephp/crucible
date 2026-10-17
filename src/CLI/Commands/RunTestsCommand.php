@@ -1011,7 +1011,7 @@ final class RunTestsCommand
                 return 1;
             }
 
-            $collector         = new CoverageCollector($driver, $scope);
+            $collector         = new CoverageCollector($driver, $scope, $postRun->testScope($configuration, $workingDirectory));
             $coverageDirectory = $workingDirectory->absolute($cacheDirectory) . '/coverage.tmp';
 
             if (!is_dir($coverageDirectory)) {
@@ -1596,7 +1596,7 @@ final class RunTestsCommand
                 $scope = $postRun->coverageScope($configuration, $workingDirectory, $manifest->overrides->coverageFilter);
 
                 if ($scope !== []) {
-                    $collector = new CoverageCollector($driver, $scope);
+                    $collector = new CoverageCollector($driver, $scope, $postRun->testScope($configuration, $workingDirectory));
                 }
             }
         }

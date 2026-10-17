@@ -15,6 +15,7 @@ use LucianoPereira\Crucible\Dialect\Pest\TraitComposer;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Tests\Fixtures\TraitShapes\AbstractBase;
+use LucianoPereira\Crucible\Tests\Fixtures\TraitShapes\AbstractShell;
 use LucianoPereira\Crucible\Tests\Fixtures\TraitShapes\Counts;
 use LucianoPereira\Crucible\Tests\Fixtures\TraitShapes\DemandsGreeting;
 use LucianoPereira\Crucible\Tests\Fixtures\TraitShapes\DemandsUnanswered;
@@ -93,6 +94,8 @@ final class TraitComposerTest extends TestCase
             // The composed class is concrete, and the base's abstract
             // method is implemented by nobody.
             'abstract-base-unimplemented' => [AbstractBase::class, [Greets::class]],
+            'abstract-shell-alone'        => [AbstractShell::class, []],
+            'abstract-base-alone'         => [AbstractBase::class, []],
             // A trait's own abstract method is a requirement too, and
             // nothing here answers it.
             'trait-abstract-unanswered' => [PlainBase::class, [DemandsUnanswered::class]],
@@ -117,6 +120,8 @@ final class TraitComposerTest extends TestCase
             'abstract-method-in-trait'    => 'composed',
             'collision'                   => 'refused',
             'abstract-base-unimplemented' => 'refused',
+            'abstract-shell-alone'        => 'composed',
+            'abstract-base-alone'         => 'refused',
             'trait-abstract-unanswered'   => 'refused',
             'final-method'                => 'refused',
             'property-pair-differs'       => 'refused',
@@ -193,6 +198,27 @@ final class TraitComposerTest extends TestCase
         // pest file that uses() only a base class must land on that
         // base, or its name shows up in every failure message.
         self::assertSame(PlainBase::class, TraitComposer::compose(PlainBase::class, []));
+    }
+
+    public function testAnAbstractBaseWithNothingLeftToImplementRunsInAConcreteSubclass(): void
+    {
+        // pest()->extend() on the Laravel skeleton's abstract TestCase:
+        // Pest runs it, so the tests need a concrete class to run in.
+        $composed = TraitComposer::compose(AbstractShell::class, []);
+
+        self::assertNotSame(AbstractShell::class, $composed);
+        self::assertInstanceOf(AbstractShell::class, new $composed('name'));
+    }
+
+    public function testAnAbstractBaseAloneStillNamesWhatNobodyImplements(): void
+    {
+        try {
+            TraitComposer::compose(AbstractBase::class, []);
+            self::fail('a concrete subclass cannot leave an abstract method unimplemented');
+        } catch (ConfigurationException $refusal) {
+            self::assertStringContainsString(AbstractBase::class, $refusal->getMessage());
+            self::assertStringContainsString('unimplemented()', $refusal->getMessage());
+        }
     }
 
     public function testAFinalBaseIsRefusedWithItsName(): void

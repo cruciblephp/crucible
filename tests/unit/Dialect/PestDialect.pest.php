@@ -87,6 +87,44 @@ $log = new ArrayObject();
     \expect(fn() => 'calm')->not->toThrow(RuntimeException::class);
 });
 
+// Each verdict below was taken from Pest 4.7.8 running the same call.
+\test('toThrow takes a closure that names the class and receives the exception', function (): void {
+    $boom = fn() => throw new InvalidArgumentException('boom');
+    $seen = null;
+
+    \expect($boom)->toThrow(function (InvalidArgumentException $e) use (&$seen): void {
+        $seen = $e->getMessage();
+    });
+    \expect($seen)->toBe('boom');
+
+    \expect(fn() => \expect($boom)->toThrow(function (RuntimeException $e): void {}))->toThrow(AssertionFailedError::class);
+    \expect(fn() => \expect($boom)->toThrow(function ($e): void {}))->toThrow(InvalidArgumentException::class, 'one parameter');
+    \expect($boom)->not->toThrow(function (RuntimeException $e): void {});
+
+    // Pest 4.7.8 fails this: it reads an interface as a message fragment.
+    // A Throwable was thrown, so Crucible passes it, as its string form does.
+    \expect($boom)->toThrow(function (Throwable $e): void {});
+});
+
+\test('toThrow takes an exception whose class and exact message must match', function (): void {
+    $boom = fn() => throw new InvalidArgumentException('boom');
+
+    \expect($boom)->toThrow(new InvalidArgumentException('boom'));
+    \expect($boom)->toThrow(new LogicException('boom'));
+    \expect($boom)->toThrow(new InvalidArgumentException('other'), 'boom');
+
+    \expect(fn() => \expect($boom)->toThrow(new InvalidArgumentException('boo')))->toThrow(AssertionFailedError::class);
+    \expect(fn() => \expect($boom)->toThrow(new RuntimeException('boom')))->toThrow(AssertionFailedError::class);
+    \expect($boom)->not->toThrow(new InvalidArgumentException('other'));
+});
+
+\test('a negated toThrow fails only when the positive form would pass', function (): void {
+    $boom = fn() => throw new InvalidArgumentException('boom');
+
+    \expect($boom)->not->toThrow(RuntimeException::class);
+    \expect(fn() => \expect($boom)->not->toThrow(InvalidArgumentException::class))->toThrow(AssertionFailedError::class);
+});
+
 \test('datasets spread list rows as arguments', function (int $left, int $right, int $sum): void {
     \expect($left + $right)->toBe($sum);
 })->with([
@@ -572,5 +610,21 @@ $log = new ArrayObject();
         });
 
         \expect('espresso')->toBeEspresso();
+    });
+
+    // Plugin helpers are `return test()->method(...)`: no description
+    // means the running test, protected methods included.
+    \test('test() with no description reaches the running test', function (): void {
+        \expect(\test())->toBeInstanceOf(\LucianoPereira\Crucible\Dialect\Pest\RunningTest::class);
+        \test()->assertSame(1, 1);
+    });
+
+    // The form `pest --init` writes into tests/Pest.php.
+    \test('extend registers a custom matcher from a bare expect()', function (): void {
+        \expect()->extend('toBeRistretto', function (): void {
+            $this->toBe('ristretto');
+        });
+
+        \expect('ristretto')->toBeRistretto();
     });
 });

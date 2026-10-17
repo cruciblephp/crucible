@@ -30,6 +30,10 @@ use function var_export;
  * class, and PHP has no runtime trait application — so a subclass is
  * generated once per (class, traits) combination and cached, the
  * same eval-once pattern the doubles generator uses (D-017).
+ *
+ * An abstract binding class gets one too, traits or not: Pest runs its
+ * tests in a generated concrete class, so `pest()->extend()` accepts
+ * the abstract TestCase the Laravel skeleton ships.
  */
 final class TraitComposer
 {
@@ -44,9 +48,10 @@ final class TraitComposer
      */
     public static function compose(string $class, array $traits): string
     {
-        $traits = array_values(array_unique($traits));
+        $traits     = array_values(array_unique($traits));
+        $reflection = new ReflectionClass($class);
 
-        if ($traits === []) {
+        if ($traits === [] && !$reflection->isAbstract()) {
             return $class;
         }
 
@@ -57,8 +62,6 @@ final class TraitComposer
         if (isset(self::$composed[$key])) {
             return self::$composed[$key];
         }
-
-        $reflection = new ReflectionClass($class);
 
         if ($reflection->isFinal()) {
             throw new ConfigurationException(sprintf(
@@ -86,13 +89,13 @@ final class TraitComposer
         if (!class_exists($fqcn, false)) {
             GeneratedCode::evaluate(
                 sprintf(
-                    'namespace %s\\Composed; class %s extends \\%s { use \\%s; }',
+                    'namespace %s\\Composed; class %s extends \\%s { %s }',
                     __NAMESPACE__,
                     $short,
                     $class,
-                    implode(', \\', $traits),
+                    $traits === [] ? '' : 'use \\' . implode(', \\', $traits) . ';',
                 ),
-                $class . ' composed with ' . implode(', ', $traits),
+                $traits === [] ? $class . ' made concrete' : $class . ' composed with ' . implode(', ', $traits),
             );
         }
 
@@ -186,7 +189,7 @@ final class TraitComposer
 
         if ($unimplemented !== []) {
             throw new ConfigurationException(sprintf(
-                'Cannot mix traits into %s: nothing here implements %s, and the composed class is '
+                'Cannot run tests in %s: nothing implements %s, and the class the tests run in is '
                     . 'concrete, which PHP refuses.',
                 $reflection->getName(),
                 implode(', ', $unimplemented),

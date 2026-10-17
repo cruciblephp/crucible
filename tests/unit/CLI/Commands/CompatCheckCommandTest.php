@@ -110,6 +110,24 @@ final class CompatCheckCommandTest extends TestCase
         // And an oracle that ran something is compared, whatever
         // Crucible did with it — the missing-test guard owns that side.
         self::assertNull(CompatCheckCommand::nothingToCompare(['tests/AT.php::testOne#0' => 'passed'], []));
+
+        // The advice names the oracle that actually ran.
+        self::assertStringContainsString('vendor/bin/pest', (string) CompatCheckCommand::nothingToCompare([], [], 'pest'));
+    }
+
+    public function testARunThatBuiltNothingLeadsWithItsOwnError(): void
+    {
+        // What a Pest.php that throws during discovery prints: the banner,
+        // then PHP's report, whose message is above its stack frames.
+        $output = "crucible 1.1.5 by Luciano Federico Pereira.\n\nConfiguration: /p/crucible.php\n\n"
+            . "PHP Fatal error:  Uncaught RuntimeException: the class is abstract in /p/tests/Pest.php:12\n"
+            . "Stack trace:\n#0 /p/src/Runner/TestDiscoverer.php(281): build()\n#1 {main}\n  thrown in /p/tests/Pest.php on line 12\n"
+            . "PHP Fatal error:  Uncaught RuntimeException: the class is abstract in /p/tests/Pest.php:12\n";
+
+        self::assertSame(
+            ['PHP Fatal error:  Uncaught RuntimeException: the class is abstract in /p/tests/Pest.php:12'],
+            CompatCheckCommand::diagnosis($output, 8),
+        );
     }
 
     public function testTheCandidateFilesAreScannedForClassesIncludingPestShapedOnes(): void

@@ -84,6 +84,10 @@ final class CalculatorTest extends TestCase
 // Pest — *.pest.php, natively.
 it('rounds up', fn() => expect((int) ceil(1.2))->toBe(2));
 
+// Inline — a row on the method itself, from src/Reporting/PrettyName.php.
+#[Check(['tests/unit/Runner/SchedulerTest.php'], returns: 'Scheduler')]
+public static function ofFile(string $file): string
+
 // Architecture is a test, not a linter.
 arch('the domain stays pure')->expect('App\Domain')->toOnlyUse('App\Domain');
 
@@ -92,8 +96,8 @@ arch('the domain stays pure')->expect('App\Domain')->toOnlyUse('App\Domain');
 visit('/checkout')->click('Place order')->waitForNetworkIdle()->assertSee('Thank you');
 ```
 
-Every sample is from [`examples/`](examples), and those files are **run by the test suite** —
-an example that stopped working turns the suite red.
+Every sample is from [`examples/`](examples) or from Crucible's own source, and both are **run
+by the test suite**, so an example that stopped working turns the suite red.
 
 ---
 
@@ -127,6 +131,7 @@ type string.
 | [examples/](examples) | Executable examples, run by the suite |
 | [RELEASE.md](RELEASE.md) | What shipped, traced to its decision record |
 | [DESIGN.md](DESIGN.md) | Why each thing is the way it is |
+| [RESEARCH.md](RESEARCH.md) | The study behind the design: what other runners and the literature taught |
 | [ORACLES.md](ORACLES.md) | The real installs some tests run against, and how to rebuild them |
 
 ---

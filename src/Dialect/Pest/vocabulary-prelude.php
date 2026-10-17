@@ -74,3 +74,12 @@ if (\is_file($manifest)) {
         $GLOBALS['__composer_autoload_files'] = $marked;
     }
 }
+
+// Crucible's vocabulary is declared now, before Composer includes any
+// `files` entry. A plugin that calls expect()->extend() while it loads
+// (pestphp/pest-plugin-laravel does) then reaches Crucible's expect(),
+// where it found no expect() at all and ended the process. Composer has
+// registered its class loader by the time those files run, so the
+// Expectation class resolves. Only function declarations happen here.
+require __DIR__ . '/functions.php';
+require __DIR__ . '/crucible-functions.php';

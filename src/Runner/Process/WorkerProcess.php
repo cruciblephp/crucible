@@ -20,6 +20,7 @@ use function fwrite;
 use function getenv;
 use function is_resource;
 use function proc_close;
+use function proc_get_status;
 use function proc_open;
 use function proc_terminate;
 use function rtrim;
@@ -27,6 +28,7 @@ use function str_ends_with;
 use function stream_set_blocking;
 use function substr;
 use function trim;
+use function usleep;
 
 use const PHP_BINARY;
 
@@ -46,6 +48,8 @@ final class WorkerProcess
     private string $stderrPending = '';
 
     private bool $finished = false;
+
+    private ?int $signal = null;
 
     /**
      * @param resource     $process
@@ -204,6 +208,20 @@ final class WorkerProcess
         proc_terminate($this->process, 9);
     }
 
+    /**
+     * The signal that killed the worker, once close() reaped it; null
+     * for a normal exit.
+     */
+    public function signal(): ?int
+    {
+        return $this->signal;
+    }
+
+    /**
+     * Reaps the worker. The status is read before proc_close(), which
+     * folds a signal into the exit code; a signal is returned as the
+     * code, as proc_close() alone returns it.
+     */
     public function close(): int
     {
         $this->drainStderr();
@@ -211,6 +229,21 @@ final class WorkerProcess
         fclose($this->stdout);
         fclose($this->stderr);
 
-        return proc_close($this->process);
+        $status = proc_get_status($this->process);
+
+        while ($status['running']) {
+            usleep(1_000);
+            $status = proc_get_status($this->process);
+        }
+
+        $exit = proc_close($this->process);
+
+        if ($status['signaled']) {
+            $this->signal = $status['termsig'];
+
+            return $status['termsig'];
+        }
+
+        return $exit;
     }
 }

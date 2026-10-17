@@ -109,6 +109,19 @@ final class CrucibleRunTest extends TestCase
         $this->assertSame(['App\T::testIt' => 'pass'], $outcomes);
     }
 
+    public function testAFailingTestKeepsItsMessageForTheDriftReport(): void
+    {
+        $this->write([
+            '{"event":"test:finish","id":"tests/A.pest.php::throws","outcome":"fail","error":{"message":"Expected no Throwable to be thrown"}}',
+            '{"event":"test:finish","id":"tests/A.pest.php::passes","outcome":"pass"}',
+        ]);
+
+        $this->assertSame(
+            ['tests/A.pest.php::throws' => 'Expected no Throwable to be thrown'],
+            CrucibleRun::parseMessages($this->file),
+        );
+    }
+
     public function testNoEventsFileYieldsNoOutcomes(): void
     {
         $this->assertSame([], CrucibleRun::parseEvents($this->file));

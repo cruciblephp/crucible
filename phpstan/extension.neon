@@ -90,6 +90,20 @@ services:
         class: LucianoPereira\Crucible\PHPStan\DialectClosureThisExtension
         tags:
             - phpstan.functionParameterClosureThisExtension
+    # What a beforeEach puts on $this, for the file's tests: typed from the
+    # hook's assignment, mixed otherwise, as pest-plugin-phpstan answers
+    # (D-144). Pest's test class allows dynamic properties.
+    -
+        class: LucianoPereira\Crucible\PHPStan\PestHookProperties
+    -
+        class: LucianoPereira\Crucible\PHPStan\PestHookPropertyRule
+        tags:
+            - phpstan.rules.rule
+    -
+        class: LucianoPereira\Crucible\PHPStan\PestThisPropertyExtension
+        tags:
+            - phpstan.broker.expressionTypeResolverExtension
+            - phpstan.ignoreErrorExtension
     -
         class: LucianoPereira\Crucible\PHPStan\DialectMethodClosureThisExtension
         tags:

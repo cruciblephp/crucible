@@ -67,6 +67,7 @@ final class SkipReasonsTest extends TestCase
         'The OTR schema ships with the oracle reference install (phpunit-main/), which is not present.' => 'the PHPUnit oracle, which carries the OTR schema',
         'The SARIF schema is fetched as an oracle (sarif-schema/), which is not present.'               => 'the OASIS SARIF schema, which is normative and not ours to vendor',
         'xdebug is loaded without coverage mode.'                                                       => 'xdebug in coverage mode (-d xdebug.mode=coverage)',
+        'pcov is loaded but disabled.'                                                                  => 'pcov enabled (-d pcov.enabled=1)',
         'xdebug is in debug mode, so a clean child mode is not available.'                              => 'an xdebug that is not running a debugger — the supervisor leaves an attached step-debugging session alone in the child',
         'phpstan is not installed (require-dev).'                                                       => 'the phpstan dev dependency',
         'the prelude needs pcov or xdebug in the child.'                                                => 'a coverage driver the CHILD can load, since the prelude collects in a process this one only spawns',

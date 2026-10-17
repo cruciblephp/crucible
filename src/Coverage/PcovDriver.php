@@ -15,7 +15,7 @@ use function pcov\collect;
 use function pcov\start;
 use function pcov\stop;
 
-use const pcov\inclusive;
+use const pcov\all;
 
 /**
  * Coverage through pcov — the fast line-coverage engine, preferred
@@ -24,6 +24,11 @@ use const pcov\inclusive;
  * PHP 8.4/8.5; the working installs come from distribution packagers
  * (Debian/Ubuntu: the Surý packages; macOS: the shivammathur tap).
  * Detection is runtime-based, so a patched build simply works.
+ *
+ * Collects in `all` mode: pcov 1.0.12 dereferences a null filter in
+ * `collect(inclusive)` without one and dies by SIGSEGV on every PHP.
+ * pcov.directory already bounds what it instruments, and
+ * CoverageCollector applies the source scope.
  */
 final readonly class PcovDriver implements CoverageDriver
 {
@@ -41,7 +46,7 @@ final readonly class PcovDriver implements CoverageDriver
     {
         stop();
 
-        $collected = collect(inclusive);
+        $collected = collect(all);
 
         clear();
 

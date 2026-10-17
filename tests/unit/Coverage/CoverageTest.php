@@ -22,13 +22,17 @@ use LucianoPereira\Crucible\Coverage\CoverageWindow;
 use LucianoPereira\Crucible\Coverage\Crap4jWriter;
 use LucianoPereira\Crucible\Coverage\DriverFactory;
 use LucianoPereira\Crucible\Coverage\HtmlReport;
+use LucianoPereira\Crucible\Coverage\Lines;
+use LucianoPereira\Crucible\Coverage\PcovDriver;
 use LucianoPereira\Crucible\Coverage\PhpWriter;
 use LucianoPereira\Crucible\Coverage\TestLineMap;
 use LucianoPereira\Crucible\Coverage\TextReport;
 use LucianoPereira\Crucible\Coverage\XmlReport;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Test\TestId;
+use ReflectionClass;
 
+use function array_keys;
 use function file_get_contents;
 use function file_put_contents;
 use function getmypid;
@@ -36,12 +40,17 @@ use function glob;
 use function is_dir;
 use function is_file;
 use function mkdir;
+use function pcov\clear;
+use function pcov\collect;
+use function pcov\stop;
 use function preg_match;
 use function rmdir;
 use function sha1_file;
 use function sys_get_temp_dir;
 use function uniqid;
 use function unlink;
+
+use const pcov\inclusive;
 
 #[CoversClass(CoverageCollector::class)]
 #[CoversClass(CoverageData::class)]
@@ -53,6 +62,7 @@ use function unlink;
 #[CoversClass(CloverWriter::class)]
 #[CoversClass(CoberturaWriter::class)]
 #[CoversClass(HtmlReport::class)]
+#[CoversClass(PcovDriver::class)]
 final class CoverageTest extends TestCase
 {
     /**
@@ -122,6 +132,49 @@ final class CoverageTest extends TestCase
         // Branch entries obey the same scope (D-062).
         self::assertSame(['sum@0' => ['line' => 3, 'hit' => 1]], $data->branches['/project/src/Math.php'] ?? null);
         $this->assertArrayNotHasKey('/project/vendor/dep.php', $data->branches);
+    }
+
+    public function testTheCollectorListsTheTestFilesATestRanOutsideTheSource(): void
+    {
+        $collector = new CoverageCollector(
+            $this->driver([new CoverageWindow([
+                '/project/src/Math.php'                  => [3 => 1],
+                '/project/tests/Fixtures/Inputs.php'     => [5 => 1],
+                '/project/tests/Fixtures/Unused.php'     => [2 => -1],  // loaded, never executed
+                '/project/tests/fixtures/vendor/dep.php' => [1 => 1],   // a vendor tree under the tests
+                '/project/vendor/dep.php'                => [1 => 1],   // outside both scopes
+            ])]),
+            ['/project/src/'],
+            ['/project/tests/'],
+        );
+
+        $collector->begin();
+        $window = $collector->end();
+        $collector->record(new TestId('tests/MyTest.php', 'adds'), $window, $window);
+
+        self::assertSame(['/project/tests/Fixtures/Inputs.php'], $window->loaded);
+        self::assertSame(['/project/src/Math.php'], array_keys($window->lines), 'the report scope is unchanged');
+
+        $data = CoverageData::fromJson($collector->data()->toJson());
+        $data->merge(new CoverageData(loaded: ['tests/OtherTest.php::b' => ['/project/tests/Fixtures/Other.php']]));
+
+        self::assertSame(
+            ['tests/MyTest.php::adds' => ['/project/tests/Fixtures/Inputs.php'], 'tests/OtherTest.php::b' => ['/project/tests/Fixtures/Other.php']],
+            $data->loaded,
+        );
+
+        $map  = TestLineMap::fromData($data, '/project');
+        $file = sys_get_temp_dir() . '/crucible-covlines-' . uniqid() . '.json';
+
+        try {
+            $map->save($file);
+
+            self::assertSame(['tests/Fixtures/Inputs.php'], TestLineMap::load($file)->loaded['tests/MyTest.php::adds'] ?? null);
+        } finally {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
     }
 
     public function testBranchesMergeByAnyHitAndRoundTrip(): void
@@ -401,6 +454,29 @@ final class CoverageTest extends TestCase
         }
     }
 
+    public function testTheLineMapKeepsEveryReportedLineAndReadsAnOlderMapWithout(): void
+    {
+        $map  = TestLineMap::fromData(new CoverageData(['/p/src/A.php' => [9 => -1, 3 => 1, 7 => -2]]), '/p');
+        $file = sys_get_temp_dir() . '/crucible-covlines-' . uniqid() . '.json';
+
+        self::assertSame(['src/A.php' => [3, 7, 9]], $map->executable);
+
+        try {
+            $map->save($file);
+
+            self::assertSame($map->executable, TestLineMap::load($file)->executable);
+
+            file_put_contents($file, '{"version": 1, "tests": {"t.php::a": {"src/A.php": [3]}}}');
+
+            self::assertSame([], TestLineMap::load($file)->executable);
+            self::assertSame(['t.php::a'], TestLineMap::load($file)->testsCovering('src/A.php', 3));
+        } finally {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+    }
+
     public function testTheLineMapAnswersTheMutationQueryAndRoundTrips(): void
     {
         $data = new CoverageData(
@@ -578,6 +654,34 @@ final class CoverageTest extends TestCase
         self::assertSame('big', $probe);
         self::assertNotSame([], $window->lines[__FILE__] ?? []);
         self::assertNotSame([], $window->branches[__FILE__] ?? []);
+    }
+
+    #[RequiresPhpExtension('pcov')]
+    public function testThePcovDriverCollectsWhatTheInclusiveModeReturns(): void
+    {
+        $driver = DriverFactory::detect();
+
+        if (!$driver instanceof PcovDriver) {
+            self::markTestSkipped('pcov is loaded but disabled.');
+        }
+
+        // pcov's collect() consumes the window, so each mode reads its own
+        // window over the same probe, a src/ class inside pcov's default directory.
+        $file  = (string) (new ReflectionClass(CoverageWindow::class))->getFileName();
+        $probe = new CoverageWindow([$file => [1 => 1]]);
+
+        $driver->start();
+        $probe->withoutHits();
+        $all = $driver->stop()->lines[$file] ?? [];
+
+        $driver->start();
+        $probe->withoutHits();
+        stop();
+        $inclusive = Lines::normalize(collect(inclusive, [$file]))[$file] ?? [];
+        clear();
+
+        self::assertNotSame([], $all);
+        self::assertSame($inclusive, $all);
     }
 
     private function probeLine(int $x): int

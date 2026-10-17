@@ -56,6 +56,7 @@ use function is_int;
 use function is_iterable;
 use function is_string;
 use function method_exists;
+use function realpath;
 use function rtrim;
 use function sprintf;
 use function strlen;
@@ -110,13 +111,8 @@ final readonly class PestBuilder
         }
 
         $reflection = new ReflectionClass($class);
-
-        if ($reflection->isAbstract()) {
-            throw new ConfigurationException(sprintf('uses(%s) in %s: the class is abstract.', $class, $relative));
-        }
-
-        $class = TraitComposer::compose($class, [...$state->traits, ...AutoMixedTrait::forClass($reflection)]);
-        $class = SnapshotIdentityWrapper::wrap($class);
+        $class      = TraitComposer::compose($class, [...$state->traits, ...AutoMixedTrait::forClass($reflection)]);
+        $class      = SnapshotIdentityWrapper::wrap($class);
 
         // Real Pest's own equivalent (spatie/pest-plugin-snapshots'
         // override of SnapshotDirectoryAware) hardcodes this same
@@ -364,6 +360,12 @@ final readonly class PestBuilder
 
         if ($set !== []) {
             $ours = $set[0];
+        }
+
+        // The vocabulary prelude declares it before Composer's files run,
+        // so a plugin that extends expect() at load time reaches ours.
+        if (!$ours && function_exists('test')) {
+            $ours = realpath((string) (new ReflectionFunction('test'))->getFileName()) === realpath(__DIR__ . '/functions.php');
         }
 
         return $ours;

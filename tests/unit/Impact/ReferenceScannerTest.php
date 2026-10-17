@@ -129,4 +129,24 @@ final class ReferenceScannerTest extends TestCase
             '<?php namespace App; use App\Concerns\Sortable; final class C { use Sortable; }',
         );
     }
+
+    public function testTraitUseWithAnAdaptationBlockIsAReference(): void
+    {
+        self::assertSame(
+            ['Vendor\Concerns\Sortable'],
+            (new ReferenceScanner())->referencesIn(
+                '<?php namespace App; final class C { use \Vendor\Concerns\Sortable { sort as protected order; } }',
+            ),
+        );
+    }
+
+    public function testTypedConstantTypeIsAReferenceAndItsNameIsNot(): void
+    {
+        self::assertSame(
+            ['Vendor\Contracts\HasLabel', 'App\Tone'],
+            (new ReferenceScanner())->referencesIn(
+                '<?php namespace App; final class C { const \Vendor\Contracts\HasLabel FALLBACK = \App\Tone::Warm; }',
+            ),
+        );
+    }
 }

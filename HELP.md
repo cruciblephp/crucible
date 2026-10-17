@@ -635,9 +635,10 @@ performed — Crucible has no update channel and does not phone home.
 ---
 
 `crucible compat-check` runs the project's real, installed incumbent alongside Crucible and
-diagnoses any test that passes on the oracle but fails on Crucible — usually a sign the test
-asserts PHPUnit's own internals (its file layout, its internal method names) rather than your
-code's behavior, not a Crucible bug. The oracle is `vendor/bin/pest` where Pest is installed and
+diagnoses any test that passes on the oracle but fails on Crucible, showing Crucible's own
+failure message for each. On a PHPUnit suite such a test usually asserts PHPUnit's internals
+(its file layout, its internal method names) rather than your code's behaviour. If Crucible
+could not build the suite at all, the first thing printed is the error that stopped it. The oracle is `vendor/bin/pest` where Pest is installed and
 `vendor/bin/phpunit` otherwise: PHPUnit's binary refuses to run a Pest suite, so on a Pest
 project it would collect nothing. Tests the oracle reports without a source file — Pest names a
 classic PHPUnit class by its description — are read instead from the same run's PHPUnit event log,

@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\PHPStan;
 
 use LucianoPereira\Crucible\Dialect\Pest\Expectation;
+use LucianoPereira\Crucible\Dialect\Pest\RunningTest;
 use LucianoPereira\Crucible\Dialect\Pest\TestCall;
 use Override;
 use PHPStan\Reflection\ClassReflection;
@@ -18,6 +19,7 @@ use PHPStan\Reflection\MethodReflection;
 use PHPStan\Reflection\MethodsClassReflectionExtension;
 use PHPStan\Reflection\PropertiesClassReflectionExtension;
 use PHPStan\Reflection\PropertyReflection;
+use PHPStan\Type\MixedType;
 use PHPStan\Type\ObjectType;
 
 use function array_key_exists;
@@ -67,7 +69,9 @@ final readonly class DialectMagicReflectionExtension implements PropertiesClassR
     #[Override]
     public function hasMethod(ClassReflection $classReflection, string $methodName): bool
     {
-        return array_key_exists($classReflection->getName(), self::CHAINS);
+        // RunningTest forwards any call to whichever test is running, so
+        // what it returns is that test's business (D-145).
+        return array_key_exists($classReflection->getName(), self::CHAINS) || $classReflection->getName() === RunningTest::class;
     }
 
     #[Override]
@@ -76,7 +80,9 @@ final readonly class DialectMagicReflectionExtension implements PropertiesClassR
         return new MagicChainMethod(
             $methodName,
             $classReflection,
-            new ObjectType(self::CHAINS[$classReflection->getName()] ?? Expectation::class),
+            $classReflection->getName() === RunningTest::class
+                ? new MixedType()
+                : new ObjectType(self::CHAINS[$classReflection->getName()] ?? Expectation::class),
         );
     }
 }

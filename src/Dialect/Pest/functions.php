@@ -25,13 +25,25 @@ use LucianoPereira\Crucible\Dialect\Pest\DescribeCall;
 use LucianoPereira\Crucible\Dialect\Pest\Expectation;
 use LucianoPereira\Crucible\Dialect\Pest\PestRegistry;
 use LucianoPereira\Crucible\Dialect\Pest\PestScopes;
+use LucianoPereira\Crucible\Dialect\Pest\RunningTest;
 use LucianoPereira\Crucible\Dialect\Pest\ScopeRegistration;
 use LucianoPereira\Crucible\Dialect\Pest\TestCall;
 
 if (!\function_exists('test')) {
-    /** @param non-empty-string $description */
-    function test(string $description, ?Closure $closure = null): TestCall
+    /**
+     * With no description, the running test, as under Pest: plugin
+     * helpers such as Pest\Laravel\get() call `test()->get(...)`.
+     *
+     * @param ?non-empty-string $description
+     *
+     * @return ($description is null ? RunningTest : TestCall)
+     */
+    function test(?string $description = null, ?Closure $closure = null): TestCall|RunningTest
     {
+        if ($description === null) {
+            return new RunningTest();
+        }
+
         return PestRegistry::test($description, $closure, 'test');
     }
 }
@@ -161,7 +173,7 @@ if (!\function_exists('expect')) {
      * Typed for the analyser by ExpectFunctionReturnTypeExtension (D-128):
      * `Expectation<typeof $value>`.
      */
-    function expect(mixed $value): Expectation
+    function expect(mixed $value = null): Expectation
     {
         return new Expectation($value);
     }

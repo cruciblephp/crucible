@@ -33,6 +33,7 @@ use function file_put_contents;
 use function getmypid;
 use function in_array;
 use function is_file;
+use function preg_match;
 use function printf;
 use function realpath;
 use function rtrim;
@@ -123,7 +124,7 @@ final class CompatCheckCommand
         }
 
         print 'Running Crucible...' . PHP_EOL;
-        $crucible = CrucibleRun::outcomes($crucibleBinary, $forwarded, $workingDirectory, $tmp . '-events.ndjson');
+        ['outcomes' => $crucible, 'messages' => $messages, 'output' => $output] = CrucibleRun::run($crucibleBinary, $forwarded, $workingDirectory, $tmp . '-events.ndjson');
 
         print PHP_EOL;
 
@@ -155,7 +156,7 @@ final class CompatCheckCommand
 
         // And before that: an oracle that collected nothing leaves both
         // lists empty, which is exactly what agreement is spelled with.
-        $vacuous = self::nothingToCompare($oracle, $crucible);
+        $vacuous = self::nothingToCompare($oracle, $crucible, basename($oracleBinary));
 
         if ($vacuous !== null) {
             print $vacuous;
@@ -167,7 +168,7 @@ final class CompatCheckCommand
         // Crucible agrees about. Comparing outcomes alone cannot see
         // that, so nothing below is meaningful until it is ruled out.
         if ($missing !== []) {
-            return $this->reportMissing($oracle, $crucible, $missing);
+            return $this->reportMissing($oracle, $crucible, $missing, $output);
         }
 
         if ($drifted === []) {
@@ -200,7 +201,7 @@ final class CompatCheckCommand
             return 0;
         }
 
-        return $this->handleDrift($drifted, $manifest, $workingDirectory, $options->autoFix, basename($oracleBinary));
+        return $this->handleDrift($drifted, $messages, $manifest, $workingDirectory, $options->autoFix, basename($oracleBinary));
     }
 
     /**
@@ -354,7 +355,7 @@ final class CompatCheckCommand
      * @param array<string, string> $oracle
      * @param array<string, string> $crucible
      */
-    public static function nothingToCompare(array $oracle, array $crucible): ?string
+    public static function nothingToCompare(array $oracle, array $crucible, string $engine = 'phpunit'): ?string
     {
         if ($oracle !== []) {
             return null;
@@ -363,10 +364,12 @@ final class CompatCheckCommand
         return sprintf(
             'The oracle ran no tests at all, while Crucible ran %d. Nothing can be compared, so this '
                 . 'is not "no drift".' . PHP_EOL . PHP_EOL
-                . 'Check that the real phpunit collects anything here on its own (vendor/bin/phpunit), that '
+                . 'Check that the real %s collects anything here on its own (vendor/bin/%s), that '
                 . 'a forwarded --filter matches something — it is passed to both engines verbatim — and that '
                 . 'this is the directory its configuration belongs to.' . PHP_EOL,
             count($crucible),
+            $engine,
+            $engine,
         );
     }
 
@@ -375,18 +378,35 @@ final class CompatCheckCommand
      * @param array<string, string>  $crucible
      * @param list<non-empty-string> $missing
      */
-    private function reportMissing(array $oracle, array $crucible, array $missing): int
+    private function reportMissing(array $oracle, array $crucible, array $missing, string $output): int
     {
         if ($crucible === []) {
             printf(
                 'Crucible ran no tests at all, while the oracle ran %d. Nothing can be compared, so this '
-                    . 'is not "no drift".' . PHP_EOL . PHP_EOL
-                    . 'The usual cause: phpunit/phpunit is installed, so the PHPUnit-namespace compatibility '
-                    . 'aliases stand down (D-019) and a suite extending PHPUnit\'s TestCase is discovered by '
-                    . 'nobody. Give the suite Crucible\'s TestCase, opt in with ->phpunitCompatibility(), or '
-                    . 'run the comparison from a checkout where the dialect applies.' . PHP_EOL,
+                    . 'is not "no drift".' . PHP_EOL . PHP_EOL,
                 count($oracle),
             );
+
+            $said = self::diagnosis($output, 8);
+
+            // What Crucible's own run printed is the diagnosis when there
+            // is one: the setup error that stopped it before any test.
+            if ($said !== []) {
+                print 'Crucible\'s own run stopped with:' . PHP_EOL;
+
+                foreach ($said as $line) {
+                    print '  ' . $line . PHP_EOL;
+                }
+
+                print PHP_EOL . 'Running vendor/bin/crucible on its own shows the same.' . PHP_EOL;
+
+                return 2;
+            }
+
+            print 'It printed nothing. A common cause: phpunit/phpunit is installed, so the PHPUnit-namespace '
+                . 'compatibility aliases stand down (D-019) and a suite extending PHPUnit\'s TestCase is '
+                . 'discovered by nobody. Give the suite Crucible\'s TestCase, opt in with '
+                . '->phpunitCompatibility(), or run the comparison from a checkout where the dialect applies.' . PHP_EOL;
 
             // The setup side of the line: nothing was compared, and the
             // cause named above is a configuration one. Its neighbour
@@ -414,9 +434,35 @@ final class CompatCheckCommand
     }
 
     /**
-     * @param list<non-empty-string> $drifted
+     * The first lines of a run's output that say something: no banner,
+     * no stack frames, so an uncaught error leads with its message.
+     *
+     * @return list<string>
      */
-    private function handleDrift(array $drifted, FixManifest $manifest, WorkingDirectory $workingDirectory, bool $autoFix, string $oracle): int
+    public static function diagnosis(string $output, int $count): array
+    {
+        $lines = [];
+
+        foreach (explode("\n", $output) as $line) {
+            $line = rtrim($line);
+
+            if ($line === '' || preg_match('/^(crucible \d|Configuration: |(PHP )?Stack trace:|#\d+ |PHP +\d+\. |\s+thrown in )/', $line) === 1) {
+                continue;
+            }
+
+            if (!in_array($line, $lines, true)) {
+                $lines[] = $line;
+            }
+        }
+
+        return array_slice($lines, 0, $count);
+    }
+
+    /**
+     * @param list<non-empty-string> $drifted
+     * @param array<string, string>  $messages Crucible's failure message per test id
+     */
+    private function handleDrift(array $drifted, array $messages, FixManifest $manifest, WorkingDirectory $workingDirectory, bool $autoFix, string $oracle): int
     {
         $patterns = KnownCouplingPatterns::all();
         $unfixed  = 0;
@@ -426,7 +472,16 @@ final class CompatCheckCommand
             $method                = explode('#', $rest, 2)[0];
 
             printf('%s::%s fails under Crucible, passes under real %s.' . PHP_EOL, $relativeFile, $method, $oracle);
-            print "  Likely coupled to PHPUnit's own internals (file layout, internal class/method names) rather than your code's behavior." . PHP_EOL;
+
+            foreach (array_slice(explode("\n", $messages[$key] ?? ''), 0, 3) as $line) {
+                if (trim($line) !== '') {
+                    print '  Crucible: ' . rtrim($line) . PHP_EOL;
+                }
+            }
+
+            if ($oracle === 'phpunit') {
+                print "  Likely coupled to PHPUnit's own internals (file layout, internal class/method names) rather than your code's behavior." . PHP_EOL;
+            }
 
             $file = rtrim($workingDirectory->path, '/') . '/' . $relativeFile;
 
@@ -440,8 +495,11 @@ final class CompatCheckCommand
             $source = (string) file_get_contents($file);
             $span   = SourceRewriter::locateMethod($source, $method);
 
+            // The known fixes rewrite class methods; a Pest test is a closure.
             if ($span === null) {
-                print '  Could not locate the method in its source file to check for a known fix — review manually.' . PHP_EOL . PHP_EOL;
+                print ($oracle === 'phpunit'
+                    ? '  Could not locate the method in its source file to check for a known fix — review manually.'
+                    : '  Not a class method, so no known fix applies — start from the message above.') . PHP_EOL . PHP_EOL;
                 $unfixed++;
 
                 continue;

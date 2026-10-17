@@ -604,6 +604,7 @@ final class Supervisor
                         $worker->expected,
                         $finished[$key],
                         'The worker process running this test exited unexpectedly.'
+                            . $this->signalNote($worker->signal())
                             . ($worker->stderrTail() !== '' ? ' Worker stderr: ' . $worker->stderrTail() : ''),
                     );
                 }
@@ -760,6 +761,27 @@ final class Supervisor
             $this->emitter->emit(new TestFinished($id, Outcome::Errored, 0.0, reason: $reason));
             $this->tally(Outcome::Errored);
         }
+    }
+
+    /**
+     * A worker killed by a signal says so, and under coverage names the
+     * driver it carried: a crashing driver leaves no stderr of its own.
+     */
+    private function signalNote(?int $signal): string
+    {
+        if ($signal === null) {
+            return '';
+        }
+
+        $note = ' It was killed by signal ' . $signal;
+
+        if ($this->coverageDirectory !== null) {
+            $note .= extension_loaded('pcov') && !$this->coverageBranch
+                ? ', with the pcov coverage driver loaded'
+                : ', with the xdebug coverage driver loaded';
+        }
+
+        return $note . '.';
     }
 
     private function tally(Outcome $outcome): void

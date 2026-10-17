@@ -168,6 +168,30 @@ final readonly class PostRunReport
     }
 
     /**
+     * The test suites' directories, as the collector's test scope: what a
+     * test executes there besides the source is part of what judges a
+     * mutant (fixtures, helpers).
+     *
+     * @return list<non-empty-string>
+     */
+    public function testScope(Configuration $configuration, WorkingDirectory $workingDirectory): array
+    {
+        $scope = [];
+
+        foreach ($configuration->testSuites as $suite) {
+            foreach ($suite->directories as $directory) {
+                $absolute = realpath($workingDirectory->absolute($directory));
+
+                if ($absolute !== false) {
+                    $scope[] = $absolute . '/';
+                }
+            }
+        }
+
+        return $scope;
+    }
+
+    /**
      * Folds every artifact matching a glob into the collection and
      * removes it, returning how many were merged. Unreadable is
      * skipped rather than fatal, and still removed: an artifact nobody

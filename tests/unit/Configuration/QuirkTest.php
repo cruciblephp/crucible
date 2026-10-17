@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Tests\Configuration;
 
+use InvalidArgumentException;
 use LucianoPereira\Crucible\Attributes\CoversClass;
 use LucianoPereira\Crucible\Configuration\Crucible;
 use LucianoPereira\Crucible\Configuration\Quirk;
@@ -17,8 +18,10 @@ use LucianoPereira\Crucible\Dialect\Pest\Expectation;
 use LucianoPereira\Crucible\Dialect\Pest\InvalidExpectationValue;
 use LucianoPereira\Crucible\Dialect\Pest\SubjectRule;
 use LucianoPereira\Crucible\Framework\TestCase;
+use RuntimeException;
 use SplFileInfo;
 use stdClass;
+use Throwable;
 
 use function fclose;
 use function fopen;
@@ -26,13 +29,10 @@ use function is_resource;
 
 /**
  * A quirk is an incumbent bug Crucible declines to reproduce until asked
- * for that one bug by name. There are currently none, and these tests
- * pin why: every behaviour that once needed one is either the default
- * now or was never a bug at all.
- *
- * What they must keep proving is that the ABSENCE is measured rather
- * than assumed — the matchers really do answer as the incumbent does,
- * and the removed names really are gone.
+ * for that one bug by name. There is one, outside the matcher grid, and
+ * these tests pin both halves of the rule: the grid's behaviours that
+ * once needed a quirk are the default now or were never bugs, and the
+ * one real bug is corrected by default and restored by its name.
  */
 #[CoversClass(Quirk::class)]
 #[CoversClass(Expectation::class)]
@@ -44,14 +44,32 @@ final class QuirkTest extends TestCase
         Expectation::configure([]);
     }
 
-    public function testNoQuirkIsDeclared(): void
+    public function testTheOnlyQuirkIsToThrowReadingAnInterfaceAsAMessage(): void
     {
-        // The parity claim, not an omission: over 3,344 grid cells there
-        // is no incumbent answer Crucible declines to reproduce, so there
-        // is nothing to opt back into. The mechanism stays because the
-        // bar it enforces does — any future divergence must name the
-        // quirk that restores the incumbent, and the probe checks it.
-        self::assertSame([], Quirk::cases());
+        // Over 3,344 grid cells there is no incumbent answer Crucible
+        // declines to reproduce. toThrow() is off the grid, and there
+        // Pest contradicts itself (D-143).
+        self::assertSame([Quirk::ThrowInterfaceAsMessage], Quirk::cases());
+    }
+
+    public function testToThrowMatchesAnInterfaceUnlessThePestReadingIsAskedFor(): void
+    {
+        $boom = static fn(): never => throw new InvalidArgumentException('boom');
+
+        Expectation::configure([]);
+
+        (new Expectation($boom))->toThrow(Throwable::class);
+        (new Expectation($boom))->toThrow(static function (Throwable $e): void {});
+
+        // Pest 4.7.8's answers, each measured: the interface name is read
+        // as a fragment of the message 'boom', which it is not part of.
+        Expectation::configure([Quirk::ThrowInterfaceAsMessage]);
+
+        (new Expectation($boom))->not()->toThrow(Throwable::class);
+        (new Expectation($boom))->not()->toThrow(static function (Throwable $e): void {});
+        (new Expectation(static fn(): never => throw new RuntimeException('a Throwable here')))->toThrow(Throwable::class);
+
+        $this->addToAssertionCount(1);
     }
 
     public function testARemovedQuirkIsNotAcceptedAsAName(): void
@@ -66,8 +84,7 @@ final class QuirkTest extends TestCase
 
     public function testTheConfigurationStillCarriesAnEmptyList(): void
     {
-        // The seam is intact even with nothing in it, so the first real
-        // incumbent bug needs a case rather than a mechanism.
+        // Nothing is reproduced unless named.
         self::assertSame([], Crucible::configure()->build()->quirks);
         self::assertSame([], Crucible::configure()->quirks()->build()->quirks);
     }

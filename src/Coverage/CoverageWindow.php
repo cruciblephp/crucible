@@ -21,11 +21,13 @@ final readonly class CoverageWindow
      * @param array<string, array<int, int>>                          $lines    file => line => value (>0 executed, -1 missed, -2 dead)
      * @param array<string, array<string, array{line: int, hit: int}>> $branches file => branch id => first line + hit flag
      * @param array<string, array<string, array{line: int, hit: int}>> $paths    file => path id => the same shape (--path-coverage)
+     * @param list<string>                                             $loaded   test-directory files outside the source scope that executed (mutate's verdict fingerprint)
      */
     public function __construct(
         public array $lines = [],
         public array $branches = [],
         public array $paths = [],
+        public array $loaded = [],
     ) {}
 
     /**
@@ -43,7 +45,7 @@ final readonly class CoverageWindow
             }
         }
 
-        return new self($lines, $this->unhit($this->branches), $this->unhit($this->paths));
+        return new self($lines, $this->unhit($this->branches), $this->unhit($this->paths), $this->loaded);
     }
 
     /**

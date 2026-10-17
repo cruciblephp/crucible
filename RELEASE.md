@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-10-14 (D-001..D-139, 1.1.4). Every entry traces to a `DESIGN.md` decision
+_As of 2026-10-17 (D-001..D-146, 1.1.5). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -334,6 +334,20 @@ against Crucible's own class only._
 | Migration mode sets the real PHPUnit's configuration, so a Laravel suite runs, and `compat-check` compares it, while `phpunit/phpunit` is still installed (D-139) | `Compat\PhpUnitCompatibility::load()` |
 | `php artisan test` passes `--report`, every `--log-*` option and `--reproducible` through to the engine | `Bridge\Laravel\TestCommand` |
 | The Laravel oracle's tests skip, named, when Composer's platform check refuses the running PHP, instead of failing in the oracle's autoloader | `tests/unit/Bridge/Laravel/LaravelOracle.php` |
+
+## 1.1.5
+
+| Shipped | Records |
+|---|---|
+| pcov coverage collects in `all` mode, so pcov 1.0.12 no longer dies by SIGSEGV in a filterless `inclusive` collect, on any PHP (D-140) | `Coverage\PcovDriver` |
+| A worker killed by a signal says so in its tests' reason, naming the coverage driver it loaded (D-140) | `Runner\Process\WorkerProcess::signal()`, `Runner\Process\Supervisor` |
+| `mutate` runs a mutant on a line no driver reports (attribute argument, property default, inner array line) against its method's or class's tests; an executable line nobody ran stays not covered (D-141) | `Mutation\CoveringTests`, `Coverage\TestLineMap::$executable` |
+| A resumed `mutate` re-judges a mutant when a source or test-directory file its tests ran changed, fixtures included, never for vendor (D-142) | `CLI\Commands\MutationCommand::judgedBy()`, `Coverage\TestLineMap::$loaded` |
+| Impact selection reads a trait used with an adaptation block and a PHP 8.3 typed constant's class type | `Impact\ReferenceScanner` |
+| A stock Laravel 13 + Pest 4 project, plugin included, runs and compares with no change: the prelude defines Crucible's vocabulary first, `test()` with no arguments is the running test, an abstract base is made concrete, `expect()` takes no argument (D-145) | `Dialect/Pest/vocabulary-prelude.php`, `Dialect\Pest\RunningTest`, `Dialect\Pest\TraitComposer` |
+| `toThrow()` takes a closure or an exception, and its negation is the exact inverse; the interface reading Pest gets wrong is restored by `Quirk::ThrowInterfaceAsMessage` (D-143) | `Dialect\Pest\Expectation::toThrow()`, `Configuration\Quirk` |
+| `compat-check` prints Crucible's own error when it ran nothing and each drifted test's message (D-146) | `Compat\Migration\CrucibleRun::run()`, `CLI\Commands\CompatCheckCommand` |
+| PHPStan types a property a `beforeEach` sets for the file's tests, `mixed` otherwise, never an undefined property (D-144) | `PHPStan\PestThisPropertyExtension`, `PHPStan\PestHookPropertyRule` |
 
 ## Design inputs honored
 

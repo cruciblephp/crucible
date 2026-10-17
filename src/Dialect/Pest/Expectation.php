@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\Dialect\Pest;
 
 use ArrayAccess;
 use Closure;
+use InvalidArgumentException;
 use LucianoPereira\Crucible\Architecture\Architecture;
 use LucianoPereira\Crucible\Architecture\ArchPredicates;
 use LucianoPereira\Crucible\Assert\Assert;
@@ -51,6 +52,7 @@ use LucianoPereira\Crucible\Configuration\Quirk;
 use LucianoPereira\Crucible\Snapshot\Snapshots;
 use ReflectionClass;
 use ReflectionEnum;
+use ReflectionFunction;
 use ReflectionMethod;
 use ReflectionNamedType;
 use Stringable;
@@ -1762,22 +1764,45 @@ final class Expectation
     /**
      * The value must be a closure; it is invoked here.
      *
-     * @param class-string<Throwable>|non-empty-string $exception class name, or a message fragment
+     * The expectation is a class name or a message fragment; a closure
+     * whose one parameter's type names the class, called with the
+     * exception once it matches; or an exception, whose class and exact
+     * message the thrown one must have. Negated, it passes exactly when
+     * the positive form would fail, as under Pest.
+     *
+     * @param Closure|class-string<Throwable>|non-empty-string|Throwable $exception
      */
-    public function toThrow(string $exception, ?string $message = null): self
+    public function toThrow(Closure|string|Throwable $exception, ?string $message = null): self
     {
         if (!$this->value instanceof Closure) {
             Assert::fail('toThrow() expects the expectation value to be a closure.');
+        }
+
+        $inspect = null;
+
+        if ($exception instanceof Closure) {
+            $inspect   = $exception;
+            $exception = $this->exceptionTypeOf($exception);
         }
 
         try {
             ($this->value)();
         } catch (Throwable $thrown) {
             if ($this->negated) {
-                Assert::fail('Expected no ' . $exception . ' to be thrown, but caught ' . $thrown::class . '.');
+                if ($this->matchesThrown($thrown, $exception, $message)) {
+                    Assert::fail('Expected no ' . ($exception instanceof Throwable ? $exception::class : $exception) . ' to be thrown, but caught ' . $thrown::class . '.');
+                }
+
+                Assert::assertThat(true, new IsTrue()); // counted: the mismatch was verified
+
+                return $this;
             }
 
             $this->assertThrown($thrown, $exception, $message);
+
+            if ($inspect instanceof Closure) {
+                $inspect($thrown);
+            }
 
             return $this;
         }
@@ -1788,7 +1813,47 @@ final class Expectation
             return $this;
         }
 
-        Assert::fail('Expected ' . $exception . ' to be thrown, but nothing was.');
+        Assert::fail('Expected ' . ($exception instanceof Throwable ? $exception::class : $exception) . ' to be thrown, but nothing was.');
+    }
+
+    /**
+     * The class a toThrow() closure names through its one parameter's type.
+     */
+    private function exceptionTypeOf(Closure $closure): string
+    {
+        $parameters = (new ReflectionFunction($closure))->getParameters();
+        $type       = count($parameters) === 1 ? $parameters[0]->getType() : null;
+
+        if (!$type instanceof ReflectionNamedType) {
+            throw new InvalidArgumentException('toThrow() takes a closure with one parameter whose type names the exception, as in function (InvalidArgumentException $e).');
+        }
+
+        return $type->getName();
+    }
+
+    /**
+     * A class, or an interface unless the run reproduces Pest reading one
+     * as a message fragment.
+     *
+     * @phpstan-assert-if-true class-string $exception
+     */
+    private function namesAType(string $exception): bool
+    {
+        return class_exists($exception)
+            || (interface_exists($exception) && !in_array(Quirk::ThrowInterfaceAsMessage, self::$quirks, true));
+    }
+
+    private function matchesThrown(Throwable $thrown, string|Throwable $exception, ?string $message): bool
+    {
+        if ($exception instanceof Throwable) {
+            return $thrown instanceof $exception && $thrown->getMessage() === ($message ?? $exception->getMessage());
+        }
+
+        if ($this->namesAType($exception)) {
+            return $thrown instanceof $exception && ($message === null || str_contains($thrown->getMessage(), $message));
+        }
+
+        return str_contains($thrown->getMessage(), $message ?? $exception);
     }
 
     /**
@@ -1829,9 +1894,16 @@ final class Expectation
         return $this;
     }
 
-    private function assertThrown(Throwable $thrown, string $exception, ?string $message): void
+    private function assertThrown(Throwable $thrown, string|Throwable $exception, ?string $message): void
     {
-        if (class_exists($exception) || interface_exists($exception)) {
+        if ($exception instanceof Throwable) {
+            Assert::assertInstanceOf($exception::class, $thrown);
+            Assert::assertSame($message ?? $exception->getMessage(), $thrown->getMessage());
+
+            return;
+        }
+
+        if ($this->namesAType($exception)) {
             Assert::assertInstanceOf($exception, $thrown);
         } else {
             // A bare string is a message fragment, per the spec.

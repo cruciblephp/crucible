@@ -15,6 +15,7 @@ use LucianoPereira\Crucible\Runner\Process\NullDevice;
 
 use function dirname;
 use function file;
+use function file_get_contents;
 use function is_array;
 use function is_file;
 use function is_resource;
@@ -82,9 +83,28 @@ final readonly class CrucibleRun
      */
     public static function outcomes(string $binary, array $extraArgs, WorkingDirectory $workingDirectory, string $eventsFile): array
     {
+        return self::run($binary, $extraArgs, $workingDirectory, $eventsFile)['outcomes'];
+    }
+
+    /**
+     * The outcomes, each failing test's message, and what the run printed.
+     *
+     * The printed output is kept because a run that built no tests says
+     * why only there: an abstract class, an argument error in Pest.php.
+     *
+     * @param non-empty-string       $binary
+     * @param list<non-empty-string> $extraArgs
+     * @param non-empty-string       $eventsFile
+     *
+     * @return array{outcomes: array<string, string>, messages: array<string, string>, output: string}
+     */
+    public static function run(string $binary, array $extraArgs, WorkingDirectory $workingDirectory, string $eventsFile): array
+    {
+        $outputFile = $eventsFile . '.out';
+
         $process = proc_open(
             self::command($binary, $extraArgs, $eventsFile),
-            [0 => ['file', NullDevice::path(), 'r'], 1 => ['file', NullDevice::path(), 'w'], 2 => ['file', NullDevice::path(), 'w']],
+            [0 => ['file', NullDevice::path(), 'r'], 1 => ['file', $outputFile, 'w'], 2 => ['file', $outputFile, 'a']],
             $pipes,
             $workingDirectory->path,
         );
@@ -94,12 +114,16 @@ final readonly class CrucibleRun
         }
 
         $outcomes = self::parseEvents($eventsFile);
+        $messages = self::parseMessages($eventsFile);
+        $output   = is_file($outputFile) ? (string) file_get_contents($outputFile) : '';
 
-        if (is_file($eventsFile)) {
-            unlink($eventsFile);
+        foreach ([$eventsFile, $outputFile] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
         }
 
-        return $outcomes;
+        return ['outcomes' => $outcomes, 'messages' => $messages, 'output' => $output];
     }
 
     /**
@@ -128,5 +152,33 @@ final readonly class CrucibleRun
         }
 
         return $outcomes;
+    }
+
+    /**
+     * The failure or error message of each test that did not pass.
+     *
+     * @param non-empty-string $eventsFile
+     *
+     * @return array<string, string>
+     */
+    public static function parseMessages(string $eventsFile): array
+    {
+        $messages = [];
+        $lines    = is_file($eventsFile) ? file($eventsFile) : false;
+
+        foreach ($lines === false ? [] : $lines as $line) {
+            $event = json_decode($line, true);
+
+            if (is_array($event)
+                && ($event['event'] ?? null) === 'test:finish'
+                && is_string($event['id'] ?? null)
+                && is_array($event['error'] ?? null)
+                && is_string($event['error']['message'] ?? null)
+            ) {
+                $messages[$event['id']] = $event['error']['message'];
+            }
+        }
+
+        return $messages;
     }
 }

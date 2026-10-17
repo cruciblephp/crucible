@@ -86,7 +86,7 @@ final readonly class DriverFactory
 
         return "no coverage driver is loaded. Coverage needs pcov (fastest) or xdebug:\n"
             . "  Debian/Ubuntu:  apt install php-pcov   (the Sury packages carry PHP 8.5 builds)\n"
-            . "  macOS/Homebrew: brew install shivammathur/extensions/pcov@8.5   (upstream pcov does not build on 8.5)\n"
+            . "  macOS/Homebrew: brew install shivammathur/extensions/pcov@8.5\n"
             . "  any platform:   pecl install xdebug, then run with XDEBUG_MODE=coverage\n"
             . 'Load the extension on demand (php -d zend_extension=xdebug.so -d xdebug.mode=coverage crucible --coverage) to keep normal runs fast.';
     }

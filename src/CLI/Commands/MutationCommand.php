@@ -22,6 +22,7 @@ use LucianoPereira\Crucible\Exceptions\Exception;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Mutation\ColdMutantExecutor;
 use LucianoPereira\Crucible\Mutation\CoveringTestRunner;
+use LucianoPereira\Crucible\Mutation\CoveringTests;
 use LucianoPereira\Crucible\Mutation\EquivalentMarkers;
 use LucianoPereira\Crucible\Mutation\Mutant;
 use LucianoPereira\Crucible\Mutation\MutantApplier;
@@ -235,11 +236,12 @@ final class MutationCommand
         // mutated content, so a source edit drops its own entries and
         // only the untouched files carry over.
         $journal     = MutationJournal::load($base . '/mutation-verdicts.ndjson');
-        $coveringIds = function (Mutant $mutant) use ($index, $workingDirectory): array {
+        $tests       = new CoveringTests($index, $map);
+        $coveringIds = function (Mutant $mutant) use ($tests, $workingDirectory): array {
             $relative = $this->relativeTo($mutant->file, $workingDirectory);
             $ids      = [];
 
-            foreach ($index->coveringTests($relative, $mutant->line) as $test) {
+            foreach ($tests->of($mutant->file, $relative, $mutant->line) as $test) {
                 if ($test['id'] !== '') {
                     $ids[] = $test['id'];
                 }
@@ -254,7 +256,7 @@ final class MutationCommand
         $pending  = [];
 
         foreach ($mutants as $mutant) {
-            $fingerprint                               = $this->judgedBy($coveringIds($mutant), $workingDirectory, $sources);
+            $fingerprint                               = $this->judgedBy($coveringIds($mutant), $map, $workingDirectory, $sources);
             $judgedBy[MutationJournal::keyOf($mutant)] = $fingerprint;
 
             if ($journal->has($mutant, $fingerprint)) {
@@ -573,17 +575,33 @@ final class MutationCommand
      * and a file's methods share its bytes — with the digests cached
      * across mutants, since one test file covers hundreds of them.
      *
+     * Beside the test file, every file the coverage run saw the test
+     * execute: the source it ran and what it ran in the test directories
+     * outside the source, so a fixture edit re-judges the mutants its
+     * tests judge while a vendor update re-judges nothing.
+     *
      * @param list<non-empty-string> $testIds
      * @param array<string, string>  $sources   digest cache, by file
      */
-    private function judgedBy(array $testIds, WorkingDirectory $workingDirectory, array &$sources): string
+    private function judgedBy(array $testIds, TestLineMap $map, WorkingDirectory $workingDirectory, array &$sources): string
     {
         $digests = [];
+        $files   = [];
 
         foreach ($testIds as $id) {
-            $file = explode('::', $id)[0];
+            $files[] = explode('::', $id)[0];
 
-            if ($file === '') {
+            foreach (array_keys($map->tests[$id] ?? []) as $executed) {
+                $files[] = $executed;
+            }
+
+            foreach ($map->loaded[$id] ?? [] as $loaded) {
+                $files[] = $loaded;
+            }
+        }
+
+        foreach ($files as $file) {
+            if ($file === '' || isset($digests[$file])) {
                 continue;
             }
 

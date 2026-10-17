@@ -40,6 +40,7 @@ final readonly class DialectClosureThisExtension implements FunctionParameterClo
 
     public function __construct(
         private DialectThisResolver $resolver,
+        private PestHookProperties $properties,
     ) {}
 
     #[Override]
@@ -51,6 +52,16 @@ final readonly class DialectClosureThisExtension implements FunctionParameterClo
     #[Override]
     public function getClosureThisTypeFromFunctionCall(FunctionReflection $functionReflection, FuncCall $functionCall, ParameterReflection $parameter, Scope $scope): Type
     {
+        $this->properties->markDialectFile($scope->getFile());
+
+        // A beforeEach body's assignments to $this are read by the
+        // file's tests (D-144); its lines tell the recorder where.
+        $hook = $functionCall->getArgs()[0] ?? null;
+
+        if ($functionReflection->getName() === 'beforeEach' && $hook !== null) {
+            $this->properties->markHook($scope->getFile(), $hook->value->getStartLine(), $hook->value->getEndLine());
+        }
+
         return $this->resolver->forFile($scope->getFile());
     }
 }

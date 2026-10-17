@@ -106,6 +106,27 @@ final class ExtensionBlackBoxTest extends TestCase
         );
     }
 
+    public function testAPropertyABeforeEachSetsIsTypedForTheFilesTests(): void
+    {
+        $tree = Analysis::root() . '/tests/_fixtures/phpstan/hooks';
+
+        $rendered = Analysis::rendered(Analysis::run([$tree . '/Feature'], Analysis::extension(), parameters: [
+            'bootstrapFiles' => [$tree . '/HookCase.php'],
+        ]));
+
+        // pest-plugin-phpstan's answers for the same lines (D-144), and no
+        // undefined-property error anywhere: Pest's test class allows them.
+        self::assertSame([
+            "phpstan.dumpType: Dumped type: 'grace'",
+            "phpstan.dumpType: Dumped type: array{'a', 'b'}",
+            'phpstan.dumpType: Dumped type: true',
+            'phpstan.dumpType: Dumped type: mixed',
+            'phpstan.dumpType: Dumped type: 5',
+            'phpstan.dumpType: Dumped type: string',
+            'phpstan.dumpType: Dumped type: LucianoPereira\\Crucible\\Tests\\Fixtures\\PHPStan\\Hooks\\HookCase',
+        ], $rendered);
+    }
+
     public function testTheMethodLevelMagicAndMockerySurfacesResolve(): void
     {
         $tree = Analysis::root() . '/tests/_fixtures/phpstan/dialect';

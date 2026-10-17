@@ -81,6 +81,16 @@ final class OracleRunTest extends TestCase
         }
     }
 
+    public function testAnOracleThatWroteNoLogComparesAsEmpty(): void
+    {
+        // An oracle that stops before its logger runs writes no file;
+        // reading it anyway printed PHP's warning into compat-check.
+        self::assertSame(
+            ['outcomes' => [], 'unmapped' => []],
+            OracleRun::parse($this->file, new WorkingDirectory(self::WORKDIR)),
+        );
+    }
+
     public function testKeysByRelativeFilePathAndMethodNotMethodAlone(): void
     {
         // Two different classes both declaring testConstruct(): a

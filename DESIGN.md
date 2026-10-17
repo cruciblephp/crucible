@@ -6365,6 +6365,205 @@ calls it after aliasing whenever the real package is installed. After aliasing, 
 fail-fast check still sees an untouched process. ✓ The same app: 25/25 sequentially and with
 `--parallel 3`, and `compat-check` reports no drift across all 25.
 
+### D-140: pcov collects in `all` mode, and a worker's signal is reported
+
+The Laravents cross-check found `--coverage` exiting 139 with no message on PHP 8.5, and traced
+the crash to pcov's `php_pcov_collect`. It isn't a PHP 8.5 problem. ✓ With pcov 1.0.12 (the Surý
+builds) on PHP 8.3, 8.4 and 8.5, `\pcov\collect(\pcov\inclusive)` called without a file list
+dies by SIGSEGV on all three. Given a file list, `inclusive` works on all three, and so does
+`all`. Crucible's driver made the first call, so coverage under that pcov crashed everywhere.
+
+The driver now calls `collect(all)`. It adds no filter of its own: pcov.directory already limits
+what pcov instruments, and `CoverageCollector::end()` applies the source scope. One detail shaped
+the test: `collect()` empties the window, so a second call in the same window returns nothing.
+The two modes are therefore compared over two windows on the same probe. ✓ `CoverageTest`: the
+driver's result equals `collect(inclusive, [file])` on 8.3, 8.4 and 8.5, and the old driver dies
+by signal 11 on all three. ✓ `--coverage` runs under pcov both sequentially and with
+`--parallel 2`.
+
+A crashing driver writes nothing to stderr, so the tests of the dead worker said only "exited
+unexpectedly". `WorkerProcess::close()` now reads the process status before `proc_close()`,
+which would otherwise fold the signal into the exit code, and the reason says "killed by signal
+N" and names the coverage driver the worker had loaded. `close()` still returns the signal number,
+as `proc_close()` did, so the mutation executor's exit check is unchanged. A sequential run is
+the main process itself, and a process cannot report its own SIGSEGV, so that case still ends in
+a bare 139. With the driver fixed, the known cause is gone.
+
+The missing-driver hint no longer says upstream pcov doesn't build on PHP 8.5. It builds; the
+crash that followed was this call.
+
+### D-141: a line no driver reports borrows its method's tests
+
+`mutate` called every mutant "not covered" when no test executed its line. But an attribute's
+arguments, a property default and the inner lines of an array literal compile to no code of
+their own, so no driver ever reports those lines, and their mutants were listed as gaps the suite
+didn't have. ✓ On one fixture, xdebug and pcov agree: the attribute line above a method, the
+property default, the class attribute and all but one line of a returned array are missing from
+the window; a line that could run but didn't is present as `-1`; and a method's range starts at
+its `function` line, not at its attributes.
+
+The per-test map only recorded lines that ran, so `coverage-lines.json` gains `executable`: every
+line the driver reported, per file. The key is additive and the version stays 1. A map written
+before the key existed reads as knowing no file's lines, which keeps the old answer.
+`Mutation\CoveringTests` resolves a mutant's tests in this order:
+
+1. the tests that ran its line;
+2. none, if the line was reported (it could run and nobody ran it) or the map has no lines for
+   the file;
+3. for a line inside a method, or in an attribute group on one (found by reading the tokens), the
+   tests of the method's nearest reported line;
+4. anywhere else in the class, the tests of every method's lines, fastest first, the order
+   `MutationIndex` gives a single line.
+
+✓ A scratch project with the finding's shapes: on 1.1.4 the attribute argument and the array key
+are "not covered"; now both run and are killed, and a method no test calls stays "not covered".
+The property default now runs against the class's tests and escapes, which is true: no test
+reads it. ✗ An attribute that a test reads only through reflection, on a method no test calls,
+stays "not covered", because nothing in the coverage data says which test read it.
+
+### D-142: a mutant's fingerprint covers the files its tests ran
+
+A resumed `mutate` re-judges a mutant when the files of its covering tests change
+(`judgedBy()`). An edit to a fixture alone left an escaped verdict in place. The finding assumed
+the per-test map already listed fixtures. ✓ It doesn't: `CoverageCollector::end()` keeps only the
+source scope, and with pcov's default directory nothing outside `src/` is even instrumented.
+
+Widening the per-test map would have pulled test files into the impact graph, the reports and the
+files `mutate` creates mutants in. Instead each window carries a `loaded` list: files a test
+executed inside the test suites' directories but outside the source, never under `vendor/`. The
+list travels through `CoverageData` and the worker artifact into `coverage-lines.json`, all
+additive. `judgedBy()` hashes each covering test's file, the source files it executed and its
+`loaded` files. A fixture edit therefore re-judges the mutants its tests judge, and a vendor
+update re-judges nothing. Because every fingerprint's inputs change, the first resume after
+upgrading re-judges every mutant once. A fixture pcov doesn't instrument, or one that isn't PHP,
+is still invisible.
+
+✓ The finding's repro, on a scratch project: a mutant escapes, only the fixture changes, and the
+resumed run re-runs it and reports it killed. On 1.1.4 the same steps print "0 to run" and keep
+the escape. A resume with nothing changed still says "0 to run". ✓ The cost, on this repository's
+own map (the unit suite under `--coverage`, 4976 mutants): resolving the covering tests and
+fingerprinting every mutant takes 2.3 to 2.6 s, against 0.4 s on 1.1.4, three runs each, before
+any mutant runs.
+
+### D-143: `toThrow()` takes Pest's closure and exception forms
+
+Crucible's `toThrow()` took a class name or a message fragment only, against Pest's
+`callable|string|Throwable`. The Laravents cross-check hit both missing forms. The closure form
+was a `TypeError`. The exception form was worse: without `strict_types` PHP turned the exception
+into its `__toString()`, which Crucible then searched for as a message, so the test failed with a
+misleading message.
+
+Pest's behaviour was taken by running Pest 4.7.8 on 39 calls, not by reading its source:
+
+- A **closure** must have exactly one parameter with one named type; otherwise it's an error. The
+  type is the expected class, the closure is called with the exception once it matches, and an
+  exception thrown inside the closure propagates.
+- An **exception** must match by class (`instanceof`), and the message must be *identical* to the
+  message argument, or to the exception's own message when none is given.
+- **Negation** passes exactly when the positive form would fail, in every form. Crucible's string
+  form used to fail `not->toThrow(RuntimeException::class)` whenever anything at all was thrown;
+  Pest passes it. That was an older divergence in the same matcher, fixed here too.
+
+✓ The same 39 calls under Crucible: 38 agree. The one that doesn't is Pest being wrong, and
+Crucible keeps the true answer. Pest reads an interface name as a message fragment, so
+`toThrow(function (Throwable $e) {})` and `toThrow(Throwable::class)` fail even though a
+Throwable was thrown. Pest contradicts itself here: for the same thrown
+`InvalidArgumentException`, `toThrow(InvalidArgumentException::class)` passes and so does
+`not->toThrow(Throwable::class)`, and PHP's `instanceof` says every `InvalidArgumentException` is
+a `Throwable`. Crucible's string form already matched interfaces before this release, without a
+record. Now the divergence is named: `Quirk::ThrowInterfaceAsMessage` restores Pest's reading for
+both forms, and Crucible corrects it by default. That makes it the first quirk since the
+enum was emptied, and `QuirkTest`'s "no quirk is declared" became "this is the only one", with
+the quirk's effect pinned against Pest's measured answers.
+
+### D-144: what a `beforeEach` puts on `$this`, for PHPStan
+
+With Crucible's extension, `$this->user = User::factory()->create();` in a `beforeEach` made every
+later `$this->user` an "undefined property" error, whenever the file was bound to a class other
+than the default `PestTestCase`. ✓ Measured with Pest 5.3.2 and pest-plugin-phpstan 5.2.2 on the
+same lines:
+
+- a property any `beforeEach` of the file assigns, `describe` blocks included, has the type it was
+  given in that file's tests and hooks ('grace', 42, `array{'a', 'b'}`, `true`);
+- the same property read in another file, or a property nothing assigns, is `mixed`;
+- there is never an error, and `$this` keeps the bound class's own type.
+
+Crucible now gives the same answers. The closure-`$this` extension marks Pest files and the line
+range of each `beforeEach` body. A rule records each `$this->x = value` inside those ranges with
+the value's type. PHPStan analyses a file from top to bottom, so the record exists before the
+tests below read it. A type-resolver extension answers `$this->x` in a Pest closure with that
+type, or `mixed`, unless the property is declared or the scope already knows it from an
+assignment. An ignore extension drops `property.notFound` for the same expressions, writes
+included. `$this` itself is untouched, so the existing dumps that pin it still hold.
+
+The plugin goes further than this: it treats every PHPUnit `TestCase` subclass as allowing any
+property, in its own methods too. Crucible keeps the allowance inside Pest closures. Its
+extension also serves PHPUnit-dialect suites, which phpstan-phpunit holds to PHPStan's normal
+rule, and PHP itself warns when a property is created on a class that doesn't allow it.
+
+The other PHPStan item from the cross-check, a dataset closure whose `@param` docblock was
+ignored, is PHPStan's behaviour. ✓ PHPStan 2.2 reads no `@param` on a closure in any position,
+with or without Crucible's extension, and pest-plugin-phpstan reports the same error. The manual
+now shows the pattern that works: an inline `@var` in the body.
+
+### D-145: a stock Laravel and Pest project runs as it comes
+
+The cross-check's first three findings stop a stock `laravel/laravel` + Pest 4 project before
+`compat-check` can compare anything. ✓ Reproduced with the findings' own script on Laravel 13.37,
+Pest 4.7.8 and pest-plugin-laravel 4.1.0 against 1.1.4: exit 255, then 2, then 2, then 1, one
+step at a time.
+
+- **The plugin fatal (255).** pest-plugin-laravel's Composer `files` entry runs
+  `expect()->extend()` while Composer is still loading, before any Crucible code, and the
+  prelude has already stopped Pest's own `expect()` from loading. Skipping the plugin's files as
+  well, the first direction the finding suggested, would also drop its 81 helpers; Crucible's own
+  bridge proxies 11 of them. So the prelude now declares Crucible's vocabulary first. Composer
+  registers its class loader before it includes any `files`, so `Expectation` resolves when the
+  plugin calls it. `PestBuilder` recognises that vocabulary as its own by the file that declared
+  `test()`.
+- **`test()` with no arguments.** Each of the plugin's helpers is `return test()->method(...)`,
+  where Pest's `test()` with no description returns the running test. Crucible's `test()` required
+  a description. It now returns a `RunningTest` that forwards each call to the running test
+  through `CurrentTest::call()`, which reaches protected methods. So the plugin's own code runs:
+  `get('/')`, `getJson()` and `withHeader()` were measured.
+- **The abstract `TestCase` (2).** Pest runs a file's tests in a class it generates, so an
+  abstract base is fine there, and the Laravel skeleton's `TestCase` is abstract. `TraitComposer`
+  already generated a concrete subclass when traits were mixed in. It now does the same for an
+  abstract class without traits, and `PestBuilder`'s refusal is gone. An abstract method nobody
+  implements is still refused, with its name.
+- **`expect()` with no argument (2).** `pest --init` writes `expect()->extend(...)`. The parameter
+  now defaults to `null`, as Pest's does.
+
+✓ The same project against the working tree: "No drift" at every step of the findings' script,
+with the plugin still installed, and with two tests added that call the plugin's helpers.
+✗ The plugin's one custom expectation, `toBeCollection()`, declares `Pest\Expectation` as its
+closure's return type, and Crucible's `Expectation` can't satisfy that without masking Pest's
+class. It fails when used (measured), and the manual lists it.
+
+### D-146: `compat-check` shows what Crucible said
+
+When Crucible's side of a comparison built no tests, `compat-check` printed "Crucible ran no
+tests at all" with advice about PHPUnit's aliases, even when the cause was an abstract class or
+a bad call in `Pest.php`. The real error appeared only when running `crucible` directly, because
+the comparison run's output went to the null device. A drifted Pest test was also labelled
+"likely coupled to PHPUnit's own internals" and "could not locate the method", both wrong for a
+closure.
+
+- `CrucibleRun::run()` keeps the run's output and each failing test's message. When nothing ran,
+  `compat-check` leads with the error itself: the run's first lines without the banner and stack
+  frames. The alias advice is used only when the run printed nothing.
+- Each drifted test shows Crucible's own failure message. The "PHPUnit internals" line appears only
+  when the oracle is PHPUnit, and a Pest closure is described as one rather than as a method that
+  couldn't be found.
+- An oracle that stopped before writing its JUnit file used to make `OracleRun` print PHP's
+  file-not-found warning with a full stack trace. It now reads as no tests. The advice that
+  follows names the oracle that actually ran, `pest` or `phpunit`.
+
+✓ On the stock project, a `Pest.php` that throws only under Crucible: `compat-check` now says
+`Uncaught RuntimeException: a setup error only Crucible hits in …/tests/Pest.php:53`. A drift
+caused by D-143's divergence now reads
+`Crucible: Expected no Throwable to be thrown, but caught InvalidArgumentException.`
+
 ---
 
 ## Closing the planned record

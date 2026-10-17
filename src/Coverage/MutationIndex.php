@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Coverage;
 
 use function array_map;
+use function array_values;
 use function ksort;
 use function strcmp;
 use function usort;
@@ -68,11 +69,7 @@ final readonly class MutationIndex
             ksort($lines);
 
             foreach ($lines as $line => $ids) {
-                usort($ids, static function (string $a, string $b) use ($durations): int {
-                    $order = ($durations[$a] ?? INF) <=> ($durations[$b] ?? INF);
-
-                    return $order !== 0 ? $order : strcmp($a, $b);
-                });
+                usort($ids, static fn(string $a, string $b): int => self::fastestFirst($durations[$a] ?? null, $a, $durations[$b] ?? null, $b));
 
                 $index[$file][$line] = array_map(
                     static fn(string $id): array => ['id' => $id, 'duration' => $durations[$id] ?? null],
@@ -98,6 +95,31 @@ final readonly class MutationIndex
     }
 
     /**
+     * The tests that executed any of $lines, each once, in the order a
+     * single line's answer has.
+     *
+     * @param list<int> $lines
+     *
+     * @return list<array{id: string, duration: ?float}>
+     */
+    public function coveringAny(string $relativeFile, array $lines): array
+    {
+        $byId = [];
+
+        foreach ($lines as $line) {
+            foreach ($this->coveringTests($relativeFile, $line) as $test) {
+                $byId[$test['id']] = $test;
+            }
+        }
+
+        $tests = array_values($byId);
+
+        usort($tests, static fn(array $a, array $b): int => self::fastestFirst($a['duration'], $a['id'], $b['duration'], $b['id']));
+
+        return $tests;
+    }
+
+    /**
      * The whole index, ready to serialize — the interop artifact an
      * external mutation tool loads and queries.
      *
@@ -106,5 +128,12 @@ final readonly class MutationIndex
     public function toArray(): array
     {
         return $this->index;
+    }
+
+    private static function fastestFirst(?float $a, string $idA, ?float $b, string $idB): int
+    {
+        $order = ($a ?? INF) <=> ($b ?? INF);
+
+        return $order !== 0 ? $order : strcmp($idA, $idB);
     }
 }

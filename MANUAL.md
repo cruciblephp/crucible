@@ -3,9 +3,9 @@
 Crucible is an independent test framework for PHP 8.3+ whose observable behavior targets
 drop-in compatibility with PHPUnit 13 suites.
 
-Every code sample in this manual comes from [`examples/`](examples), and those files are
-**executed by the test suite**. An example that stopped working would turn the suite red, so
-nothing here can quietly drift out of date.
+Every code sample in this manual comes from [`examples/`](examples) or from Crucible's own
+source, and both are **executed by the test suite**. An example that stopped working would turn
+the suite red, so nothing here can quietly drift out of date.
 
 - [`HELP.md`](HELP.md) — every command-line option
 - [`RELEASE.md`](RELEASE.md) — what shipped, traced to its decision record
@@ -70,13 +70,22 @@ return Crucible::configure()
     ->bootstrap('vendor/autoload.php')
     ->testSuite('unit', 'tests/Unit')
     ->testSuite('feature', 'tests/Feature')
-    ->source(include: ['src'])
-    ->build();
+    ->source(include: ['src']);
 ```
 
-`->source()` deserves attention: it states which directories hold **the code you own**.
-Coverage reports on it, and architecture rules reason about it, so getting it right makes
-two other features correct for free.
+Return the builder as it is. Crucible calls `->build()` for you, which is why
+`crucible init` and `crucible migrate-config` write the file without it. Calling it yourself
+does no harm.
+
+`->source()` says which directories hold **the code you own**, and three features read it:
+
+- coverage reports on it;
+- architecture rules treat it as the whole world (see §7);
+- inline tests are looked for in it (see §3).
+
+So adding a directory to make an architecture rule see it also lets Crucible find any
+`#[Check]` or `@crucible` test written there. That's usually what you want, but it is worth
+knowing.
 
 Some settings worth knowing early:
 
@@ -97,6 +106,12 @@ A CLI option always beats the same setting here.
 ## 3. Writing tests
 
 Three dialects, mixed freely in one suite and one run. There is no mode to switch.
+
+| What you're testing | Dialect |
+|---|---|
+| Pure functions and value objects | inline: `#[Check]` rows and `@crucible` doctests on the code itself |
+| Anything that needs the framework (container, database, HTTP) | PHPUnit or Pest files with your app's `TestCase` |
+| Module boundaries | `arch()` rules (§7) |
 
 ### The PHPUnit dialect — the drop-in one
 
@@ -160,6 +175,11 @@ php -d auto_prepend_file=vendor/cruciblephp/crucible/src/Dialect/Pest/vocabulary
     vendor/bin/crucible
 ```
 
+The prelude also defines Crucible's own `test()`, `expect()` and friends before Composer loads
+any package. That matters for plugins: `pestphp/pest-plugin-laravel` calls `expect()->extend()`
+while it loads, and its helpers (`get()`, `actingAs()`, …) call `test()` with no arguments to
+reach the running test. Both now land on Crucible.
+
 Pest brings PHPUnit with it, so a Pest project also needs `->phpunitCompatibility()` in
 `crucible.php` to re-enable the PHPUnit-namespace aliases. With both in place Crucible runs a
 Pest suite while Pest is still installed — which is what `compat-check` needs, since comparing
@@ -167,11 +187,75 @@ two engines requires both of them present.
 
 ### The inline dialect
 
-`check()` is a nameless test — the name comes from the source line:
+Tests that live in the code they test. There are three forms.
+
+**`check()`** is a nameless test. The name comes from the source line:
 
 ```php
 check(fn () => expect(strtoupper('a'))->toBe('A'));
 ```
+
+**`#[Check]`** puts input and output rows on a function or method, from
+`src/Reporting/PrettyName.php`:
+
+```php
+#[Check(['tests/unit/Runner/SchedulerTest.php'], returns: 'Scheduler')]
+#[Check(['Test.php'], returns: 'Test', name: 'a file just called Test keeps its name')]
+public static function ofFile(string $file): string
+```
+
+- `args` are positional, or named by parameter (string keys).
+- `returns` is compared the way `toEqual()` compares, and `returns: null` is a real claim.
+- `throws` expects that exception class instead.
+- With neither, the row only claims the call finishes without throwing.
+- Repeat the attribute for more rows. A row without `name:` is called `check 1`, `check 2`, …
+- The method may be private. For an instance method Crucible makes a fresh object per row, so
+  the class needs a constructor that takes no arguments; otherwise check a static factory.
+
+Attribute arguments must be constant expressions. Anything that needs computing belongs in a
+doctest or a test file.
+
+**`@crucible` doctests** are one expression per docblock line, from `src/Test/TestId.php`:
+
+```php
+/**
+ * @crucible expect(TestId::fromString('a.php::sums#row 1')?->dataset)->toBe('row 1')
+ * @crucible expect(TestId::fromString('no separator'))->toBeNull()
+ */
+public static function fromString(string $id): ?self
+```
+
+The expression is compiled in the file's namespace, but the file's `use` imports don't apply to
+it, so write names relative to that namespace or fully qualified. Other `@crucible-…` tags, such
+as `@crucible-equivalent`, are not doctests. `crucible lint-inline` type-checks doctests with
+PHPStan.
+
+How they're found and named:
+
+- Crucible looks for inline tests in `->source()`, and only loads a file that contains a
+  `#[Check]` or a `@crucible` line.
+- A row's id is `path/File.php::Class::method#<name>`; a doctest's is `…#crucible 1`, `#crucible 2`.
+- Inline tests don't run inside a `TestCase`, so no application is booted for them. Use them for
+  pure code, and keep code that needs the container in a test file.
+- A library can carry `#[Check]` without making Crucible a dependency of its users. PHP only looks
+  for an attribute's class when something reads the attribute, so the class runs fine where
+  Crucible isn't installed. Doctests are comments, so they never need it.
+
+### Where the Pest dialect differs from Pest
+
+The goal is that a Pest suite gets Pest's answers. Probe 28 holds the matchers to that, cell by
+cell. These are the known differences:
+
+| What | Pest | Crucible |
+|---|---|---|
+| `toThrow()` with an interface, e.g. `toThrow(Throwable::class)` | reads the interface name as a message fragment, so it fails, and `not->toThrow(Throwable::class)` passes, even when an exception was thrown | matches the interface as a type. `->quirks(Quirk::ThrowInterfaceAsMessage)` in `crucible.php` restores Pest's reading (`LucianoPereira\Crucible\Configuration\Quirk`) |
+| Arch rules with `->not` | `->not->toUse(...)` | no `not` on arch rules: state the allowed set with `toOnlyUse()`, or use `toUseNothing()` / `toBeUsedInNothing()` |
+| A plugin's custom expectation typed with Pest's own class, like pest-plugin-laravel's `toBeCollection()` | works | fails when used: its closure declares `Pest\Expectation` as the return type, and Crucible can't pretend to be that class without hiding the real one |
+
+Only one of these is Pest giving a wrong answer. `toThrow()` contradicts itself: for the same
+thrown `InvalidArgumentException`, `toThrow(InvalidArgumentException::class)` passes and so does
+`not->toThrow(Throwable::class)`. That's why Crucible corrects it by default, and why the quirk
+exists for a suite that depends on the old answer.
 
 ---
 
@@ -310,6 +394,14 @@ otherwise every rule would need a whitelist of `Closure` and `ReflectionClass` b
 anything. `toOnlyBeUsedIn` is the inverse rule, and the one that catches a boundary crossed
 from the far side, where the offending file is not the file the rule is about.
 
+"Your own source" means classes that exist. A reference to a class nobody has written yet,
+say `Modules\Chat\Missing`, is not a dependency on anything, so `toOnlyUse()` stays green until
+that class appears. If a rule is green while you can see the reference, check that the class
+exists.
+
+**There is no `not`.** Arch rules state what is allowed rather than what is forbidden: use
+`toOnlyUse()` for the allowed set, and `toUseNothing()` or `toBeUsedInNothing()` for none.
+
 **Shape rules**: `toUseStrictTypes`, `toBeFinal`, `toBeReadonly`, `toBeAbstract`,
 `toBeInterfaces`, `toExtend`, `toImplement`, `toHaveSuffix`.
 
@@ -387,6 +479,10 @@ Needs **pcov** (fast, line coverage) or **xdebug** (slower, also branch coverage
 `--coverage-branch`). Keep the extension out of your `php.ini` and load it only when asked,
 so normal runs stay at full speed.
 
+pcov 1.0.12, the version the distributions ship, works on every supported PHP from 1.1.5 on.
+If a worker process is killed during a coverage run, its tests say which signal killed it and
+which driver was loaded, so a crashing extension doesn't look like a crashing test.
+
 ---
 
 ## 10. Browser testing
@@ -437,7 +533,14 @@ Changes one operator at a time and re-runs only the tests that cover that line. 
 survives is a line your tests execute but do not actually check. The score is
 killed ÷ covered.
 
+A line that compiles to no code of its own, such as an attribute's arguments, a property
+default or an inner line of an array literal, never appears in coverage, so its mutant runs
+the tests of its method, or of the class outside any method. A line that could run and that
+no test ran stays not covered.
+
 Covering tests run **fastest first**, so the cheapest test gets the first chance at the kill.
+An interrupted run resumes where it stopped. A mutant is judged again when its covering tests,
+or any file they ran (fixtures included, vendor never), have changed since its verdict.
 Coverage older than the source it maps is a lie, so a stale index warns rather than reporting
 a confident wrong score.
 
@@ -528,6 +631,16 @@ in Pest closures — held line by line against both by probe 30. And some things
   against the parameters they feed;
 - `toMatchShape()` narrows to its type string, and `Gen::of()` produces it.
 
+In a Pest file, a property a `beforeEach` sets on `$this` keeps the type it was given in that
+file's tests: after `$this->user = User::factory()->create();`, `$this->user` is a `User`. A
+property nothing sets is `mixed`, never an "undefined property" error. Both answers are
+pest-plugin-phpstan's.
+
+PHPStan does not read an `@param` docblock on a closure, wherever it is written (measured on
+PHPStan 2.2; pest-plugin-phpstan reports the same). To narrow a dataset parameter beyond its
+native type, put a `/** @var array<string, mixed> $payload */` line inside the closure's body,
+above the first use.
+
 A matcher narrows exactly as its assertion does: `toBeString()` is `assertIsString()`, and
 `toBeList()` and `assertIsList()` both read a list of the value's elements. Narrowing stops where the
 matchers stop being about the value: after `and()` or `json()`, and after a spread `each`
@@ -579,21 +692,31 @@ Step 4 is what turns on the compatibility aliases, so `PHPUnit\Framework\TestCas
 resolving with no PHPUnit in the tree. While both are installed Crucible stands down and leaves
 the namespace alone.
 
-If step 3 isn't green, run `./vendor/bin/crucible compat-check` before digging in by hand —
-while the incumbent is still installed (it's the oracle being compared against), it runs your
+If step 3 isn't green, run `./vendor/bin/crucible compat-check` before digging in by hand.
+While the incumbent is still installed (it's the oracle being compared against), it runs your
 real suite through both engines and reports every test that passes on the incumbent but fails on
-Crucible, with why. The oracle is `vendor/bin/pest` on a Pest project and `vendor/bin/phpunit`
-otherwise, because PHPUnit's binary refuses to run a Pest suite at all. Classic PHPUnit classes in
-a Pest project are read from the same run's PHPUnit event log, which names the class where Pest's
-JUnit gives only a description, and placed by the file that declares it; if any test cannot be compared it is named and the run exits `2`,
-because a verdict over part of a suite is not a clean one. `1` is reserved for the engines actually
-disagreeing: a finding about your code, rather than about your setup. Most such failures turn out to assert PHPUnit's own internals (its file
-layout, its internal method names) rather than your code's behavior — normal friction when
-adopting any different test runner, not a Crucible bug. `--auto-fix` rewrites the shapes it
-recognizes automatically (asks first by default); `--revert` undoes anything it changed. A clean
-`compat-check` run ("No drift") is a stronger signal than the suite merely being green — it
-means every test that ran under PHPUnit is asserting something Crucible actually agrees with,
-not just that nothing errored.
+Crucible, with Crucible's own failure message beside it. If Crucible couldn't build the suite at
+all, the first thing it prints is the error that stopped it.
+
+The oracle is `vendor/bin/pest` on a Pest project and `vendor/bin/phpunit` otherwise, because
+PHPUnit's binary refuses to run a Pest suite at all. Classic PHPUnit classes in a Pest project are
+read from the same run's PHPUnit event log, which names the class where Pest's JUnit gives only a
+description, and placed by the file that declares it.
+
+The exit code says what kind of finding it is:
+
+- `0` — "No drift". Every test that passed under the incumbent also passes under Crucible. That's a
+  stronger signal than the suite merely being green: each of those tests asserts something both
+  engines agree on.
+- `1` — the engines disagree, which is a finding about your code. On a PHPUnit suite such a test
+  usually asserts PHPUnit's own internals (its file layout, its internal method names) rather than
+  your code's behaviour: normal friction when changing test runner, not a Crucible bug.
+- `2` — the comparison couldn't be made, which is a finding about your setup. That includes any
+  test that couldn't be lined up between the two runs: it's named, because a verdict over part of
+  a suite isn't a clean one.
+
+`--auto-fix` rewrites the shapes it recognises (it asks first by default), and `--revert` undoes
+anything it changed.
 
 A real Laravel 13 application runs green through exactly these steps — factories,
 `RefreshDatabase`, Laravel's own constraints, mocks, `--parallel` — with the `composer

@@ -60,6 +60,9 @@ class PlainBase extends TestCase {}
 
 final class FinalBase extends TestCase {}
 
+/** The Laravel skeleton's shape: abstract, with nothing left to implement. */
+abstract class AbstractShell extends TestCase {}
+
 abstract class AbstractBase extends TestCase
 {
     abstract public function unimplemented(): string;

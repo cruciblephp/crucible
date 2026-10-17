@@ -162,6 +162,11 @@ final readonly class OracleRun
      */
     private static function testcases(string $junitFile, WorkingDirectory $workingDirectory): array
     {
+        // An oracle that stopped before its logger ran writes no file.
+        if (!is_file($junitFile)) {
+            return [];
+        }
+
         $xml = simplexml_load_string((string) file_get_contents($junitFile));
 
         if ($xml === false) {

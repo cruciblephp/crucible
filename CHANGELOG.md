@@ -2,6 +2,27 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.1.5 - Unreleased
+
+- Fixed a stock Laravel + Pest project stopping `compat-check` at exit 255 when `pestphp/pest-plugin-laravel` is installed: the prelude now defines Crucible's `expect()` before the plugin loads, and the plugin's helpers such as `get()` and `actingAs()` work (Laravents cross-check)
+- Added `test()` with no arguments, which returns the running test, as under Pest (Laravents cross-check)
+- Fixed `pest()->extend()` refusing an abstract class, such as the `TestCase` the Laravel skeleton ships (Laravents cross-check)
+- Fixed `expect()` with no argument, the form `pest --init` writes for `expect()->extend()` (Laravents cross-check)
+- Added the closure and exception forms of `toThrow()`, as Pest takes them (Laravents cross-check)
+- Fixed a negated `toThrow()` failing whenever anything was thrown: it now fails only when the thrown exception matches (Laravents cross-check)
+- Added `Quirk::ThrowInterfaceAsMessage`, which restores Pest's reading of `toThrow(Throwable::class)` as a message fragment; Crucible matches the interface by default (Laravents cross-check)
+- Fixed `compat-check` hiding why Crucible ran no tests: it now prints Crucible's own error, shows each drifted test's failure message, and blames PHPUnit's internals only when PHPUnit is the oracle (Laravents cross-check)
+- Fixed `compat-check` printing a PHP warning when the oracle wrote no JUnit file (Laravents cross-check)
+- Fixed PHPStan reporting an undefined property for `$this->user` set in a `beforeEach`: it now has the type the hook gave it, as pest-plugin-phpstan reports (Laravents cross-check)
+- Fixed `--coverage` on pcov dying with signal 11 and no message on every PHP version: the driver now collects in `all` mode, which works with pcov 1.0.12 (Laravents cross-check)
+- Added the signal, and the coverage driver, to the reason given for tests whose worker was killed by a signal (Laravents cross-check)
+- Fixed the missing-driver hint saying upstream pcov does not build on PHP 8.5 (Laravents cross-check)
+- Fixed `crucible mutate` calling mutants on attribute arguments, property defaults and inner array lines not covered: they now run against their method's tests, after the next `--coverage` run (Laravents cross-check)
+- Fixed a resumed `crucible mutate` keeping an old verdict when only a fixture changed; the first resume after upgrading re-judges every mutant once (Laravents cross-check)
+- Fixed impact selection missing a trait used with an adaptation block and the class type of a PHP 8.3 typed constant (Laravents cross-check)
+- Improved the manual: the inline dialect in full, which dialect to choose, the three jobs of `->source()`, arch rules without `not`, and where the Pest dialect differs from Pest (Laravents cross-check)
+- Changed RESEARCH.md into a study of each source and what Crucible took from it, and corrected its claim that Crucible's sharding balances by duration
+
 ## v1.1.4 — 2026-10-14
 
 - Fixed `--reproducible` leaving test durations, the slowest-tests list and a time-based order in Markdown and PDF reports, and a time-based problem order in JSON and SARIF, so two runs of the same code, sequential or parallel, now write identical bytes

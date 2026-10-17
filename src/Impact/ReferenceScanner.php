@@ -18,6 +18,7 @@ use function ctype_upper;
 use function ltrim;
 use function rtrim;
 use function str_contains;
+use function str_ends_with;
 use function strpos;
 use function substr;
 
@@ -81,6 +82,19 @@ final class ReferenceScanner
                 $i = $this->consumeUse($tokens, $i, $count);
 
                 $previous = $token;
+
+                continue;
+            }
+
+            // A PHP 8.3 typed constant, `const Type NAME = ...`: the first
+            // name after `const` is the type when another name follows it.
+            // Collect it and keep `const` as the previous token, so the
+            // constant's own name is still skipped.
+            if ($previous instanceof PhpToken && $previous->is(T_CONST)
+                && $token->is([T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_STRING])
+                && $this->nextSignificant($tokens, $i + 1, $count)?->is([T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_STRING]) === true
+            ) {
+                $this->collect($token);
 
                 continue;
             }
@@ -165,6 +179,19 @@ final class ReferenceScanner
 
             switch ($token->text) {
                 case '{':
+                    // A trait use with an adaptation block, `use T { m as n; }`:
+                    // the name before `{` is complete, where a group import's
+                    // ends in `\\`. Register the trait and skip the block.
+                    if (!str_ends_with($name, '\\')) {
+                        $this->registerImport($classLike, $prefix, $name, $alias);
+
+                        while ($i < $count && $tokens[$i]->text !== '}') {
+                            $i++;
+                        }
+
+                        return $i;
+                    }
+
                     $grouped = true;
                     $prefix  = rtrim($name, '\\') . '\\';
                     $name    = '';
@@ -189,6 +216,22 @@ final class ReferenceScanner
         }
 
         return $count - 1;
+    }
+
+    /**
+     * The next token that is not whitespace or a comment, from $from.
+     *
+     * @param array<PhpToken> $tokens
+     */
+    private function nextSignificant(array $tokens, int $from, int $count): ?PhpToken
+    {
+        for ($i = $from; $i < $count; $i++) {
+            if (!$tokens[$i]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+                return $tokens[$i];
+            }
+        }
+
+        return null;
     }
 
     private function registerImport(bool $classLike, string $prefix, string $name, string $alias): void
