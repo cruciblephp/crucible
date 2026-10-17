@@ -2,7 +2,7 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
-## v1.1.5 - Unreleased
+## v1.1.5 - 2026-10-17
 
 - Fixed a stock Laravel + Pest project stopping `compat-check` at exit 255 when `pestphp/pest-plugin-laravel` is installed: the prelude now defines Crucible's `expect()` before the plugin loads, and the plugin's helpers such as `get()` and `actingAs()` work (Laravents cross-check)
 - Added `test()` with no arguments, which returns the running test, as under Pest (Laravents cross-check)
