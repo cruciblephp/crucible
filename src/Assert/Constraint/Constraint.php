@@ -74,7 +74,14 @@ abstract class Constraint
             return false;
         }
 
-        $failure = $this->failureSentence($other) . $this->additionalFailureDescription($other);
+        // The extra description goes on a line of its own, as the incumbent
+        // writes it; one that starts with its own newline keeps it (D-147).
+        $failure    = $this->failureSentence($other);
+        $additional = $this->additionalFailureDescription($other);
+
+        if ($additional !== '') {
+            $failure .= "\n" . $additional;
+        }
 
         if ($description !== '') {
             $failure = $description . "\n" . $failure;
@@ -117,7 +124,7 @@ abstract class Constraint
     {
         $comparison = $this->comparison($other);
 
-        return $comparison instanceof \LucianoPereira\Crucible\Assert\ComparisonFailure && $comparison->diff !== '' ? "\n" . $comparison->diff : '';
+        return $comparison instanceof \LucianoPereira\Crucible\Assert\ComparisonFailure ? $comparison->diff : '';
     }
 
     /**

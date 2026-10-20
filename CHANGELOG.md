@@ -2,7 +2,15 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
-## v1.1.5 - 2026-10-17
+## v1.1.6 — 2026-10-20
+
+- Fixed a constraint's additional failure description being joined to the failure sentence: it now starts a line of its own, as PHPUnit writes it (Hallmark cross-check)
+- Fixed `--report`, `--log-markdown` and `--log-pdf` into a missing directory ending the run in an uncaught fatal, exit 255, after every test had run: the directory is created before the run, and a report that still cannot be written is named after the summary (Hallmark cross-check)
+- Fixed the coverage file writers printing PHP's warning and then "written to" for a file they had not written: a missing directory is created, and a file that cannot be written is named instead (Hallmark cross-check)
+- Changed `--log-junit`, `--log-teamcity`, `--testdox-text`, `--testdox-html` and `--log-events-json` to create a missing directory, as PHPUnit does for its own; `--log-otr` and the text event logs still refuse, as PHPUnit's do (Hallmark cross-check)
+- Fixed an unmet exception expectation failing in Crucible's own words: messages and patterns are quoted as PHPUnit exports them, a code mismatch names the expected code, and a wrong exception type says where it was thrown (Hallmark cross-check)
+
+## v1.1.5 — 2026-10-17
 
 - Fixed a stock Laravel + Pest project stopping `compat-check` at exit 255 when `pestphp/pest-plugin-laravel` is installed: the prelude now defines Crucible's `expect()` before the plugin loads, and the plugin's helpers such as `get()` and `actingAs()` work (Laravents cross-check)
 - Added `test()` with no arguments, which returns the running test, as under Pest (Laravents cross-check)

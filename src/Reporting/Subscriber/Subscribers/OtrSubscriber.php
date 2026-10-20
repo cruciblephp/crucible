@@ -57,7 +57,7 @@ final class OtrSubscriber extends FileBackedSubscriber
 
     public function __construct(string $output)
     {
-        parent::__construct($output, 'the Open Test Reporting subscriber');
+        parent::__construct($output, 'the Open Test Reporting subscriber', createDirectory: false);
     }
 
     protected function write(Envelope $envelope): void

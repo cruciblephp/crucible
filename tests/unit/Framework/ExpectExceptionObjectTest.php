@@ -32,7 +32,7 @@ final class ExpectExceptionObjectTest extends TestCase
     public function test_another_message_is_a_failure(): void
     {
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage('Failed asserting that exception message "availability" contains "invoice details incomplete".');
+        $this->expectExceptionMessage("Failed asserting that exception message 'availability' contains 'invoice details incomplete'.");
 
         $this->probe(new DomainException('availability', 422))->invokeTest('test_probe');
     }
@@ -40,7 +40,7 @@ final class ExpectExceptionObjectTest extends TestCase
     public function test_another_code_is_a_failure(): void
     {
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage('Failed asserting that exception code "500" is equal to "422".');
+        $this->expectExceptionMessage('Failed asserting that 500 is equal to expected exception code 422.');
 
         $this->probe(new DomainException('invoice details incomplete', 500))->invokeTest('test_probe');
     }

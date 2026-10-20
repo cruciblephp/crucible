@@ -13,6 +13,7 @@ namespace LucianoPereira\Crucible\Framework;
 use AssertionError;
 use LucianoPereira\Crucible\Assert\Assert;
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
+use LucianoPereira\Crucible\Assert\Exporter;
 use LucianoPereira\Crucible\Attributes\AllowMockObjectsWithoutExpectations;
 use LucianoPereira\Crucible\Double\DoubleSpecification;
 use LucianoPereira\Crucible\Double\InvocationCount;
@@ -25,11 +26,14 @@ use ReflectionClass;
 use ReflectionMethod;
 use Throwable;
 
+use function dirname;
 use function preg_match;
 use function sprintf;
 use function str_contains;
+use function str_starts_with;
 use function trigger_error;
 
+use const DIRECTORY_SEPARATOR;
 use const E_USER_NOTICE;
 
 /**
@@ -531,38 +535,60 @@ abstract class TestCase extends Assert
 
         if ($this->expectedException !== null && !$throwable instanceof $this->expectedException) {
             throw new AssertionFailedError(sprintf(
-                'Failed asserting that exception of type "%s" matches expected exception "%s". Message was: "%s".',
+                'Failed asserting that exception of type "%s" matches expected exception "%s". Message was: "%s" at' . "\n%s.",
                 $throwable::class,
                 $this->expectedException,
                 $throwable->getMessage(),
+                $this->whereThrown($throwable),
             ));
         }
 
         if ($this->expectedExceptionMessage !== null && !str_contains($throwable->getMessage(), $this->expectedExceptionMessage)) {
             throw new AssertionFailedError(sprintf(
-                'Failed asserting that exception message "%s" contains "%s".',
-                $throwable->getMessage(),
-                $this->expectedExceptionMessage,
+                'Failed asserting that exception message %s contains %s.',
+                Exporter::export($throwable->getMessage()),
+                Exporter::export($this->expectedExceptionMessage),
             ));
         }
 
         if ($this->expectedExceptionMessageRegularExpression !== null && preg_match($this->expectedExceptionMessageRegularExpression, $throwable->getMessage()) !== 1) {
             throw new AssertionFailedError(sprintf(
-                'Failed asserting that exception message "%s" matches "%s".',
-                $throwable->getMessage(),
-                $this->expectedExceptionMessageRegularExpression,
+                'Failed asserting that exception message %s matches %s.',
+                Exporter::export($throwable->getMessage()),
+                Exporter::export($this->expectedExceptionMessageRegularExpression),
             ));
         }
 
         if ($this->expectedExceptionCode !== null && (string) $throwable->getCode() !== (string) $this->expectedExceptionCode) {
             throw new AssertionFailedError(sprintf(
-                'Failed asserting that exception code "%s" is equal to "%s".',
-                (string) $throwable->getCode(),
-                (string) $this->expectedExceptionCode,
+                'Failed asserting that %s is equal to expected exception code %s.',
+                Exporter::export($throwable->getCode()),
+                Exporter::export($this->expectedExceptionCode),
             ));
         }
 
         // The expectation itself counts as a verified assertion.
         self::assertThat(true, new \LucianoPereira\Crucible\Assert\Constraint\IsTrue());
+    }
+
+    /**
+     * Where an unexpected exception came from, one `file:line` per line:
+     * the throw site, then each calling frame with a file, leaving out
+     * Crucible's own (D-149) — as the incumbent leaves out its own.
+     */
+    private function whereThrown(Throwable $throwable): string
+    {
+        $engine = dirname(__DIR__) . DIRECTORY_SEPARATOR;
+        $lines  = $throwable->getFile() . ':' . $throwable->getLine() . "\n";
+
+        foreach ($throwable->getTrace() as $frame) {
+            $file = $frame['file'] ?? '';
+
+            if ($file !== '' && !str_starts_with($file, $engine)) {
+                $lines .= $file . ':' . ($frame['line'] ?? 0) . "\n";
+            }
+        }
+
+        return $lines;
     }
 }

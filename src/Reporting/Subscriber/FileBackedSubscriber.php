@@ -13,6 +13,7 @@ namespace LucianoPereira\Crucible\Reporting\Subscriber;
 use LucianoPereira\Crucible\Event\Envelope;
 use LucianoPereira\Crucible\Event\RunFinished;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
+use LucianoPereira\Crucible\Filesystem\OutputFile;
 
 use function fclose;
 use function fopen;
@@ -33,8 +34,16 @@ abstract class FileBackedSubscriber implements SubscriberContract
     /** @var resource */
     protected $stream;
 
-    public function __construct(string $output, string $label)
+    /**
+     * @param bool $createDirectory whether a missing directory is created (D-148): PHPUnit
+     *                              creates it for JUnit and testdox and refuses for OTR
+     */
+    public function __construct(string $output, string $label, bool $createDirectory = true)
     {
+        if ($createDirectory && !OutputFile::prepareDirectory($output)) {
+            throw new ConfigurationException(sprintf('Cannot create the directory of "%s" for %s.', $output, $label));
+        }
+
         $stream = fopen($output, 'w');
 
         if ($stream === false) {

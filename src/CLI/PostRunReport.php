@@ -31,6 +31,7 @@ use LucianoPereira\Crucible\Event\Issue;
 use LucianoPereira\Crucible\Event\IssueKind;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunSummary;
+use LucianoPereira\Crucible\Filesystem\OutputFile;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Flakiness\FailureOutsideDiff;
 use LucianoPereira\Crucible\Impact\ChangedFiles;
@@ -263,54 +264,28 @@ final readonly class PostRunReport
             if ($options->coverageText === '') {
                 print PHP_EOL . $rendered;
             } else {
-                file_put_contents($workingDirectory->absolute($options->coverageText), $rendered);
-                printf('Text coverage written to %s.' . PHP_EOL, $options->coverageText);
+                $this->writeCoverage('Text', $options->coverageText, $workingDirectory, $rendered);
             }
         }
 
         if ($options->coverageOpenClover !== null) {
-            file_put_contents(
-                $workingDirectory->absolute($options->coverageOpenClover),
-                (new CloverWriter(openClover: true))->write($data, $this->stamp()),
-            );
-
-            printf('OpenClover coverage written to %s.' . PHP_EOL, $options->coverageOpenClover);
+            $this->writeCoverage('OpenClover', $options->coverageOpenClover, $workingDirectory, (new CloverWriter(openClover: true))->write($data, $this->stamp()));
         }
 
         if ($options->coveragePhp !== null) {
-            file_put_contents(
-                $workingDirectory->absolute($options->coveragePhp),
-                (new PhpWriter())->write($data, $collector->driverName(), $options->includeGitInformation ? GitInformation::read($workingDirectory) : null, $this->clock->now()),
-            );
-
-            printf('Serialized coverage written to %s.' . PHP_EOL, $options->coveragePhp);
+            $this->writeCoverage('Serialized', $options->coveragePhp, $workingDirectory, (new PhpWriter())->write($data, $collector->driverName(), $options->includeGitInformation ? GitInformation::read($workingDirectory) : null, $this->clock->now()));
         }
 
         if ($options->coverageClover !== null) {
-            file_put_contents(
-                $workingDirectory->absolute($options->coverageClover),
-                (new CloverWriter())->write($data, $this->stamp()),
-            );
-
-            printf('Clover coverage written to %s.' . PHP_EOL, $options->coverageClover);
+            $this->writeCoverage('Clover', $options->coverageClover, $workingDirectory, (new CloverWriter())->write($data, $this->stamp()));
         }
 
         if ($options->coverageCobertura !== null) {
-            file_put_contents(
-                $workingDirectory->absolute($options->coverageCobertura),
-                (new CoberturaWriter())->write($data, $workingDirectory->path, $this->stamp()),
-            );
-
-            printf('Cobertura coverage written to %s.' . PHP_EOL, $options->coverageCobertura);
+            $this->writeCoverage('Cobertura', $options->coverageCobertura, $workingDirectory, (new CoberturaWriter())->write($data, $workingDirectory->path, $this->stamp()));
         }
 
         if ($options->coverageCrap4j !== null) {
-            file_put_contents(
-                $workingDirectory->absolute($options->coverageCrap4j),
-                (new Crap4jWriter())->write($data, $workingDirectory->path),
-            );
-
-            printf('Crap4J coverage written to %s.' . PHP_EOL, $options->coverageCrap4j);
+            $this->writeCoverage('Crap4J', $options->coverageCrap4j, $workingDirectory, (new Crap4jWriter())->write($data, $workingDirectory->path));
         }
 
         if ($options->coverageXml !== null) {
@@ -354,6 +329,30 @@ final readonly class PostRunReport
             ->save($workingDirectory->absolute($cacheDirectory) . '/coverage-lines.json');
 
         return $data;
+    }
+
+    /**
+     * One coverage file, into a directory created if missing (D-148). A file
+     * that cannot be written is said and the run's result stands, as under
+     * PHPUnit; "written to" is printed only for a file that was.
+     */
+    private function writeCoverage(string $format, string $path, WorkingDirectory $workingDirectory, string $contents): void
+    {
+        $absolute = $workingDirectory->absolute($path);
+
+        if (!OutputFile::prepareDirectory($absolute)) {
+            printf('Cannot write %s coverage to %s: its directory could not be created.' . PHP_EOL, $format, $path);
+
+            return;
+        }
+
+        if (@file_put_contents($absolute, $contents) === false) {
+            printf('Cannot write %s coverage to %s.' . PHP_EOL, $format, $path);
+
+            return;
+        }
+
+        printf('%s coverage written to %s.' . PHP_EOL, $format, $path);
     }
 
     /**

@@ -18,9 +18,14 @@ use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Reporting\Subscriber\FileBackedSubscriber;
 
+use function file_put_contents;
+use function is_dir;
+use function is_file;
 use function is_resource;
+use function rmdir;
 use function sys_get_temp_dir;
 use function tempnam;
+use function uniqid;
 use function unlink;
 
 /**
@@ -36,9 +41,44 @@ final class FileBackedSubscriberTest extends TestCase
     public function testOpenFailureThrowsNamingTheGivenLabel(): void
     {
         $this->expectException(ConfigurationException::class);
-        $this->expectExceptionMessage('for the test fixture');
+        $this->expectExceptionMessage('Cannot open "' . sys_get_temp_dir() . '/crucible-missing-' . 'dir/out.txt" for the test fixture.');
 
-        @new RecordingFileBackedSubscriber('/nonexistent-dir-for-crucible-tests/out.txt', 'the test fixture');
+        // Told not to create the directory, as the OTR subscriber is (D-148).
+        @new RecordingFileBackedSubscriber(sys_get_temp_dir() . '/crucible-missing-dir/out.txt', 'the test fixture', createDirectory: false);
+    }
+
+    public function testAMissingDirectoryIsCreatedAsTheIncumbentCreatesIt(): void
+    {
+        $root = sys_get_temp_dir() . '/' . uniqid('crucible-filebacked-', true);
+        $path = $root . '/logs/junit/out.txt';
+
+        new RecordingFileBackedSubscriber($path, 'the test fixture');
+
+        $this->assertTrue(is_file($path));
+
+        unlink($path);
+        rmdir($root . '/logs/junit');
+        rmdir($root . '/logs');
+        rmdir($root);
+    }
+
+    public function testADirectoryThatCannotBeCreatedIsAConfigurationError(): void
+    {
+        // A regular file where a directory is needed: no user can create it.
+        $blocker = tempnam(sys_get_temp_dir(), 'crucible-blocker-');
+        self::assertNotFalse($blocker);
+        file_put_contents($blocker, '');
+
+        try {
+            new RecordingFileBackedSubscriber($blocker . '/out.txt', 'the test fixture');
+            self::fail('Expected a ConfigurationException.');
+        } catch (ConfigurationException $e) {
+            $this->assertSame('Cannot create the directory of "' . $blocker . '/out.txt" for the test fixture.', $e->getMessage());
+        } finally {
+            unlink($blocker);
+        }
+
+        $this->assertFalse(is_dir($blocker));
     }
 
     public function testWriteReceivesEveryEnvelopeAndTheStreamClosesOnRunFinished(): void

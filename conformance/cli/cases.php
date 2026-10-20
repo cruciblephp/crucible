@@ -71,4 +71,8 @@ return [
     'related-missing'      => ['project' => 'green', 'argv' => ['--related', 'src/Nope.php']],
     'missing-id-file'      => ['project' => 'green', 'argv' => ['--test-id-filter-file', 'nope.txt']],
     'unknown-option'       => ['project' => 'green', 'argv' => ['--no-such-option']],
+
+    // Output directories (D-148): created, as PHPUnit creates them, before the run.
+    'report-into-new-directory' => ['project' => 'green', 'argv' => ['--report', 'json:reports/new/run.json']],
+    'junit-into-new-directory'  => ['project' => 'green', 'argv' => ['--log-junit', 'logs/new/junit.xml']],
 ];

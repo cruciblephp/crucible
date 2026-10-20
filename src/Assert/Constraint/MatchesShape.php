@@ -44,6 +44,6 @@ final class MatchesShape extends Constraint
     {
         $reason = $this->type->mismatch($other);
 
-        return $reason === null ? '' : "\n" . $reason;
+        return $reason ?? '';
     }
 }

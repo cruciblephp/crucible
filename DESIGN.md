@@ -6564,6 +6564,81 @@ closure.
 caused by D-143's divergence now reads
 `Crucible: Expected no Throwable to be thrown, but caught InvalidArgumentException.`
 
+
+### D-147: a constraint's additional description starts a line
+
+`Constraint::evaluate()` joined `additionalFailureDescription()` straight onto the sentence. A
+constraint written to PHPUnit's contract therefore failed as `…contains "boom".Records that were
+logged:` under Crucible and on two lines under PHPUnit (Hallmark's `LogRecordConstraint`). Crucible's
+own constraints never showed it, because each prefixed its detail with `"\n"` itself: the base diff,
+`MatchesShape`, `DuplicationConstraint`.
+
+The newline now belongs to `evaluate()`: a non-empty additional description is appended after
+`"\n"`, an empty one adds nothing, and the three overrides return their text without the prefix.
+A description that starts with its own newline keeps it, so it prints a blank line, as it does
+under PHPUnit.
+
+✓ Against PHPUnit 13.4.3 on the same constraint: `"Failed asserting that 1 is fine.\nEXTRA"`,
+`"…fine.\n\nEXTRA"` for a leading newline, `"custom\n…fine.\nEXTRA"` with a message, and no newline
+for an empty description. Crucible now matches all four. A shape mismatch and an `assertSame`
+diff read as before.
+
+### D-148: every file a run is asked to write gets its directory
+
+1.1.5 opened a report file only at `run:finish`. Into a missing directory, `--report`,
+`--log-markdown` and `--log-pdf` threw a `ConfigurationException` out of the event stream: an
+uncaught fatal, exit 255, after every test had run. The six coverage files written with
+`file_put_contents()` printed PHP's warning and then "written to" for a file that did not exist.
+The subscribers refused a missing directory cleanly, where PHPUnit creates it.
+
+Measured on PHPUnit 13.4.3, flag by flag, into a missing directory: `--log-junit`,
+`--log-teamcity`, `--testdox-text`, `--testdox-html` and every `--coverage-*` file create it;
+`--log-otr` refuses, exit 1; `--log-events-text` and `--log-events-verbose-text` refuse before the
+run, exit 2. Crucible follows each PHPUnit flag. Its own writers, which have no oracle
+(`--report`, `--log-markdown`, `--log-pdf`, `--log-events-json`), follow PHPUnit's report
+writers and create it; refusing cleanly was the alternative, and PHPUnit refuses only for its
+event logs and OTR.
+
+- `Filesystem\OutputFile::prepareDirectory()` is the one place that creates it.
+- `FileBackedSubscriber` creates it unless told not to; `OtrSubscriber` is told not to.
+- `GenericReportWriter` checks every format's output and creates its directory when it is
+  constructed, so a directory that cannot be created is a configuration error before the run,
+  exit 1. A file that still cannot be opened at `run:finish` is collected in `unwritten()` and
+  printed after the summary, and the other formats are still written.
+- `PostRunReport::writeCoverage()` prints "written to" only for a file it wrote. Otherwise it
+  names the file and leaves the exit code alone, as PHPUnit does for coverage.
+
+Where PHPUnit's own answer is a crash, it is not copied: `--log-junit` into a read-only directory
+ends PHPUnit with a PHP warning and exit 255. Crucible refuses before the run, exit 1.
+
+✓ Twenty runs, each into `nd/sub/out.file` (`--report` as `sarif` and as `json`): on 1.1.5, four
+fatals, six silent losses, eight refusals, and two directories created, by the HTML and XML
+coverage reports. Now every run creates the directory except `--log-otr` and the two text event
+logs, which refuse, as PHPUnit's do. The two CLI conformance cases
+`report-into-new-directory` and `junit-into-new-directory` hold it: exit 0, nothing printed beyond
+the run.
+
+### D-149: an unmet exception expectation fails in PHPUnit's words
+
+Crucible wrote its own sentences for four of the five exception expectations. Measured on PHPUnit
+13.4.3 with the same tests:
+
+- A message or pattern mismatch quotes both values as the exporter writes them:
+  `exception message 'something else' contains 'not there'`, not `"something else"`.
+- A code mismatch is a different sentence: `Failed asserting that 3 is equal to expected exception
+  code 7.`, with the code exported (`'A7'` for a string code).
+- A wrong exception type ends `Message was: "…" at`, then the throw site and each calling frame as
+  `file:line`, one per line, then a line holding only `.`. PHPUnit leaves out its own source and
+  keeps its launcher.
+
+`TestCase` now uses `Exporter::export()` for the values, and `whereThrown()` writes the frames: the
+throw site, then every frame with a file outside Crucible's `src/`. The launcher's frames stay, as
+PHPUnit's does. Crucible's launcher wraps the run in a closure, so it shows two lines where PHPUnit's
+shows one; a launcher path differs between the two engines anyway.
+
+✓ The same tests through both engines: every sentence is byte-identical, and the frames above the
+launcher are the same files and lines.
+
 ---
 
 ## Closing the planned record

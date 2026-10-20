@@ -17,6 +17,7 @@ use LucianoPereira\Crucible\Event\Listener;
 use LucianoPereira\Crucible\Event\RunFinished;
 use LucianoPereira\Crucible\Event\TestFinished;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
+use LucianoPereira\Crucible\Filesystem\OutputFile;
 use LucianoPereira\Crucible\Reporting\Document\RunReportDocument;
 use LucianoPereira\Crucible\Reporting\ReportFormat\{ReportContext, ReportFormatRegistry};
 use LucianoPereira\Crucible\Runner\TimingOverhead;
@@ -50,9 +51,18 @@ final class GenericReportWriter implements Listener
     /** the first envelope's timestamp — the run date, off the stream so output stays deterministic */
     private ?DateTimeImmutable $started = null;
 
+    /** @var list<string> the reports that could not be written, said after the run's summary */
+    private array $unwritten = [];
+
     /**
+     * Every format's output is checked, and its directory created (D-148), here rather
+     * than at `run:finish`: a path that cannot be written is a configuration error
+     * before the run, not an exception thrown out of the event stream after it.
+     *
      * @param  list<string>  $keys  which registered format keys to render this run
      * @param  ?non-empty-string  $title  the configured report title; null = "Test report"
+     *
+     * @throws ConfigurationException when a format has no output, or its directory cannot be created
      */
     public function __construct(
         private readonly ReportFormatRegistry $registry,
@@ -71,7 +81,15 @@ final class GenericReportWriter implements Listener
          * consumer cannot recognise as a placeholder is just wrong data.
          */
         private readonly bool $reproducible = false,
-    ) {}
+    ) {
+        foreach ($keys as $key) {
+            $output = $this->outputOf($key);
+
+            if (!OutputFile::prepareDirectory($output)) {
+                throw new ConfigurationException(sprintf('Cannot create the directory of "%s" for the "%s" report.', $output, $key));
+            }
+        }
+    }
 
     public function handle(Envelope $envelope): void
     {
@@ -117,22 +135,38 @@ final class GenericReportWriter implements Listener
         foreach ($this->keys as $key) {
             $resolved = $this->registry->resolve($key);
             $rendered = $resolved['instance']->render($document, $context, $resolved['params']);
+            $output   = $this->outputOf($key);
+            $stream   = @fopen($output, 'w');
 
-            $output = $resolved['params']['output'] ?? null;
-
-            if (!is_string($output)) {
-                throw new ConfigurationException(sprintf('Report format "%s" has no "output" param — nowhere to write its output.', $key));
-            }
-
-            $stream = fopen($output, 'w');
-
+            // The run is over and its result stands; a report that cannot
+            // be written is said after the summary, and the others are written.
             if ($stream === false) {
-                throw new ConfigurationException(sprintf('Cannot open "%s" for the "%s" report.', $output, $key));
+                $this->unwritten[] = sprintf('Cannot open "%s" for the "%s" report.', $output, $key);
+
+                continue;
             }
 
             fwrite($stream, $rendered);
             fclose($stream);
         }
+    }
+
+    /** @return list<string> what could not be written, one sentence each */
+    public function unwritten(): array
+    {
+        return $this->unwritten;
+    }
+
+    /** @throws ConfigurationException when the format has no "output" param */
+    private function outputOf(string $key): string
+    {
+        $output = $this->registry->resolve($key)['params']['output'] ?? null;
+
+        if (!is_string($output)) {
+            throw new ConfigurationException(sprintf('Report format "%s" has no "output" param — nowhere to write its output.', $key));
+        }
+
+        return $output;
     }
 
     /**

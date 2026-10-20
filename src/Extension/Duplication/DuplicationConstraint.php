@@ -63,7 +63,7 @@ final class DuplicationConstraint extends Constraint
         }
 
         return sprintf(
-            "\n%d clone%s found:\n%s",
+            "%d clone%s found:\n%s",
             count($lines),
             count($lines) === 1 ? '' : 's',
             implode("\n", $lines),

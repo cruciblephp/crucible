@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-10-17 (D-001..D-146, 1.1.5). Every entry traces to a `DESIGN.md` decision
+_As of 2026-10-20 (D-001..D-149, 1.1.6). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -348,6 +348,16 @@ against Crucible's own class only._
 | `toThrow()` takes a closure or an exception, and its negation is the exact inverse; the interface reading Pest gets wrong is restored by `Quirk::ThrowInterfaceAsMessage` (D-143) | `Dialect\Pest\Expectation::toThrow()`, `Configuration\Quirk` |
 | `compat-check` prints Crucible's own error when it ran nothing and each drifted test's message (D-146) | `Compat\Migration\CrucibleRun::run()`, `CLI\Commands\CompatCheckCommand` |
 | PHPStan types a property a `beforeEach` sets for the file's tests, `mixed` otherwise, never an undefined property (D-144) | `PHPStan\PestThisPropertyExtension`, `PHPStan\PestHookPropertyRule` |
+
+## 1.1.6
+
+| Shipped | Records |
+|---|---|
+| A constraint's additional failure description starts a line of its own, as PHPUnit writes it (D-147) | `Assert\Constraint\Constraint::evaluate()` |
+| Every file a run is asked to write gets its missing directory where PHPUnit's does, and Crucible's own reports too; `--log-otr` and the text event logs refuse, as PHPUnit's do (D-148) | `Filesystem\OutputFile`, `Reporting\Subscriber\FileBackedSubscriber` |
+| A report whose directory cannot be created is a configuration error before the run; one that cannot be opened afterwards is named after the summary, never a fatal (D-148) | `Reporting\GenericReportWriter::unwritten()` |
+| A coverage file says "written to" only when it was written (D-148) | `CLI\PostRunReport::writeCoverage()` |
+| An unmet exception expectation fails in PHPUnit's sentences: exported values, the expected code named, and where a wrong exception was thrown (D-149) | `Framework\TestCase::verifyThrowableMatchesExpectation()` |
 
 ## Design inputs honored
 

@@ -53,6 +53,7 @@ use LucianoPereira\Crucible\Exceptions\Exception;
 use LucianoPereira\Crucible\Extension\Check;
 use LucianoPereira\Crucible\Extension\CheckRunner;
 use LucianoPereira\Crucible\Extension\Extension;
+use LucianoPereira\Crucible\Filesystem\OutputFile;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Impact\ChangedFiles;
 use LucianoPereira\Crucible\Impact\DependencyGraph;
@@ -241,8 +242,10 @@ final class RunTestsCommand
         $snapshotLog = new SnapshotLog();
         $emitter->subscribe($snapshotLog);
 
+        // The JSON stream is Crucible's own and gets its directory, as every
+        // report does; the text forms are PHPUnit's, which refuses (D-148).
         if ($eventStreamTo !== null) {
-            $stream = fopen($eventStreamTo, 'w');
+            $stream = OutputFile::prepareDirectory($eventStreamTo) ? fopen($eventStreamTo, 'w') : false;
 
             if ($stream === false) {
                 printf('Cannot open %s for the event stream.' . PHP_EOL, $eventStreamTo);
@@ -381,6 +384,8 @@ final class RunTestsCommand
             $selectedReportFormats[$format] = $output;
         }
 
+        $reportWriter = null;
+
         if ($selectedReportFormats !== []) {
             $reportFormats = $configuration->reportFormats;
 
@@ -406,7 +411,15 @@ final class RunTestsCommand
                 return 1;
             }
 
-            $emitter->subscribe(new GenericReportWriter($registry, array_keys($selectedReportFormats), $configuration->reportTitle, $options->reproducible));
+            try {
+                $reportWriter = new GenericReportWriter($registry, array_keys($selectedReportFormats), $configuration->reportTitle, $options->reproducible);
+            } catch (Exception $e) {
+                print $e->getMessage() . PHP_EOL;
+
+                return 1;
+            }
+
+            $emitter->subscribe($reportWriter);
         }
 
         $order = $configuration->executionOrder;
@@ -583,7 +596,7 @@ final class RunTestsCommand
         // uses. It does not replace the progress output, and --no-output
         // does not silence it: it is a log target, not output.
         if ($options->logTeamcity !== null) {
-            $stream = fopen($options->logTeamcity, 'w');
+            $stream = OutputFile::prepareDirectory($options->logTeamcity) ? fopen($options->logTeamcity, 'w') : false;
 
             if ($stream === false) {
                 printf('Cannot open %s for the TeamCity log.' . PHP_EOL, $options->logTeamcity);
@@ -1177,6 +1190,10 @@ final class RunTestsCommand
 
         foreach ($breaches as $breach) {
             print $breach . PHP_EOL;
+        }
+
+        foreach ($reportWriter?->unwritten() ?? [] as $problem) {
+            print $problem . PHP_EOL;
         }
 
         if ($snapshotLog->created() > 0 || $snapshotLog->updated() > 0) {

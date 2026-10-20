@@ -37,3 +37,29 @@ final class RowExists extends Constraint
         return sprintf('a row in the table [%s] matches the attributes %s', $other, $this->toString());
     }
 }
+
+/**
+ * A framework's constraint that, like the incumbent's own, adds a detail
+ * after the sentence through additionalFailureDescription().
+ */
+final class RowsListed extends Constraint
+{
+    public function __construct(
+        private readonly string $extra,
+    ) {}
+
+    public function toString(): string
+    {
+        return 'is in the table';
+    }
+
+    protected function failureDescription(mixed $other): string
+    {
+        return sprintf('a row [%s] %s', $other, $this->toString());
+    }
+
+    protected function additionalFailureDescription(mixed $other): string
+    {
+        return $this->extra;
+    }
+}
