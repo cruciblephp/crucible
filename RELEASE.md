@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-10-20 (D-001..D-149, 1.1.6). Every entry traces to a `DESIGN.md` decision
+_As of 2026-10-20 (D-001..D-150, 1.1.7). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -358,6 +358,14 @@ against Crucible's own class only._
 | A report whose directory cannot be created is a configuration error before the run; one that cannot be opened afterwards is named after the summary, never a fatal (D-148) | `Reporting\GenericReportWriter::unwritten()` |
 | A coverage file says "written to" only when it was written (D-148) | `CLI\PostRunReport::writeCoverage()` |
 | An unmet exception expectation fails in PHPUnit's sentences: exported values, the expected code named, and where a wrong exception was thrown (D-149) | `Framework\TestCase::verifyThrowableMatchesExpectation()` |
+
+## 1.1.7
+
+| Shipped | Records |
+|---|---|
+| A `beforeEach`/`afterEach` inside `describe()` belongs to that block and its nested blocks, in declaration order with the file's; `beforeAll`/`afterAll` inside `describe()` is refused with Pest's message (D-150) | `Dialect\Pest\BlockHook`, `Dialect\Pest\PestRegistry`, `Dialect\Pest\PestBuilder::hooksOf()` |
+| A global `afterEach` runs before the file's own, as Pest's does (D-150) | `Dialect\Pest\PestBuilder::effectiveState()` |
+| `->in()` in `Pest.php` takes an absolute path, `__DIR__` included (D-150) | `Dialect\Pest\PestScopes::matching()` |
 
 ## Design inputs honored
 

@@ -94,13 +94,15 @@ final class TestCall
     /**
      * @param non-empty-string       $description as written, before it-prefixing
      * @param 'test'|'it'            $kind
-     * @param list<non-empty-string> $describePath enclosing describe() descriptions, outermost first
+     * @param list<non-empty-string> $describePath   enclosing describe() descriptions, outermost first
+     * @param list<int>              $describeBlocks enclosing describe() calls' ids, outermost first
      */
     public function __construct(
         public readonly string $description,
         public readonly string $kind,
         public readonly ?Closure $test,
         public readonly array $describePath = [],
+        public readonly array $describeBlocks = [],
     ) {}
 
     /**

@@ -21,8 +21,8 @@ final readonly class PestFileState
 {
     /**
      * @param list<TestCall>         $calls
-     * @param list<Closure>          $beforeEach
-     * @param list<Closure>          $afterEach
+     * @param list<Closure|BlockHook> $beforeEach
+     * @param list<Closure|BlockHook> $afterEach
      * @param list<Closure>          $beforeAll
      * @param list<Closure>          $afterAll
      * @param ?class-string          $uses

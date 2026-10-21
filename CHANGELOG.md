@@ -2,6 +2,13 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.1.7 — 2026-10-20
+
+- Fixed a `beforeEach` or `afterEach` inside `describe()` running for every test of the file, tests declared before the block included: it runs for the tests of its block and the blocks nested in it, in declaration order with the file's hooks, as Pest does (Hallmark cross-check)
+- Fixed `beforeAll` and `afterAll` inside `describe()` being accepted and run once for the whole file: the file is refused at collection with Pest's message, and nothing in it runs
+- Fixed a global `afterEach` from `Pest.php` running after the file's own: it runs before it, as Pest does
+- Fixed `->in(__DIR__)` in `Pest.php` matching nothing, so its class, traits, groups and hooks were silently dropped: an absolute path selects the files beneath it, as Pest does
+
 ## v1.1.6 — 2026-10-20
 
 - Fixed a constraint's additional failure description being joined to the failure sentence: it now starts a line of its own, as PHPUnit writes it (Hallmark cross-check)

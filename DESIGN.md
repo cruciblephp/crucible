@@ -6639,6 +6639,40 @@ shows one; a launcher path differs between the two engines anyway.
 ✓ The same tests through both engines: every sentence is byte-identical, and the frames above the
 launcher are the same files and lines.
 
+### D-150: a hook inside describe() belongs to its block
+
+D-030 wrote "hooks and uses() accumulate per file", which described how the registry was built, not
+what Pest does; D-008 makes the dialect's spec Pest's answers. Found in a Laravel panel's suite, where a
+`withoutMiddleware()` in one `describe()` lifted an authentication lock for a test outside it: the
+test passed without testing the lock.
+
+✓ One probe file, run as written on Pest 5.3.3 and on 1.1.6:
+
+| | Pest 5.3.3 | 1.1.6 |
+|---|---|---|
+| `beforeEach`/`afterEach` in a `describe()` | the block's tests and its nested blocks' | every test of the file, those declared before the block too |
+| order | declaration order, the file's and the blocks' together (`A`, then `B`, then a second `A` hook declared after `B`'s body) | the same list for everyone |
+| a second `describe('A')` | inherits nothing from the first | shares everything |
+| `beforeAll`/`afterAll` in a `describe()` | refused at collection, `BeforeAllWithinDescribe` / `AfterAllWithinDescribe`, nothing runs | accepted, run once for the file |
+| a `Pest.php` `afterEach` | before the file's `afterEach` | after it (spec §3 said "after") |
+| `Pest.php` `->in(__DIR__)` | applies to that directory's files | matched nothing, silently |
+
+Every row now gives Pest's answer. A hook declared inside `describe()` is a `BlockHook` carrying the
+ids of its enclosing `describe()` calls, kept in the file's one list in declaration order; a
+`TestCall` carries its own ids, and the builder runs a block hook only when its ids are a prefix of
+the test's. A file-level hook stays a plain closure, so a file with no hook inside a `describe()`
+builds exactly as before. The refusal is a `ConfigurationException` with Pest's message, and exits 2
+as the `TestAlreadyExist` refusal already does. An absolute `->in()` path is compared with the
+file's absolute path, through `WorkingDirectory`, by the same rule as a relative one. None of these
+answers is false, so none has a quirk.
+
+Not changed: in the same probe Pest did not run a global `afterAll` at all, where 1.1.6 runs it after
+the file's. One run is not enough to call that Pest's rule or Pest's defect; it needs its own probe.
+
+✓ After the change, the probe's logs are byte-identical on both engines. `PestDescribeHooksTest`
+and `PestScopesTest::testAnAbsolutePathSelectsTheFilesBeneathIt` hold it, and all five fail on
+1.1.6's source.
+
 ---
 
 ## Closing the planned record

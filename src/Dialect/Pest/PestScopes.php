@@ -225,7 +225,12 @@ final class PestScopes
             $relative = str_replace(DIRECTORY_SEPARATOR, '/', substr($file, strlen($registration->baseDir) + 1));
 
             foreach ($registration->globs as $glob) {
-                if (self::matches($glob, $relative)) {
+                // `->in(__DIR__)`, the spelling package boilerplate ships: ✓ measured,
+                // Pest 5.3.3 scopes it to that directory; it was read as a relative
+                // glob and matched nothing, silently (D-150).
+                $subject = WorkingDirectory::isAbsolute($glob) ? WorkingDirectory::portable($file) : $relative;
+
+                if (self::matches(WorkingDirectory::portable($glob), $subject)) {
                     $result[] = $registration;
 
                     break;

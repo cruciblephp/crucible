@@ -308,6 +308,26 @@ final class PestScopesTest extends TestCase
         self::assertSame([], PestScopes::matching('/elsewhere/Feature/ExampleTest.pest.php'));
     }
 
+    /**
+     * `->in(__DIR__)`, the spelling package boilerplate ships (D-150):
+     * an absolute path selects the files beneath it, as Pest 5.3.3 does,
+     * instead of being read as a relative glob that matches nothing.
+     */
+    public function testAnAbsolutePathSelectsTheFilesBeneathIt(): void
+    {
+        $root = $this->tree();
+
+        (new ReflectionProperty(PestScopes::class, 'registrations'))->setValue(null, []);
+        (new ReflectionProperty(PestScopes::class, 'configDir'))->setValue(null, $root);
+
+        PestScopes::pest()->group('whole')->in($root);
+        PestScopes::pest()->group('featureOnly')->in($root . '/Feature');
+
+        self::assertCount(2, PestScopes::matching($root . '/Feature/ExampleTest.pest.php'));
+        self::assertCount(1, PestScopes::matching($root . '/ExampleTest.pest.php'));
+        self::assertSame([], PestScopes::matching($root . '-sibling/ExampleTest.pest.php'));
+    }
+
     public function testTheSuiteDeclaredPrinterIsWhateverAConfigurationChose(): void
     {
         (new ReflectionProperty(PestScopes::class, 'printer'))->setValue(null, null);

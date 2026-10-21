@@ -145,7 +145,10 @@ debug: `->dd()`, `->ddWhen()`, `->ddUnless()`, `->ray()`.
   scoped by `->in('Feature', 'Unit/*Glob*.php')`; bare (no `in()`) = file-local;
   `->group(...)` for directories. (`uses()` is the legacy v2 spelling.)
 - Global hooks: `pest()->beforeEach/afterEach/beforeAll/afterAll(...)`, chainable with
-  `->group()->in()`; global before* run before file-level, global after* run after.
+  `->group()->in()`; a global beforeEach or afterEach runs before the file's own, both sides
+  (✓ Pest 5.3.3, D-150); global beforeAll runs before the file's. `->in()` takes an absolute path.
+- A beforeEach/afterEach inside `describe()` applies to that block and the blocks nested in it,
+  in declaration order with the file's; beforeAll/afterAll inside `describe()` is refused.
 - `pest()->printer()->compact()`.
 
 ## 4. Datasets

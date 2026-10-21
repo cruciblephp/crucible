@@ -62,10 +62,20 @@ final class PestRegistry
     /** @var list<non-empty-string> */
     private static array $describePath = [];
 
-    /** @var list<Closure> */
+    /**
+     * The open describe() calls' ids, outermost first: the block a hook
+     * or a test belongs to is the call, not its description.
+     *
+     * @var list<int>
+     */
+    private static array $describeBlocks = [];
+
+    private static int $nextBlock = 0;
+
+    /** @var list<Closure|BlockHook> in declaration order, file-level and block-scoped together */
     private static array $beforeEach = [];
 
-    /** @var list<Closure> */
+    /** @var list<Closure|BlockHook> in declaration order, file-level and block-scoped together */
     private static array $afterEach = [];
 
     /** @var list<Closure> */
@@ -131,19 +141,21 @@ final class PestRegistry
     {
         self::$root = rtrim($root, '/' . DIRECTORY_SEPARATOR);
 
-        self::$calls         = [];
-        self::$describePath  = [];
-        self::$beforeEach    = [];
-        self::$afterEach     = [];
-        self::$beforeAll     = [];
-        self::$afterAll      = [];
-        self::$registrations = [];
-        self::$autoNames     = [];
-        self::$takenNames    = [];
-        self::$covers        = [];
-        self::$mutates       = [];
-        self::$file          = $file;
-        self::$collecting    = true;
+        self::$calls          = [];
+        self::$describePath   = [];
+        self::$describeBlocks = [];
+        self::$nextBlock      = 0;
+        self::$beforeEach     = [];
+        self::$afterEach      = [];
+        self::$beforeAll      = [];
+        self::$afterAll       = [];
+        self::$registrations  = [];
+        self::$autoNames      = [];
+        self::$takenNames     = [];
+        self::$covers         = [];
+        self::$mutates        = [];
+        self::$file           = $file;
+        self::$collecting     = true;
     }
 
     public static function drain(): PestFileState
@@ -268,7 +280,7 @@ final class PestRegistry
     {
         self::ensureCollecting($kind === 'it' ? 'it()' : 'test()');
 
-        $call = new TestCall($description, $kind, $test, self::$describePath);
+        $call = new TestCall($description, $kind, $test, self::$describePath, self::$describeBlocks);
         $name = $call->name();
 
         // ✓ Measured against Pest 5.1.1, not inferred: a second test
@@ -419,12 +431,14 @@ final class PestRegistry
 
         $first = count(self::$calls);
 
-        self::$describePath[] = $description;
+        self::$describePath[]   = $description;
+        self::$describeBlocks[] = self::$nextBlock++;
 
         try {
             $body();
         } finally {
             array_pop(self::$describePath);
+            array_pop(self::$describeBlocks);
         }
 
         return new DescribeCall(array_slice(self::$calls, $first));
@@ -433,25 +447,49 @@ final class PestRegistry
     public static function beforeEach(Closure $hook): void
     {
         self::ensureCollecting('beforeEach()');
-        self::$beforeEach[] = $hook;
+        self::$beforeEach[] = self::scoped($hook);
     }
 
     public static function afterEach(Closure $hook): void
     {
         self::ensureCollecting('afterEach()');
-        self::$afterEach[] = $hook;
+        self::$afterEach[] = self::scoped($hook);
     }
 
     public static function beforeAll(Closure $hook): void
     {
         self::ensureCollecting('beforeAll()');
+        self::ensureTopLevel('beforeAll');
         self::$beforeAll[] = $hook;
     }
 
     public static function afterAll(Closure $hook): void
     {
         self::ensureCollecting('afterAll()');
+        self::ensureTopLevel('afterAll');
         self::$afterAll[] = $hook;
+    }
+
+    /** A hook declared inside describe() belongs to that block (D-150). */
+    private static function scoped(Closure $hook): Closure|BlockHook
+    {
+        return self::$describeBlocks === [] ? $hook : new BlockHook($hook, self::$describeBlocks);
+    }
+
+    /**
+     * ✓ Measured against Pest 5.3.3: beforeAll/afterAll inside describe()
+     * is refused at COLLECTION (BeforeAllWithinDescribe /
+     * AfterAllWithinDescribe, exit 1), and nothing in the file runs.
+     */
+    private static function ensureTopLevel(string $hook): void
+    {
+        if (self::$describeBlocks !== []) {
+            throw new ConfigurationException(sprintf(
+                'The [%s] hook may not be used inside a [describe] block. Please move it to the top level of [%s].',
+                $hook,
+                self::$file ?? '',
+            ));
+        }
     }
 
     /**

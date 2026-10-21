@@ -241,9 +241,10 @@ final readonly class PestBuilder
     /**
      * Folds the matching Pest.php scopes into the file's own state:
      * the file's uses() beats scoped extend(), traits and groups
-     * accumulate, global before-hooks run before file-level ones and
-     * global after-hooks after (spec §3). Bare registrations
-     * contribute hooks only.
+     * accumulate, and a global beforeEach or afterEach runs before the
+     * file's own (D-150: measured, against spec §3's "after"); global
+     * beforeAll runs before the file's, afterAll after. Bare
+     * registrations contribute hooks only.
      *
      * @param non-empty-string $file
      */
@@ -279,7 +280,7 @@ final readonly class PestBuilder
         return new PestFileState(
             $state->calls,
             [...$beforeEach, ...$state->beforeEach],
-            [...$state->afterEach, ...$afterEach],
+            [...$afterEach, ...$state->afterEach],
             [...$beforeAll, ...$state->beforeAll],
             [...$state->afterAll, ...$afterAll],
             $state->uses ?? $class,
@@ -288,6 +289,29 @@ final readonly class PestBuilder
             $state->covers,
             $state->mutates,
         );
+    }
+
+    /**
+     * The hooks a test runs, in declaration order: every file-level one,
+     * and a block-scoped one only inside its describe() (D-150).
+     *
+     * @param list<Closure|BlockHook> $hooks
+     *
+     * @return list<Closure>
+     */
+    private static function hooksOf(array $hooks, TestCall $call): array
+    {
+        $applying = [];
+
+        foreach ($hooks as $hook) {
+            if (!$hook instanceof BlockHook) {
+                $applying[] = $hook;
+            } elseif ($hook->appliesTo($call->describeBlocks)) {
+                $applying[] = $hook->hook;
+            }
+        }
+
+        return $applying;
     }
 
     /**
@@ -628,7 +652,7 @@ final readonly class PestBuilder
                 (new ReflectionMethod($instance, 'setUp'))->invoke($instance);
             }
 
-            foreach ($state->beforeEach as $hook) {
+            foreach (self::hooksOf($state->beforeEach, $call) as $hook) {
                 $invoke($hook);
             }
 
@@ -782,7 +806,7 @@ final readonly class PestBuilder
                         continue;
                     }
 
-                    foreach ($state->afterEach as $afterEach) {
+                    foreach (self::hooksOf($state->afterEach, $call) as $afterEach) {
                         $invoke($afterEach);
                     }
 
