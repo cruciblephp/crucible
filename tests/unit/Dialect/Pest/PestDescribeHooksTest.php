@@ -20,6 +20,7 @@ use LucianoPereira\Crucible\Framework\TestCase;
 use ReflectionProperty;
 
 use function basename;
+use function dirname;
 use function file_put_contents;
 use function sys_get_temp_dir;
 use function tempnam;
@@ -104,9 +105,19 @@ final class PestDescribeHooksTest extends TestCase
             $saved[$name] = (new ReflectionProperty(PestScopes::class, $name))->getValue();
         }
 
+        $file = $this->write(<<<'PHP'
+            <?php
+            use LucianoPereira\Crucible\Tests\Dialect\Pest\DescribeHooksLog as L;
+            \beforeEach(function (): void { L::$lines[] = 'before file'; });
+            \afterEach(function (): void { L::$lines[] = 'after file'; });
+            \it('runs', function (): void { L::$lines[] = 'test'; });
+            PHP);
+
         try {
             (new ReflectionProperty(PestScopes::class, 'registrations'))->setValue(null, []);
-            (new ReflectionProperty(PestScopes::class, 'configDir'))->setValue(null, sys_get_temp_dir());
+            // The file's own directory: on Windows sys_get_temp_dir() is the short
+            // 8.3 path and tempnam() answers the long one, which no scope matches.
+            (new ReflectionProperty(PestScopes::class, 'configDir'))->setValue(null, dirname($file));
 
             PestScopes::pest()
                 ->beforeEach(static function (): void {
@@ -118,13 +129,7 @@ final class PestDescribeHooksTest extends TestCase
 
             (new ReflectionProperty(PestScopes::class, 'configDir'))->setValue(null, null);
 
-            $log = $this->run(<<<'PHP'
-                <?php
-                use LucianoPereira\Crucible\Tests\Dialect\Pest\DescribeHooksLog as L;
-                \beforeEach(function (): void { L::$lines[] = 'before file'; });
-                \afterEach(function (): void { L::$lines[] = 'after file'; });
-                \it('runs', function (): void { L::$lines[] = 'test'; });
-                PHP);
+            $log = $this->runFile($file);
         } finally {
             foreach ($saved as $name => $value) {
                 (new ReflectionProperty(PestScopes::class, $name))->setValue(null, $value);
@@ -169,6 +174,14 @@ final class PestDescribeHooksTest extends TestCase
      */
     private function run(string $source): array
     {
+        return $this->runFile($this->write($source));
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    private function write(string $source): string
+    {
         $file = tempnam(sys_get_temp_dir(), 'crucible-pest-describe-');
 
         if ($file === false) {
@@ -178,6 +191,16 @@ final class PestDescribeHooksTest extends TestCase
         $this->cleanup[] = $file;
         file_put_contents($file, $source);
 
+        return $file;
+    }
+
+    /**
+     * @param non-empty-string $file
+     *
+     * @return list<string> what the file's hooks and tests logged
+     */
+    private function runFile(string $file): array
+    {
         $relative = basename($file);
         self::assertNotSame('', $relative);
 
