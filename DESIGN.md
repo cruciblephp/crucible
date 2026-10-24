@@ -6673,6 +6673,104 @@ the file's. One run is not enough to call that Pest's rule or Pest's defect; it 
 and `PestScopesTest::testAnAbsolutePathSelectsTheFilesBeneathIt` hold it, and all five fail on
 1.1.6's source.
 
+
+### D-151: a configured env value is PHPUnit's `<env>`
+
+`->env()` wrote `putenv()`, `$_ENV` and `$_SERVER` whatever the environment held, so a value a CI
+job or `set -a; . secrets.env` exported was replaced by the configuration's default: the tests of a
+migrated Laravel package connected with the sample password. ✓ PHPUnit 13.4.3 and 12.5.40, the same
+on both:
+
+| case | PHPUnit: `getenv` / `$_ENV` / `$_SERVER` | 1.1.7 |
+|---|---|---|
+| exported, no force | exported / exported / exported | config in all three |
+| exported, `force="true"` | config / config / exported | no force |
+| not exported | config / config / undefined | config in all three |
+| exported empty | kept, empty counts as defined | config |
+
+`->env($name, $value, force: false)` gives those answers; `migrate-config` carries `force="true"`. A
+parallel worker inherited the parent's configured values, so `$_SERVER` held them where a serial run
+had none: `ProcessSetup` records what it replaced and `WorkerProcess` starts workers from the
+exported environment, each applying the configuration itself. ✓ The same eight cases, serial and
+`--parallel 2`, give PHPUnit's answers.
+
+### D-152: a path argument runs that path
+
+`crucible tests/EnvTest.php` answered `Unrecognized argument`. ✓ PHPUnit 13.4.3: several paths are
+accepted; a path replaces the configured suites, `--testsuite` included; `--filter` narrows it; a
+path that is neither file nor directory is `Test file "X" not found`, exit 2. Bare words with no
+command are now paths. `TestDiscoverer::discover()` takes them as one suite, inline tests and the
+folded JS and type suites stay out, and `--parallel` carries them in the worker manifest: before,
+a worker discovered the configured suites and lost a path outside them, without a word.
+
+### D-153: the verdict is the last line
+
+The console printed `OK` only when nothing went wrong, so a failing run ended on the tally, under a
+tree titled `Passed`. ✓ PHPUnit 13.4.3's last word, measured on eleven runs: `ERRORS!` over
+`FAILURES!` over `OK, but there were issues!` (incomplete, risky, deprecations, notices, warnings)
+over `OK, but some tests were skipped!` over `OK`. `ConsoleReporter::verdict()` gives it from the
+problems it already holds; a quarantined failure does not fail the run, so it is an issue. A tree
+of tests none of which passed is no longer drawn.
+
+### D-154: the issues a run fails on are listed
+
+✓ PHPUnit 13.4.3 lists a kind of issue without `--display-*` when the run fails on it, each with
+the tests that triggered it, and marks a passing test `W`, `D` or `N`, a warning over a deprecation
+over a notice. The console view takes the kinds to list as a parameter and draws them before the
+tally, so the verdict stays last; `PostRunReport` leaves those kinds to it. A view without the
+parameter keeps the `--display-*` listing it had.
+
+### D-155: output expectations
+
+Crucible had none of `expectOutputString()`, `expectOutputRegex()`, `getActualOutputForAssertion()`,
+`output()`, `expectsOutput()`, `hasUnexpectedOutput()`. ✓ PHPUnit 13.4.3, by execution: the pattern
+is checked before the string, each an assertion; a second call keeps the first (the string's warning
+has no category to land in here, a gap stated rather than invented); an exception is the outcome
+and the output is not compared; reading the output makes it expected; expected output is not
+printed. `output()` was final here, as the spec's; D-159 serves it instead.
+`beStrictAboutOutputDuringTests()` joins `--disallow-test-output`, whose unexpected output is now
+printed as well as reported, in the spec's words; the regular-expression assertions say
+`matches PCRE pattern`. ✓ The pest dialect gives the same answers as Pest 5.3.3.
+
+### D-156: the tests left out are counted
+
+With phpunit/phpunit installed and the aliases off, a suite of PHPUnit test cases printed
+`No tests found.` The classes discovery loaded and left out are counted and named in the message.
+`migrate-config` adds `->phpunitCompatibility()` when phpunit/phpunit is installed, the case its
+output describes.
+
+### D-157: PHPStan's result cache follows Pest.php
+
+`$this` in a Pest file comes from the ancestor `Pest.php` files, read beside the analysis, so
+PHPStan's result cache could not see them. ✓ PHPStan 2.2.6: changing `pest()->extend(A)` to a class
+without the method kept the warm cache's exit 0. `PestConfigurationHash`, a
+`ResultCacheMetaExtension` (PHPStan 2.1.2 on), hashes every `Pest.php` the resolver can read; a
+change re-analyses, no change restores the cache with nothing re-analysed. The analysis also ignored
+`->in(__DIR__)`, typing `$this` as the base test case: `__DIR__` is now read, joined with `.`, and an
+argument it cannot read is left out whole, as D-150 does at run time. ✓ The extension itself loads
+from PHPStan 2.1.23 (bisected), now a declared Composer conflict.
+
+### D-158: a list is the value intersected with list
+
+`toBeList()` and `assertIsList()` built a list of the value's elements (D-137), sound but wide, and
+wrong where no value can pass. phpstan-src#6800 makes PHPStan's own reading sound on the empty array.
+✓ Twenty types through `is_array() && array_is_list()` on that branch: `array{}` for a string-keyed
+array, never for a non-empty one, a shape kept, `non-empty-list` kept. `listOf()` is now
+`array<int<0, max>, mixed>` & list & the value, and `array{}` where that is never but the value
+admits the empty array: the twenty answers on PHPStan with and without the fix. Probe 30 records
+phpstan-phpunit's never on the released PHPStan and pest-plugin-phpstan's wider `list`.
+
+### D-159: output() is served, not declared
+
+D-155 declared `output()` final, as the spec does, and a test class with a helper of that name
+stopped loading: Crucible's own suite had `private function output(callable $reporter): string`.
+✓ PHP, measured: a final method rejects any override; a non-final public one still rejects a private
+helper or another signature; only a method the class does not declare leaves every helper working.
+So `TestCase` serves `output()` through `__call()`, documented with `@method` for PHPStan, and reads
+the buffer through a private method of its own, so a test class's `output()` changes nothing inside.
+Any other unknown method throws PHP's own `Error`, `Call to undefined method Class::name()`, and
+PHPStan still reports the typo. A suite valid on PHPUnit cannot have its own `output()`, so none of
+its results move; `method_exists($test, 'output')` is the one observable difference.
 ---
 
 ## Closing the planned record

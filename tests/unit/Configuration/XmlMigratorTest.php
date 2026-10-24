@@ -54,6 +54,7 @@ final class XmlMigratorTest extends TestCase
             <php>
                 <ini name="memory_limit" value="1G"/>
                 <env name="APP_ENV" value="testing"/>
+                <env name="DB_PASSWORD" value="from_config" force="true"/>
                 <const name="CRUCIBLE_MIGRATED_FLAG" value="true"/>
                 <const name="CRUCIBLE_MIGRATED_ANSWER" value="42"/>
             </php>
@@ -104,7 +105,9 @@ final class XmlMigratorTest extends TestCase
         $this->assertSame(['src/generated'], $configuration->source->excludeDirectories);
 
         $this->assertSame(['memory_limit' => '1G'], $configuration->php->ini);
-        $this->assertSame(['APP_ENV' => 'testing'], $configuration->php->env);
+        $this->assertSame(['APP_ENV' => 'testing', 'DB_PASSWORD' => 'from_config'], $configuration->php->env);
+        // force="true" migrates to force: true (D-151), and only that one is forced.
+        $this->assertSame(['DB_PASSWORD' => true], $configuration->php->forcedEnv);
         $this->assertSame(
             ['CRUCIBLE_MIGRATED_FLAG' => true, 'CRUCIBLE_MIGRATED_ANSWER' => 42],
             $configuration->php->constants,
@@ -124,6 +127,13 @@ final class XmlMigratorTest extends TestCase
 
         // The notes are duplicated into the generated file itself.
         $this->assertStringContainsString('Not migrated', $result->code);
+    }
+
+    /** With phpunit/phpunit installed the migrated tests extend its TestCase, so they need the aliases (D-156). */
+    public function testAnInstalledPhpunitTurnsCompatibilityOn(): void
+    {
+        $this->assertStringNotContainsString('->phpunitCompatibility()', (new XmlMigrator())->migrate('<phpunit/>')->code);
+        $this->assertStringContainsString('->phpunitCompatibility()', (new XmlMigrator())->migrate('<phpunit/>', phpunitInstalled: true)->code);
     }
 
     public function testDefaultsAreNotRestatedInTheGeneratedCode(): void

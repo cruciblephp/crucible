@@ -87,6 +87,12 @@ services:
     -
         class: LucianoPereira\Crucible\PHPStan\DialectThisResolver
     -
+        class: LucianoPereira\Crucible\PHPStan\PestConfigurationHash
+        arguments:
+            analysedPaths: %analysedPaths%
+        tags:
+            - phpstan.resultCacheMetaExtension
+    -
         class: LucianoPereira\Crucible\PHPStan\DialectClosureThisExtension
         tags:
             - phpstan.functionParameterClosureThisExtension

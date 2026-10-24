@@ -86,6 +86,22 @@ final class ExtensionBlackBoxTest extends TestCase
         ], $rendered);
     }
 
+    public function testAListIsTheValueIntersectedWithListAndAnEmptyArrayStaysPossible(): void
+    {
+        $rendered = Analysis::rendered(Analysis::run([Analysis::root() . '/tests/_fixtures/phpstan/ListNarrowingFixture.php'], Analysis::extension()));
+
+        // ✓ The answers of PHPStan with phpstan-src#6800 (D-158), on the
+        // PHPStan this suite runs, which has not got it.
+        self::assertSame([
+            'phpstan.dumpType: Dumped type: array{}',
+            'phpstan.dumpType: Dumped type: array{}',
+            'phpstan.dumpType: Dumped type: non-empty-list<string>',
+            'phpstan.dumpType: Dumped type: array{int, string}',
+            'phpstan.dumpType: Dumped type: list<string>',
+            'phpstan.dumpType: Dumped type: *NEVER*',
+        ], $rendered);
+    }
+
     public function testScopedUsesInResolvesThroughAncestorPestConfigs(): void
     {
         $tree = Analysis::root() . '/tests/_fixtures/phpstan/scoped';

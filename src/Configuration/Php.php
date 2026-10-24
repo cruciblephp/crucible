@@ -20,10 +20,12 @@ final readonly class Php
      * @param array<non-empty-string, string>                     $ini
      * @param array<non-empty-string, string>                     $env
      * @param array<non-empty-string, bool|float|int|string|null> $constants
+     * @param array<non-empty-string, true>                       $forcedEnv the env names declared with force (D-151)
      */
     public function __construct(
         public array $ini = [],
         public array $env = [],
         public array $constants = [],
+        public array $forcedEnv = [],
     ) {}
 }

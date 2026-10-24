@@ -86,6 +86,8 @@ abstract class Assert
 
     private static bool $noAssertionsDeclared = false;
 
+    private static bool $outputExpected = false;
+
     public static function assertThat(mixed $value, Constraint $constraint, string $message = ''): void
     {
         self::$count++;
@@ -162,6 +164,23 @@ abstract class Assert
     public static function forgetNoAssertionsDeclaration(): void
     {
         self::$noAssertionsDeclared = false;
+        self::$outputExpected       = false;
+    }
+
+    /**
+     * Engine-internal: the running test expects its output, or read it
+     * for an assertion (D-155), so the runner neither prints it nor
+     * calls it unexpected. Kept here for the reason the declaration
+     * above is.
+     */
+    public static function declareOutputExpected(): void
+    {
+        self::$outputExpected = true;
+    }
+
+    public static function outputExpected(): bool
+    {
+        return self::$outputExpected;
     }
 
     // --- Identity & equality --------------------------------------------

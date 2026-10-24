@@ -45,6 +45,7 @@ final readonly class Configuration
      * @param array<string, array{class: class-string, params: array<string, mixed>}> $progressViews progress-view plugins, keyed by view key; same class-string + params shape as $subscribers, resolved by ProgressViewRegistry — exactly one is subscribed per run (single-select, unlike $subscribers' additive resolution)
      * @param ?non-empty-string      $retriggerHotFile where `--watch` publishes its retrigger endpoint (D-083); null = the endpoint is off
      * @param int                    $retriggerPort    0 = an ephemeral port
+     * @param bool                   $beStrictAboutOutputDuringTests a test printing output it did not expect settles risky (D-155)
      */
     public function __construct(
         public array $testSuites,
@@ -99,5 +100,6 @@ final readonly class Configuration
         public array $progressViews = [],
         public ?string $retriggerHotFile = null,
         public int $retriggerPort = 0,
+        public bool $beStrictAboutOutputDuringTests = false,
     ) {}
 }

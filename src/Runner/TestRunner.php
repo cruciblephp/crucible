@@ -451,10 +451,14 @@ final readonly class TestRunner
             $window = $this->coverage?->end();
         }
 
+        // ✓ PHPUnit 13.4.3 (D-155): output the test expected is consumed by
+        // its assertion; unexpected output is printed, strict or not.
+        $outputExpected = Assert::outputExpected();
+
         if ($output !== '') {
             $this->emitter->emit(new TestOutputWritten($definition->id, OutputChannel::Stdout, $output));
 
-            if (!$this->options->disallowTestOutput) {
+            if (!$outputExpected) {
                 print $output;
             }
         }
@@ -524,11 +528,11 @@ final readonly class TestRunner
 
         // --disallow-test-output: a test that prints is a test whose
         // result depends on something the assertions do not describe.
-        if ($this->options->disallowTestOutput && $output !== '') {
+        if ($this->options->disallowTestOutput && $output !== '' && !$outputExpected) {
             return $this->settleCoverage($definition, [
                 ...$result,
                 'outcome' => Outcome::Risky,
-                'reason'  => 'This test printed unexpected output: ' . trim($output),
+                'reason'  => 'Test code or tested code printed unexpected output: ' . trim($output),
             ], $window);
         }
 

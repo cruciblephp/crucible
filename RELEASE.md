@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-10-20 (D-001..D-150, 1.1.7). Every entry traces to a `DESIGN.md` decision
+_As of 2026-10-24 (D-001..D-159, 1.1.8). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -366,6 +366,20 @@ against Crucible's own class only._
 | A `beforeEach`/`afterEach` inside `describe()` belongs to that block and its nested blocks, in declaration order with the file's; `beforeAll`/`afterAll` inside `describe()` is refused with Pest's message (D-150) | `Dialect\Pest\BlockHook`, `Dialect\Pest\PestRegistry`, `Dialect\Pest\PestBuilder::hooksOf()` |
 | A global `afterEach` runs before the file's own, as Pest's does (D-150) | `Dialect\Pest\PestBuilder::effectiveState()` |
 | `->in()` in `Pest.php` takes an absolute path, `__DIR__` included (D-150) | `Dialect\Pest\PestScopes::matching()` |
+
+## 1.1.8
+
+| Shipped | Records |
+|---|---|
+| A configured env value keeps what the environment defines unless forced, and never writes `$_SERVER`, as PHPUnit's `<env>`; workers start from the exported environment (D-151) | `Runner\ProcessSetup::applyEnv()`, `Configuration\Builder::env()`, `Runner\Process\WorkerProcess` |
+| Test files and directories as arguments run instead of the configured suites, in workers too; a missing one stops the run with exit 2 (D-152) | `CLI\CliOptions::$paths`, `Runner\TestDiscoverer::discover()`, `Runner\Process\WorkerManifest` |
+| The console's last line is the verdict, in PHPUnit's words and precedence; no passed tree when nothing passed (D-153) | `Reporting\ConsoleReporter::verdict()` |
+| The issue kinds a run fails on are listed before the tally with the tests that triggered them; the progress line marks `W`, `D`, `N` (D-154) | `Reporting\ConsoleReporter::issueSection()`, `CLI\Commands\RunTestsCommand::listedIssueKinds()` |
+| PHPUnit's output expectations, `beStrictAboutOutputDuringTests()`, and unexpected output printed and reported (D-155) | `Framework\TestCase::expectOutputString()`, `Runner\TestRunner`, `Configuration\Builder` |
+| `output()` served through `__call()`, so a test class may keep an `output()` of its own (D-159) | `Framework\TestCase::__call()` |
+| `No tests found` names the classes left out by the compatibility aliases being off; `migrate-config` turns them on with PHPUnit installed (D-156) | `CLI\Commands\RunTestsCommand::incumbentTestClasses()`, `Configuration\XmlMigrator` |
+| PHPStan's result cache follows `Pest.php`; `->in(__DIR__)` resolves in the analysis; PHPStan 2.1.23 is the declared minimum (D-157) | `PHPStan\PestConfigurationHash`, `PHPStan\UsesResolver`, `PHPStan\DialectThisResolver` |
+| `toBeList()` and `assertIsList()` narrow as PHPStan with phpstan-src#6800, on every supported version (D-158) | `PHPStan\ExpectationNarrowing::listOf()` |
 
 ## Design inputs honored
 

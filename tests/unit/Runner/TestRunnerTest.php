@@ -264,7 +264,7 @@ final class TestRunnerTest extends TestCase
         $this->assertSame(2, $this->runWith([$deprecating, $passing], new RunnerOptions(stopOnNotice: true))->summary->total());
     }
 
-    public function testDisallowedOutputIsRiskyAndIsReportedRatherThanPrinted(): void
+    public function testDisallowedOutputIsRiskyAndStillPrinted(): void
     {
         $printing = new TestDefinition(
             new TestId('tests/OutputFixture.php', 'prints'),
@@ -289,7 +289,26 @@ final class TestRunnerTest extends TestCase
         $printed = (string) ob_get_clean();
 
         $this->assertSame(1, $finish->summary->risky);
-        $this->assertStringNotContainsString('chatty', $printed, 'under the switch the output is reported, not printed');
+        // ✓ PHPUnit 13.4.3 prints it under the switch too (D-155).
+        $this->assertStringContainsString('chatty', $printed);
+
+        // Output the test expected is its assertion's, neither printed nor risky.
+        $expecting = new TestDefinition(
+            new TestId('tests/OutputFixture.php', 'expects'),
+            static function (array $values): void {
+                Assert::declareOutputExpected();
+                print 'consumed';
+                Assert::assertTrue(true);
+            },
+            MetadataCollection::from(),
+        );
+
+        ob_start();
+        $finish  = $this->runWith([$expecting], new RunnerOptions(disallowTestOutput: true));
+        $printed = (string) ob_get_clean();
+
+        $this->assertSame(1, $finish->summary->passed);
+        $this->assertStringNotContainsString('consumed', $printed);
     }
 
     public function testATestSlowerThanItsSizeAllowsIsRisky(): void

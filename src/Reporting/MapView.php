@@ -91,6 +91,7 @@ use const SIGALRM;
         ['name' => 'reverseList', 'type' => 'bool', 'required' => false, 'default' => false, 'description' => 'List the problems last-first'],
         ['name' => 'compact', 'type' => 'bool', 'required' => false, 'default' => false, 'description' => 'Tally only, nothing between the map and it'],
         ['name' => 'configuration', 'type' => 'string', 'required' => false, 'default' => '', 'description' => 'The configuration file to name on the frame, instead of printing it above one that covers it'],
+        ['name' => 'issues', 'type' => 'string', 'required' => false, 'default' => '', 'description' => 'Issue kinds to list before the tally, comma-separated: deprecation, notice, warning'],
     ],
 )]
 final class MapView implements ProgressViewContract
@@ -259,6 +260,7 @@ final class MapView implements ProgressViewContract
         bool $reverseList = false,
         bool $compact = false,
         private readonly string $configuration = '',
+        string $issues = '',
     ) {
         $this->terminal = Runtime::terminal();
         $decorated      = Capabilities::color($this->terminal);
@@ -275,6 +277,7 @@ final class MapView implements ProgressViewContract
             results: $results,
             reverseList: $reverseList,
             compact: $compact,
+            issues: $issues,
         );
     }
 

@@ -85,6 +85,8 @@ final class Builder
     private bool $backupStaticProperties            = false;
     private bool $beStrictAboutChangesToGlobalState = false;
 
+    private bool $beStrictAboutOutputDuringTests = false;
+
     private bool $requireCoverageMetadata = false;
 
     private bool $beStrictAboutCoverageMetadata = false;
@@ -104,6 +106,9 @@ final class Builder
 
     /** @var array<non-empty-string, string> */
     private array $env = [];
+
+    /** @var array<non-empty-string, true> */
+    private array $forcedEnv = [];
 
     /** @var list<CommandGate> */
     private array $commandGates = [];
@@ -472,13 +477,22 @@ final class Builder
     }
 
     /**
-     * phpunit.xml: <php><env name="..." value="..."/></php>
+     * phpunit.xml: <php><env name="..." value="..." force="..."/></php>
+     *
+     * As PHPUnit's (D-151): a variable the environment already defines is
+     * kept unless $force, and $_SERVER is never written.
      *
      * @param non-empty-string $name
      */
-    public function env(string $name, string $value): self
+    public function env(string $name, string $value, bool $force = false): self
     {
         $this->env[$name] = $value;
+
+        if ($force) {
+            $this->forcedEnv[$name] = true;
+        } else {
+            unset($this->forcedEnv[$name]);
+        }
 
         return $this;
     }
@@ -521,6 +535,17 @@ final class Builder
     public function beStrictAboutChangesToGlobalState(bool $enabled = true): self
     {
         $this->beStrictAboutChangesToGlobalState = $enabled;
+
+        return $this;
+    }
+
+    /**
+     * phpunit.xml: <phpunit beStrictAboutOutputDuringTests="..."> — a
+     * test printing output it did not expect settles risky (D-155).
+     */
+    public function beStrictAboutOutputDuringTests(bool $enabled = true): self
+    {
+        $this->beStrictAboutOutputDuringTests = $enabled;
 
         return $this;
     }
@@ -885,7 +910,7 @@ final class Builder
         return new Configuration(
             testSuites: $this->testSuites,
             source: $this->source,
-            php: new Php($this->ini, $this->env, $this->constants),
+            php: new Php($this->ini, $this->env, $this->constants, $this->forcedEnv),
             bootstrap: $this->bootstrap,
             reportTitle: $this->reportTitle,
             cacheDirectory: $this->cacheDirectory,
@@ -935,6 +960,7 @@ final class Builder
             progressViews: $this->progressViews,
             retriggerHotFile: $this->retriggerHotFile,
             retriggerPort: $this->retriggerPort,
+            beStrictAboutOutputDuringTests: $this->beStrictAboutOutputDuringTests,
         );
     }
 }

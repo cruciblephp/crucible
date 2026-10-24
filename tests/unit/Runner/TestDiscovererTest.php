@@ -85,6 +85,26 @@ final class TestDiscovererTest extends TestCase
     }
 
     /**
+     * The spec's bare arguments (D-152): ✓ PHPUnit 13.4.3 runs the files and
+     * directories given instead of the configured suites, a path outside
+     * them included, whatever --testsuite names.
+     */
+    public function testPathsRunInsteadOfTheConfiguredSuites(): void
+    {
+        $root          = dirname(__DIR__, 3);
+        $configuration = new Configuration([new TestSuite('main', ['tests/_fixtures/dialect-detection/no-class'])], new Source(), new Php());
+        $discoverer    = new TestDiscoverer();
+        $directory     = new WorkingDirectory($root);
+
+        $outside = $discoverer->discover($configuration, $directory, ['main'], paths: ['tests/_fixtures/dialect-detection/nested-class/NestedClassPestTest.php']);
+        self::assertCount(1, $outside);
+        self::assertCount(1, $outside[0]->tests);
+
+        $both = $discoverer->discover($configuration, $directory, paths: ['tests/_fixtures/dialect-detection/nested-class', 'tests/_fixtures/dialect-detection/no-class']);
+        self::assertCount(2, $both);
+    }
+
+    /**
      * @return list<\LucianoPereira\Crucible\Test\TestGroup>
      */
     private function discover(string $fixtureDirectory): array

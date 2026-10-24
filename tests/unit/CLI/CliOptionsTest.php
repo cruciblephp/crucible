@@ -85,11 +85,23 @@ final class CliOptionsTest extends TestCase
     public function testUnknownOptionsAndStrayArgumentsAreErrors(): void
     {
         $this->assertIsString(CliOptions::fromArgv(['crucible', '--frobnicate']));
-        $this->assertIsString(CliOptions::fromArgv(['crucible', 'tests/SomeTest.php']));
+        // After a command its one bare word is taken; a second is still stray.
+        $this->assertIsString(CliOptions::fromArgv(['crucible', 'completion', 'bash', 'zsh']));
         $this->assertIsString(CliOptions::fromArgv(['crucible', '--filter']));
         $this->assertIsString(CliOptions::fromArgv(['crucible', '--stop-on-failure=yes']));
         $this->assertIsString(CliOptions::fromArgv(['crucible', '--parallel', 'lots']));
         $this->assertIsString(CliOptions::fromArgv(['crucible', '--cache-result', '--do-not-cache-result']));
+    }
+
+    /** The spec's bare arguments (D-152): with no command, each one is a test file or directory. */
+    public function testBareWordsAreTestPaths(): void
+    {
+        $this->assertSame([], $this->parse([])->paths);
+        $this->assertSame(['tests/SomeTest.php', 'tests/Unit'], $this->parse(['tests/SomeTest.php', '--filter', 'x', 'tests/Unit'])->paths);
+
+        $command = $this->parse(['completion', 'bash']);
+        $this->assertSame('bash', $command->argument);
+        $this->assertSame([], $command->paths);
     }
 
     public function testLastOccurrenceOfAValuedOptionWins(): void

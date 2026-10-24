@@ -11,9 +11,13 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Reporting;
 
 use LucianoPereira\Crucible\Event\CheckFinished;
+use LucianoPereira\Crucible\Event\DeprecationScope;
 use LucianoPereira\Crucible\Event\Envelope;
+use LucianoPereira\Crucible\Event\Issue;
+use LucianoPereira\Crucible\Event\IssueKind;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunFinished;
+use LucianoPereira\Crucible\Event\RunSummary;
 use LucianoPereira\Crucible\Event\TestFinished;
 use LucianoPereira\Crucible\Reporting\Document\Blocks\FoldingTree;
 use LucianoPereira\Crucible\Reporting\Document\Blocks\Heading;
@@ -22,9 +26,12 @@ use LucianoPereira\Crucible\Reporting\Document\Inline\Text;
 use LucianoPereira\Crucible\Reporting\Document\Renderers\ConsoleSummaryRenderer;
 use LucianoPereira\Crucible\Reporting\ProgressView\{ProgressView, ProgressViewContract};
 
+use function array_map;
 use function array_reverse;
 use function count;
+use function explode;
 use function fwrite;
+use function in_array;
 use function sprintf;
 
 /**
@@ -42,6 +49,7 @@ use function sprintf;
         ['name' => 'results', 'type' => 'bool', 'required' => false, 'default' => true, 'description' => 'Print the problem list and the passed tree'],
         ['name' => 'reverseList', 'type' => 'bool', 'required' => false, 'default' => false, 'description' => 'List the problems last-first'],
         ['name' => 'compact', 'type' => 'bool', 'required' => false, 'default' => false, 'description' => 'Progress and tally only, nothing between them'],
+        ['name' => 'issues', 'type' => 'string', 'required' => false, 'default' => '', 'description' => 'Issue kinds to list before the tally, comma-separated: deprecation, notice, warning'],
     ],
 )]
 final class ConsoleReporter implements ProgressViewContract
@@ -65,6 +73,7 @@ final class ConsoleReporter implements ProgressViewContract
      * @param bool         $results   print the problem list and the passed tree
      * @param bool         $reverseList list the problems last-first
      * @param bool         $compact   one line of progress and one line of tally, nothing else
+     * @param string       $issues    the issue kinds listed before the tally, each with the tests that triggered it (D-154)
      */
     public function __construct(
         private $stream,
@@ -74,6 +83,7 @@ final class ConsoleReporter implements ProgressViewContract
         private readonly bool $results = true,
         private readonly bool $reverseList = false,
         private readonly bool $compact = false,
+        private readonly string $issues = '',
     ) {
         $this->style = new Style($colors);
     }
@@ -109,7 +119,7 @@ final class ConsoleReporter implements ProgressViewContract
         $character = match (true) {
             // A blocked skip is untested, not a caution — gray, not yellow.
             $event->blocked                         => $this->style->gray('S'),
-            $event->outcome === Outcome::Passed     => '.',
+            $event->outcome === Outcome::Passed     => $this->issueCharacter($event),
             $event->outcome === Outcome::Failed     => $this->style->red('F'),
             $event->outcome === Outcome::Errored    => $this->style->red('E'),
             $event->outcome === Outcome::Skipped    => $this->style->yellow('S'),
@@ -173,7 +183,8 @@ final class ConsoleReporter implements ProgressViewContract
         // The passed tree comes BEFORE the tally, not after: on a suite
         // of any size it is hundreds of rows, and a verdict printed
         // above them has scrolled off by the time the run ends.
-        if ($this->results && !$this->compact && $model->sections !== []) {
+        // A tree of tests none of which passed would be all zeros (D-153).
+        if ($this->results && !$this->compact && $model->sections !== [] && $event->summary->passed > 0) {
             $renderer = new ConsoleSummaryRenderer();
             $document = new Document([
                 new Heading(1, [new Text('Passed')]),
@@ -181,6 +192,10 @@ final class ConsoleReporter implements ProgressViewContract
             ]);
 
             fwrite($this->stream, "\n" . $renderer->render($document));
+        }
+
+        if ($this->results && !$this->compact) {
+            $this->issueSection();
         }
 
         $summary = $event->summary;
@@ -220,12 +235,110 @@ final class ConsoleReporter implements ProgressViewContract
             )));
         }
 
-        if ($this->results && !$this->compact && count($model->problems) === 0 && $this->failedChecks === 0) {
-            fwrite($this->stream, $summary->hasIssues()
-                ? $this->style->yellow('OK, but there were issues!') . "\n"
-                : $this->style->green('OK') . "\n");
+        if ($this->results && !$this->compact) {
+            fwrite($this->stream, $this->verdict($model, $summary) . "\n");
         }
 
+    }
+
+    /**
+     * ✓ PHPUnit 13.4.3: a passing test that triggered an issue shows it in
+     * the progress line, a warning over a deprecation over a notice (D-154).
+     */
+    private function issueCharacter(TestFinished $event): string
+    {
+        $kinds = array_map(static fn(Issue $issue): IssueKind => $issue->kind, $event->issues);
+
+        return match (true) {
+            in_array(IssueKind::Warning, $kinds, true)     => $this->style->yellow('W'),
+            in_array(IssueKind::Deprecation, $kinds, true) => $this->style->yellow('D'),
+            in_array(IssueKind::Notice, $kinds, true)      => $this->style->yellow('N'),
+            default                                        => '.',
+        };
+    }
+
+    /**
+     * The issues the run was asked to list, before the tally so the verdict
+     * stays last (D-154): each distinct one once, with every test that
+     * triggered it, as the spec lists them.
+     */
+    private function issueSection(): void
+    {
+        foreach (IssueKind::cases() as $kind) {
+            if (!in_array($kind->value, explode(',', $this->issues), true)) {
+                continue;
+            }
+
+            /** @var array<string, array{Issue, list<string>}> $distinct */
+            $distinct = [];
+
+            foreach ($this->finished as $event) {
+                foreach ($event->issues as $issue) {
+                    if ($issue->kind !== $kind) {
+                        continue;
+                    }
+
+                    $key = $issue->file . ':' . $issue->line . ':' . $issue->message;
+                    $distinct[$key] ??= [$issue, []];
+
+                    if (!in_array($event->test->toString(), $distinct[$key][1], true)) {
+                        $distinct[$key][1][] = $event->test->toString();
+                    }
+                }
+            }
+
+            if ($distinct === []) {
+                continue;
+            }
+
+            fwrite($this->stream, sprintf("\n%d %s(s):\n", count($distinct), $kind->value));
+
+            foreach ($distinct as [$issue, $tests]) {
+                fwrite($this->stream, sprintf(
+                    "  %s:%d  %s%s\n",
+                    $issue->file,
+                    $issue->line,
+                    $issue->message,
+                    $issue->scope instanceof DeprecationScope ? ' [' . $issue->scope->value . ']' : '',
+                ));
+
+                foreach ($tests as $test) {
+                    fwrite($this->stream, '    triggered by ' . $test . "\n");
+                }
+            }
+        }
+    }
+
+    /**
+     * The last line, in the spec's words and its precedence (D-153): ✓
+     * PHPUnit 13.4.3 writes ERRORS! over FAILURES! over "OK, but there were
+     * issues!" (incomplete, risky, deprecations, notices, warnings) over
+     * "OK, but some tests were skipped!" over OK. A quarantined failure
+     * does not fail the run, so it is an issue.
+     */
+    private function verdict(RunModel $model, RunSummary $summary): string
+    {
+        $errored = $failed = $issues = false;
+
+        foreach ($model->problems as $problem) {
+            $defect = $problem->outcome === Outcome::Errored || $problem->outcome === Outcome::Failed;
+
+            match (true) {
+                $defect && $problem->quarantined       => $issues  = true,
+                $problem->outcome === Outcome::Errored => $errored = true,
+                $problem->outcome === Outcome::Failed  => $failed  = true,
+                $problem->outcome !== Outcome::Skipped => $issues  = true,
+                default                                => null,
+            };
+        }
+
+        return match (true) {
+            $errored                           => $this->style->red('ERRORS!'),
+            $failed || $this->failedChecks > 0 => $this->style->red('FAILURES!'),
+            $issues || $summary->hasIssues()   => $this->style->yellow('OK, but there were issues!'),
+            $summary->skipped > 0              => $this->style->yellow('OK, but some tests were skipped!'),
+            default                            => $this->style->green('OK'),
+        };
     }
 
     /**

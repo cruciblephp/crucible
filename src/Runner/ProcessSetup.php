@@ -17,10 +17,12 @@ use LucianoPereira\Crucible\Configuration\Configuration;
 use LucianoPereira\Crucible\Configuration\Overrides;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 
+use function array_key_exists;
 use function array_map;
 use function define;
 use function defined;
 use function get_include_path;
+use function getenv;
 use function implode;
 use function ini_set;
 use function is_file;
@@ -37,6 +39,14 @@ use const PHP_EOL;
  */
 final class ProcessSetup
 {
+    /**
+     * What the environment held, before applyEnv() changed it, for each
+     * name it changed: the value, or false when it was undefined.
+     *
+     * @var array<non-empty-string, string|false>
+     */
+    private static array $replaced = [];
+
     /**
      * The coexistence policy (DESIGN.md D-019): aliases load automatically
      * only when the real PHPUnit is absent; with PHPUnit installed they
@@ -112,11 +122,7 @@ final class ProcessSetup
         }
 
         foreach ($configuration->php->env as $name => $value) {
-            // All three channels, like the spec's <env> handler:
-            // frameworks resolve env from $_SERVER first, and a parent
-            // process (artisan test) may have exported conflicting
-            // values there.
-            self::exportEnv($name, $value);
+            self::applyEnv($name, $value, isset($configuration->php->forcedEnv[$name]));
         }
 
         foreach ($configuration->php->constants as $name => $value) {
@@ -126,6 +132,60 @@ final class ProcessSetup
         }
     }
 
+    /**
+     * A configured env value, as PHPUnit's <env> applies it (D-151): ✓
+     * measured on 13.4.3 and 12.5.40, a variable the environment already
+     * defines, empty included, is kept unless forced, and $_SERVER is
+     * never written, forced or not.
+     *
+     * @param non-empty-string $name
+     */
+    private static function applyEnv(string $name, string $value, bool $force): void
+    {
+        $current = getenv($name);
+
+        if ($force || $current === false) {
+            if ($current !== $value && !array_key_exists($name, self::$replaced)) {
+                self::$replaced[$name] = $current;
+            }
+
+            putenv(sprintf('%s=%s', $name, $value));
+            $_ENV[$name] = $value;
+
+            return;
+        }
+
+        $_ENV[$name] = $current;
+    }
+
+    /**
+     * The environment as the run started, for a child that applies the
+     * configuration itself: a worker inherits what the user exported, not
+     * what this process configured, as a serial run's tests see it. Null
+     * when nothing was changed, for plain inheritance.
+     *
+     * @return ?array<string, string>
+     */
+    public static function inheritedEnvironment(): ?array
+    {
+        if (self::$replaced === []) {
+            return null;
+        }
+
+        $environment = getenv();
+
+        foreach (self::$replaced as $name => $original) {
+            if ($original === false) {
+                unset($environment[$name]);
+            } else {
+                $environment[$name] = $original;
+            }
+        }
+
+        return $environment;
+    }
+
+    /** A value Crucible itself hands the process, the parallel tokens: every channel. */
     public static function exportEnv(string $name, string $value): void
     {
         putenv(sprintf('%s=%s', $name, $value));

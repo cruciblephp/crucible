@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Runner\Process;
 
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+use LucianoPereira\Crucible\Runner\ProcessSetup;
 use LucianoPereira\Crucible\Test\TestId;
 
 use function fclose;
@@ -82,7 +83,7 @@ final class WorkerProcess
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
             $workingDirectory->path,
-            $env === [] ? null : [...getenv(), ...$env],
+            self::environment($env),
         );
 
         if (!is_resource($process)) {
@@ -96,6 +97,22 @@ final class WorkerProcess
         stream_set_blocking($pipes[2], false);
 
         return new self($process, $pipes[1], $pipes[2], $expected);
+    }
+
+    /**
+     * @param array<string, string> $env
+     *
+     * @return ?array<string, string>
+     */
+    private static function environment(array $env): ?array
+    {
+        $inherited = ProcessSetup::inheritedEnvironment();
+
+        if ($env === [] && $inherited === null) {
+            return null;
+        }
+
+        return [...$inherited ?? getenv(), ...$env];
     }
 
     /**

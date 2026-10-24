@@ -7,10 +7,12 @@ if anything here is missing, and fails the other way too if this file documents 
 the parser would reject. It cannot quietly fall out of date.
 
 ```
-crucible [options]
+crucible [options] [path ...]
 ```
 
-Unknown options are errors, never ignored. A CLI option always beats the same setting in
+A path, a test file or a directory, runs instead of the configured suites, as PHPUnit's does:
+`crucible tests/Unit/UserTest.php`, `crucible tests/Unit tests/Feature`. A path that does not exist
+stops the run with exit 2. Unknown options are errors, never ignored. A CLI option always beats the same setting in
 `crucible.php`.
 
 ---
@@ -547,7 +549,7 @@ for someone to discover they do nothing.
 | `--no-useless-test-reports` | Stops marking a test that asserts nothing as risky |
 | `--enforce-time-limit` | A test slower than its declared size allows is risky |
 | `--default-time-limit <sec>` | The budget for a test that declares no size |
-| `--disallow-test-output` | A test that prints anything is risky |
+| `--disallow-test-output` | A test that prints output it did not expect is risky; `->beStrictAboutOutputDuringTests()` in `crucible.php` |
 | `--atleast-version <v>` | Exits `0` only if the running version is at least `<v>` |
 | `--check-version` | Reports that Crucible has no update channel, and exits `0` |
 | `--validate-configuration` | Checks that `crucible.php` loads and every path it names exists |
@@ -611,7 +613,9 @@ a blocking syscall.
 
 `--disallow-test-output` needs the output itself, so a test's output is now captured, reported
 as a `test:output` event, and written back out — capturing it never means losing it. Under the
-switch it is reported instead of printed, since the point is that it should not be there.
+switch it is still printed, as PHPUnit prints it, and the test is risky. Output a test expected,
+with `expectOutputString()` or `expectOutputRegex()`, or read with `getActualOutputForAssertion()`,
+belongs to its assertion: it is neither printed nor risky.
 
 The php.ini advisory checks `display_errors`, `display_startup_errors`, `error_reporting`,
 `zend.assertions`, `assert.exception`, `memory_limit`, and — when the extension is loaded —

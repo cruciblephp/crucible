@@ -58,6 +58,7 @@ final readonly class XmlMigrator
         'backupGlobals'                     => ['backupGlobals', false],
         'backupStaticProperties'            => ['backupStaticProperties', false],
         'beStrictAboutChangesToGlobalState' => ['beStrictAboutChangesToGlobalState', false],
+        'beStrictAboutOutputDuringTests'    => ['beStrictAboutOutputDuringTests', false],
         'requireCoverageMetadata'           => ['requireCoverageMetadata', false],
         'beStrictAboutCoverageMetadata'     => ['beStrictAboutCoverageMetadata', false],
     ];
@@ -65,7 +66,11 @@ final readonly class XmlMigrator
     /**
      * @throws ConfigurationException when the document is not parseable XML
      */
-    public function migrate(string $xml): MigrationResult
+    /**
+     * @param bool $phpunitInstalled phpunit/phpunit is installed: the migrated tests extend
+     *                               its TestCase, which runs only with ->phpunitCompatibility() (D-156)
+     */
+    public function migrate(string $xml, bool $phpunitInstalled = false): MigrationResult
     {
         libxml_use_internal_errors(true);
 
@@ -83,6 +88,10 @@ final readonly class XmlMigrator
         $this->testSuites($document, $calls, $notes);
         $this->source($document, $calls, $notes);
         $this->php($document, $calls, $notes);
+
+        if ($phpunitInstalled) {
+            $calls[] = '->phpunitCompatibility()';
+        }
 
         foreach ($document->children() as $child) {
             $name = $child->getName();
@@ -292,14 +301,10 @@ final readonly class XmlMigrator
 
         foreach ($php->env ?? [] as $env) {
             $calls[] = sprintf(
-                '->env(%s, %s)',
+                (string) ($env['force'] ?? '') === 'true' ? '->env(%s, %s, force: true)' : '->env(%s, %s)',
                 var_export((string) $env['name'], true),
                 var_export((string) $env['value'], true),
             );
-
-            if ((string) ($env['force'] ?? '') === 'true') {
-                $notes[] = sprintf('<env name="%s" force="true"> (Crucible env values always apply)', (string) $env['name']);
-            }
         }
 
         foreach ($php->const ?? [] as $constant) {

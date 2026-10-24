@@ -25,14 +25,17 @@ declare(strict_types=1);
 
 $oneReading = 'one reading for both dialects (D-137): a matcher narrows exactly as its assertion does, through AssertConditions, so toBeArray() is assertIsArray() is PHPStan\'s own is_array() — array<mixed, mixed>, the answer phpstan-phpunit gives (phpunit.isArray.*). pest-plugin-phpstan builds its own array<int|string, mixed>: the same values, keys spelled out.';
 
-$soundList = 'assertIsList() reads as toBeList() does (D-137): a list of the value\'s elements. phpstan-phpunit intersects array<string, mixed> with list and gets *NEVER* — unsound, because the empty array is both, and code after a passing assertion would be reported as unreachable.';
+$soundList = 'assertIsList() reads as PHPStan reads is_array() && array_is_list() (D-158): the value intersected with list. On array<string, mixed> that is array{}, the one value both a list and string-keyed. phpstan-phpunit gets *NEVER* on PHPStan before phpstan-src#6800 — unsound, code after a passing assertion would be reported as unreachable — and array{} with it, Crucible\'s answer on any version.';
+
+$oneList = 'one reading for both dialects (D-137, D-158): toBeList() is assertIsList(), so the chain is array{} as phpstan-phpunit reads it with phpstan-src#6800. pest-plugin-phpstan answers list: wider, the same values plus lists array<string, mixed> cannot be.';
 
 $subject = 'the subject narrows (D-129): after the statement, the variable passed to expect() carries what the matchers proved. The incumbent narrows only the chain. Sound because an expectation that fails throws.';
 
 return [
-    'phpunit.isList.this'            => ['crucible' => 'list', 'cause' => $soundList],
-    'phpunit.isList.self'            => ['crucible' => 'list', 'cause' => $soundList],
-    'phpunit.isList.static'          => ['crucible' => 'list', 'cause' => $soundList],
+    'phpunit.isList.this'            => ['crucible' => 'array{}', 'cause' => $soundList],
+    'phpunit.isList.self'            => ['crucible' => 'array{}', 'cause' => $soundList],
+    'phpunit.isList.static'          => ['crucible' => 'array{}', 'cause' => $soundList],
+    'pest.toBeList.chain'            => ['crucible' => 'array{}', 'cause' => $oneList],
     'pest.notToBeInstanceOf.subject' => ['crucible' => 'null', 'cause' => $subject],
     'pest.notToBeNull.subject'       => ['crucible' => 'string', 'cause' => $subject],
     'pest.notToBeString.subject'     => ['crucible' => 'int', 'cause' => $subject],
@@ -45,7 +48,7 @@ return [
     'pest.toBeInstanceOf.subject'    => ['crucible' => 'CrucibleProbe\\Types\\Widget', 'cause' => $subject],
     'pest.toBeInt.subject'           => ['crucible' => 'int', 'cause' => $subject],
     'pest.toBeIterable.subject'      => ['crucible' => 'iterable', 'cause' => $subject],
-    'pest.toBeList.subject'          => ['crucible' => 'list', 'cause' => $subject],
+    'pest.toBeList.subject'          => ['crucible' => 'array{}', 'cause' => $subject],
     'pest.toBeNull.subject'          => ['crucible' => 'null', 'cause' => $subject],
     'pest.toBeNumeric.subject'       => ['crucible' => 'float|int|numeric-string', 'cause' => $subject],
     'pest.toBeObject.subject'        => ['crucible' => 'object', 'cause' => $subject],

@@ -11,9 +11,11 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\PHPStan;
 
 use LucianoPereira\Crucible\Dialect\Pest\PestTestCase;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use PHPStan\Type\ObjectType;
 use PHPStan\Type\Type;
 
+use function array_map;
 use function array_reverse;
 use function class_exists;
 use function dirname;
@@ -88,40 +90,25 @@ final class DialectThisResolver
         // Ancestors from the file upward, then applied outer-first —
         // the runtime loads configurations root-down, and the last
         // matching class wins ($class = $scope->class ?? $class).
-        $directories = [];
-        $directory   = dirname($file);
-
-        for ($depth = 0; $depth < self::WALK_CAP; $depth++) {
-            $directories[] = $directory;
-
-            $isRoot = is_file($directory . DIRECTORY_SEPARATOR . 'crucible.php')
-                || is_file($directory . DIRECTORY_SEPARATOR . 'crucible.dist.php')
-                || is_file($directory . DIRECTORY_SEPARATOR . 'composer.json');
-
-            $parent = dirname($directory);
-
-            if ($isRoot || $parent === $directory) {
-                break;
-            }
-
-            $directory = $parent;
-        }
-
         $class = null;
 
-        foreach (array_reverse($directories) as $base) {
+        foreach (array_reverse(self::configurationDirectories(dirname($file))) as $base) {
             foreach ($this->registrationsIn($base) as $registration) {
                 if (!str_starts_with($file, $base . DIRECTORY_SEPARATOR)) {
                     continue;
                 }
 
                 // Globs are written with '/' whatever the OS, and
-                // FNM_PATHNAME only treats '/' as a separator.
+                // FNM_PATHNAME only treats '/' as a separator. An absolute
+                // one, `->in(__DIR__)`, is matched against the absolute file.
                 $relative = str_replace(DIRECTORY_SEPARATOR, '/', substr($file, strlen($base) + 1));
+                $absolute = str_replace(DIRECTORY_SEPARATOR, '/', $file);
                 $matched  = false;
 
                 foreach ($registration['globs'] as $glob) {
-                    if ($this->matches($glob, $relative)) {
+                    $glob = str_replace(DIRECTORY_SEPARATOR, '/', $glob);
+
+                    if ($this->matches($glob, WorkingDirectory::isAbsolute($glob) ? $absolute : $relative)) {
                         $matched = true;
 
                         break;
@@ -146,6 +133,34 @@ final class DialectThisResolver
     }
 
     /**
+     * The directories whose Pest.php configures what is in $directory:
+     * itself and its ancestors up to the project root, innermost first.
+     *
+     * @return non-empty-list<string>
+     */
+    public static function configurationDirectories(string $directory): array
+    {
+        $directories = [$directory];
+
+        for ($depth = 1; $depth < self::WALK_CAP; $depth++) {
+            $isRoot = is_file($directory . DIRECTORY_SEPARATOR . 'crucible.php')
+                || is_file($directory . DIRECTORY_SEPARATOR . 'crucible.dist.php')
+                || is_file($directory . DIRECTORY_SEPARATOR . 'composer.json');
+
+            $parent = dirname($directory);
+
+            if ($isRoot || $parent === $directory) {
+                break;
+            }
+
+            $directory     = $parent;
+            $directories[] = $directory;
+        }
+
+        return $directories;
+    }
+
+    /**
      * @return list<array{names: list<non-empty-string>, globs: non-empty-list<string>}>
      */
     private function registrationsIn(string $directory): array
@@ -157,9 +172,22 @@ final class DialectThisResolver
         $config = $directory . DIRECTORY_SEPARATOR . 'Pest.php';
         $source = is_file($config) ? @file_get_contents($config) : false;
 
-        return $this->configurations[$directory] = $source === false
-            ? []
-            : UsesResolver::scopedRegistrations($source);
+        if ($source === false) {
+            return $this->configurations[$directory] = [];
+        }
+
+        // `__DIR__` is the directory this Pest.php sits in (D-157).
+        $registrations = [];
+
+        foreach (UsesResolver::scopedRegistrations($source) as $registration) {
+            $registration['globs'] = array_map(
+                static fn(string $glob): string => str_replace(UsesResolver::DIR, $directory, $glob),
+                $registration['globs'],
+            );
+            $registrations[] = $registration;
+        }
+
+        return $this->configurations[$directory] = $registrations;
     }
 
     /** The PestScopes glob rule, mirrored. */

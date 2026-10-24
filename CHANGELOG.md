@@ -2,6 +2,27 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.1.8 — 2026-10-24
+
+- Fixed `->env()` replacing a variable the environment already defines: it is kept unless `force: true`, and `$_SERVER` is never written, as PHPUnit's `<env>` does; `migrate-config` carries `force="true"` over
+- Fixed parallel workers starting from the configured env values instead of what the user exported, so a parallel run sees what a serial one sees
+- Added test files and directories as arguments, `crucible tests/Unit/UserTest.php`, run instead of the configured suites as PHPUnit runs them; a path that does not exist stops the run with exit 2
+- Fixed a run with errors or failures ending without a verdict: the last line is `ERRORS!`, `FAILURES!`, `OK, but there were issues!`, `OK, but some tests were skipped!` or `OK`, in PHPUnit's order of precedence
+- Changed the console to leave out the passed-tests tree when no test passed
+- Added the deprecations, notices and warnings a run fails on, listed before the tally with every test that triggered each, as PHPUnit lists them without `--display-*`
+- Changed the progress line to mark a passing test that triggered a warning, deprecation or notice with `W`, `D` or `N`, as PHPUnit does
+- Added `expectOutputString()`, `expectOutputRegex()`, `getActualOutputForAssertion()`, `output()`, `expectsOutput()` and `hasUnexpectedOutput()` to the phpunit and pest dialects
+- Added `beStrictAboutOutputDuringTests()`, which `migrate-config` now translates instead of listing it as not migrated
+- Changed unexpected output under `--disallow-test-output` to be printed as well as reported, in PHPUnit's words
+- Added `$this->output()` without taking the name from a test class: an `output()` method of its own, any signature or visibility, still wins
+- Fixed the regular-expression assertions' failure message to say `matches PCRE pattern`, as PHPUnit's does
+- Changed `No tests found` to say how many test classes were left out because they extend PHPUnit's TestCase with the compatibility aliases off
+- Changed `migrate-config` to add `->phpunitCompatibility()` when phpunit/phpunit is installed
+- Fixed PHPStan's result cache keeping an old answer after a `Pest.php` changed: the extension adds those files to the cache's metadata
+- Fixed `->in(__DIR__)` in `Pest.php` being ignored by the PHPStan extension, which typed `$this` as the base test case
+- Changed `toBeList()` and `assertIsList()` to narrow as PHPStan reads `array_is_list()` with phpstan-src#6800, on every supported version: `array{}` for a string-keyed array, never where no value can pass
+- Changed the PHPStan extension's minimum to PHPStan 2.1.23, declared as a Composer conflict: older versions could not load it
+
 ## v1.1.7 — 2026-10-20
 
 - Fixed a `beforeEach` or `afterEach` inside `describe()` running for every test of the file, tests declared before the block included: it runs for the tests of its block and the blocks nested in it, in declaration order with the file's hooks, as Pest does (Hallmark cross-check)

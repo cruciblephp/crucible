@@ -54,6 +54,7 @@ final class WorkerProtocolTest extends TestCase
             [new WorkUnit('tests/FooTest.php', ['testA', 'testB']), new WorkUnit('tests/BarTest.php')],
             ExecutionOrder::Reversed,
             seed: 42,
+            paths: ['tests/FooTest.php', 'other'],
         );
 
         $decoded = WorkerManifest::fromJson($manifest->toJson());
@@ -61,6 +62,8 @@ final class WorkerProtocolTest extends TestCase
         self::assertInstanceOf(WorkerManifest::class, $decoded, 'The manifest did not survive its JSON round trip.');
 
         $this->assertSame('/project/crucible.php', $decoded->configuration);
+        // A worker discovers the run's paths, or a test outside the suites is lost (D-152).
+        $this->assertSame(['tests/FooTest.php', 'other'], $decoded->paths);
         $this->assertSame(ExecutionOrder::Reversed, $decoded->order);
         $this->assertSame(42, $decoded->seed);
         $this->assertSame(['testA', 'testB'], $decoded->units[0]->tests);

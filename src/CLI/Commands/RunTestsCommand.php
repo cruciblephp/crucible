@@ -30,6 +30,7 @@ use LucianoPereira\Crucible\CLI\PostRunReport;
 use LucianoPereira\Crucible\Clock\Clock;
 use LucianoPereira\Crucible\Clock\SourceDateEpoch;
 use LucianoPereira\Crucible\Clock\SystemClock;
+use LucianoPereira\Crucible\Compat\PhpUnitCompatibility;
 use LucianoPereira\Crucible\Configuration\Configuration;
 use LucianoPereira\Crucible\Configuration\Crucible;
 use LucianoPereira\Crucible\Configuration\ExecutionOrder;
@@ -47,6 +48,7 @@ use LucianoPereira\Crucible\Dialect\Pest\Expectation;
 use LucianoPereira\Crucible\Dialect\Pest\PestScopes;
 use LucianoPereira\Crucible\Event\Emitter;
 use LucianoPereira\Crucible\Event\EventTextWriter;
+use LucianoPereira\Crucible\Event\IssueKind;
 use LucianoPereira\Crucible\Event\NdjsonWriter;
 use LucianoPereira\Crucible\Event\RunSummary;
 use LucianoPereira\Crucible\Exceptions\Exception;
@@ -101,6 +103,7 @@ use LucianoPereira\Crucible\Types\TypeTestRunner;
 use LucianoPereira\Crucible\Types\TypeTestSuite;
 use LucianoPereira\Crucible\Vitest\VitestRunner;
 use LucianoPereira\Crucible\Vitest\VitestSuite;
+use ReflectionClass;
 
 use function array_column;
 use function array_filter;
@@ -115,6 +118,7 @@ use function file;
 use function file_put_contents;
 use function fopen;
 use function fwrite;
+use function get_declared_classes;
 use function getcwd;
 use function glob;
 use function htmlspecialchars;
@@ -123,6 +127,7 @@ use function in_array;
 use function is_dir;
 use function is_file;
 use function is_string;
+use function is_subclass_of;
 use function json_encode;
 use function max;
 use function mkdir;
@@ -143,6 +148,7 @@ use function substr;
 use function trim;
 use function unlink;
 
+use const DIRECTORY_SEPARATOR;
 use const JSON_THROW_ON_ERROR;
 use const PHP_EOL;
 use const STDERR;
@@ -480,6 +486,18 @@ final class RunTestsCommand
             }
         }
 
+        // ✓ PHPUnit 13.4.3: a path that is neither a file nor a directory
+        // stops the run before anything runs, exit 2 (D-152).
+        foreach ($options->paths as $path) {
+            $absolute = $workingDirectory->absolute($path);
+
+            if (!is_file($absolute) && !is_dir($absolute)) {
+                printf('Test file "%s" not found' . PHP_EOL, $path);
+
+                return 2;
+            }
+        }
+
         // The longest silence in a run that has not started yet: every
         // test file is parsed before a single one executes. The grid
         // opens onto that silence rather than after it, so the frame is
@@ -488,12 +506,15 @@ final class RunTestsCommand
         // once over a line that said something else.
         $opened = $this->openGrid($options, $configuration, $workingDirectory->relative($loaded->path));
 
+        $viewListsIssues = false;
+
         $discover = static fn(): array => (new TestDiscoverer())->discover(
             $configuration,
             $workingDirectory,
             $options->testsuite,
             $options->excludeTestsuite,
             $options->testSuffixes,
+            $options->paths,
         );
 
         try {
@@ -551,7 +572,10 @@ final class RunTestsCommand
         // of options it never agreed to.
         $computed = $this->viewParams($options, $configuration, $workingDirectory->relative($loaded->path));
         $declared = array_column($viewRegistry->describe($selectedView)->params, 'name');
-        $injected = [];
+
+        // The view lists the issues itself, before its verdict (D-154).
+        $viewListsIssues = $opened instanceof MapView || in_array('issues', $declared, true);
+        $injected        = [];
 
         foreach ($computed as $name => $value) {
             if ($value !== null && in_array($name, $declared, true)) {
@@ -880,7 +904,11 @@ final class RunTestsCommand
                 return 0;
             }
 
-            print 'No tests found.' . PHP_EOL;
+            $incumbent = $this->incumbentTestClasses($workingDirectory);
+
+            print ($incumbent === 0
+                ? 'No tests found.'
+                : sprintf('No tests found: %d test class%s extend%s PHPUnit\\Framework\\TestCase, which runs only with ->phpunitCompatibility() while phpunit/phpunit is installed.', $incumbent, $incumbent === 1 ? '' : 'es', $incumbent === 1 ? 's' : '')) . PHP_EOL;
 
             // Failing on an empty suite is the default, here as in the
             // spec; --do-not-fail-on-empty-test-suite is what a repository
@@ -917,6 +945,7 @@ final class RunTestsCommand
             && $options->runTestIds === []
             && $options->testIdFilterFile === null
             && $options->testFilesFile === null
+            && $options->paths === []
             && !$options->flakes;
 
         // Obsolete-snapshot pruning (D-071): subscription-gated to
@@ -1129,6 +1158,7 @@ final class RunTestsCommand
                 includePaths: $options->includePaths,
                 processIsolation: $options->processIsolation,
                 dependencyValues: $dependencyValues,
+                paths: $options->paths,
             ))->run($groups, $afterTests);
         } else {
             $summary = $runner->run($groups, $afterTests);
@@ -1180,7 +1210,7 @@ final class RunTestsCommand
             ob_start();
         }
 
-        $postRun->printIssueDisplays($options, $issueLog, $outcomeLog);
+        $postRun->printIssueDisplays($options, $issueLog, $outcomeLog, $viewListsIssues);
 
         $breaches = $postRun->thresholdBreaches($configuration, $issueLog);
 
@@ -1286,6 +1316,11 @@ final class RunTestsCommand
      */
     private function foldedSelection(CliOptions $options, array $suites, string $kind): array
     {
+        // Paths name exactly what runs, --testsuite included (D-152).
+        if ($options->paths !== []) {
+            return [];
+        }
+
         $selected = [];
         $left     = [];
 
@@ -1356,7 +1391,56 @@ final class RunTestsCommand
             'reverseList'   => $options->reverseList,
             'compact'       => $options->compact,
             'configuration' => $configurationPath,
+            'issues'        => implode(',', $this->listedIssueKinds($options, $configuration)),
         ];
+    }
+
+    /**
+     * The project's test classes discovery loaded and left out because they
+     * extend the real PHPUnit's TestCase, the compatibility aliases being
+     * off (D-156). Counted from what is already loaded: nothing runs again.
+     */
+    private function incumbentTestClasses(WorkingDirectory $workingDirectory): int
+    {
+        $incumbent = \PHPUnit\Framework\TestCase::class;
+
+        // With the aliases loaded the name is Crucible's own TestCase, and nothing was left out.
+        if (PhpUnitCompatibility::isLoaded() || !class_exists($incumbent, false)) {
+            return 0;
+        }
+
+        $vendor = $workingDirectory->path . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR;
+        $count  = 0;
+
+        foreach (get_declared_classes() as $class) {
+            if (!is_subclass_of($class, $incumbent)) {
+                continue;
+            }
+
+            $reflection = new ReflectionClass($class);
+            $file       = $reflection->getFileName();
+
+            if (!$reflection->isAbstract() && is_string($file) && str_starts_with($file, $workingDirectory->path . DIRECTORY_SEPARATOR) && !str_starts_with($file, $vendor)) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * The issue kinds the run lists (D-154): ✓ PHPUnit 13.4.3 lists a kind
+     * when --display-* asks, and also, unasked, when the run fails on it.
+     *
+     * @return list<non-empty-string>
+     */
+    private function listedIssueKinds(CliOptions $options, Configuration $configuration): array
+    {
+        return array_keys(array_filter([
+            IssueKind::Deprecation->value => $options->displayDeprecations || ($options->failOnDeprecation ?? $configuration->failOnDeprecation),
+            IssueKind::Notice->value      => $options->displayNotices || ($options->failOnNotice ?? $configuration->failOnNotice),
+            IssueKind::Warning->value     => $options->displayWarnings || ($options->failOnWarning ?? $configuration->failOnWarning),
+        ]));
     }
 
     /**
@@ -1380,7 +1464,7 @@ final class RunTestsCommand
         }
 
         $key      = $options->view ?? MapView::DEFAULT_KEY;
-        $declared = ['fullscreen', 'colors', 'columns', 'results', 'reverseList', 'compact', 'configuration'];
+        $declared = ['fullscreen', 'colors', 'columns', 'results', 'reverseList', 'compact', 'configuration', 'issues'];
         $params   = $configuration->progressViews[$key]['params'] ?? [];
 
         foreach ($this->viewParams($options, $configuration, $configurationPath) as $name => $value) {
@@ -1536,7 +1620,7 @@ final class RunTestsCommand
         $emitter->subscribe(new NdjsonWriter(STDOUT));
 
         try {
-            $groups = $manifest->filter((new TestDiscoverer())->discover($configuration, $workingDirectory));
+            $groups = $manifest->filter((new TestDiscoverer())->discover($configuration, $workingDirectory, paths: $manifest->paths));
         } catch (Exception $e) {
             fwrite(STDERR, $e->getMessage() . PHP_EOL);
 

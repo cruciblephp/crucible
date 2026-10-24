@@ -56,6 +56,7 @@ final readonly class WorkerManifest
      * @param array<string, string>  $dependencyValues    name => base64 of a serialized #[Depends] return value produced by an earlier unit
      * @param list<string>           $provideValues       names whose return value a later unit depends on, so this worker records them
      * @param ?non-empty-string      $dependencyArtifact  where this worker writes the values it was asked to provide; null = none wanted
+     * @param list<non-empty-string> $paths               the run's test paths (D-152), which discovery runs instead of the configured suites
      */
     public function __construct(
         public string $configuration,
@@ -78,6 +79,7 @@ final readonly class WorkerManifest
         public ?string $dependencyArtifact = null,
         public bool $pathCoverage = false,
         public ?string $globalState = null,
+        public array $paths = [],
     ) {}
 
     public function toJson(): string
@@ -106,6 +108,7 @@ final readonly class WorkerManifest
             'dependencyArtifact' => $this->dependencyArtifact,
             'pathCoverage'       => $this->pathCoverage,
             'globalState'        => $this->globalState,
+            'paths'              => $this->paths,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
@@ -225,6 +228,14 @@ final readonly class WorkerManifest
             }
         }
 
+        $paths = [];
+
+        foreach (is_array($decoded['paths'] ?? null) ? $decoded['paths'] : [] as $path) {
+            if (is_string($path) && $path !== '') {
+                $paths[] = $path;
+            }
+        }
+
         $coverageArtifact = $decoded['coverageArtifact'] ?? null;
         $provideValues    = [];
 
@@ -259,6 +270,7 @@ final readonly class WorkerManifest
             is_string($decoded['globalState'] ?? null) && $decoded['globalState'] !== ''
                 ? $decoded['globalState']
                 : null,
+            $paths,
         );
     }
 }

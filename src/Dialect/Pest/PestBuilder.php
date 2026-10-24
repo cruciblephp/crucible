@@ -779,6 +779,7 @@ final readonly class PestBuilder
                 // phpunit dialect gets from invokeTest. Skipped on the
                 // expected-exception paths above, matching that spec.
                 if ($instance instanceof TestCase) {
+                    $instance->verifyOutputExpectations();
                     $instance->verifyTestDoubles();
                 }
 

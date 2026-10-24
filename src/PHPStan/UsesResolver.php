@@ -26,8 +26,10 @@ use function trim;
 
 use const T_AS;
 use const T_CLASS;
+use const T_COMMENT;
 use const T_CONST;
 use const T_CONSTANT_ENCAPSED_STRING;
+use const T_DIR;
 use const T_DOUBLE_COLON;
 use const T_FUNCTION;
 use const T_NAME_FULLY_QUALIFIED;
@@ -37,6 +39,7 @@ use const T_NS_SEPARATOR;
 use const T_OBJECT_OPERATOR;
 use const T_STRING;
 use const T_USE;
+use const T_WHITESPACE;
 
 /**
  * Static reading of a dialect file's `uses(...)` arguments (D-050):
@@ -55,6 +58,9 @@ final readonly class UsesResolver
 {
     /** A name as the tokenizer spells it: bare, qualified, or fully qualified. */
     private const array NAME = [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED];
+
+    /** `__DIR__` in an `->in()` path, for the reader to replace with the declaring directory. */
+    public const string DIR = "\0__DIR__\0";
 
     /**
      * Fully-qualified names passed to top-level uses() calls, in
@@ -198,7 +204,10 @@ final readonly class UsesResolver
     }
 
     /**
-     * Every string literal inside one balanced argument list.
+     * Each argument of one balanced argument list that is a string the
+     * source states: literals, and `__DIR__` as {@see self::DIR}, joined by
+     * `.` (D-157). An argument holding anything else is unknown here and
+     * left out whole, never read as the literal part of it.
      *
      * @param array<PhpToken> $tokens
      *
@@ -207,13 +216,38 @@ final readonly class UsesResolver
     private static function stringArguments(array $tokens, int $start): array
     {
         $strings = [];
+        $current = '';
+        $known   = true;
+        $depth   = 0;
 
         foreach (self::argumentTokens($tokens, $start) as $token) {
-            $literal = $token->is(T_CONSTANT_ENCAPSED_STRING) ? trim($token->text, "'\"") : '';
+            if ($depth === 0 && $token->text === ',') {
+                if ($known && $current !== '') {
+                    $strings[] = $current;
+                }
 
-            if ($literal !== '') {
-                $strings[] = $literal;
+                [$current, $known] = ['', true];
+
+                continue;
             }
+
+            if ($token->text === '(' || $token->text === '[') {
+                $depth++;
+            } elseif ($token->text === ')' || $token->text === ']') {
+                $depth--;
+            }
+
+            if ($token->is(T_CONSTANT_ENCAPSED_STRING)) {
+                $current .= trim($token->text, "'\"");
+            } elseif ($token->is(T_DIR)) {
+                $current .= self::DIR;
+            } elseif (!$token->is([T_WHITESPACE, T_COMMENT]) && $token->text !== '.') {
+                $known = false;
+            }
+        }
+
+        if ($known && $current !== '') {
+            $strings[] = $current;
         }
 
         return $strings;

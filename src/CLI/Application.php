@@ -350,7 +350,7 @@ final class Application
 
         print (new Help(min(100, max(60, $terminal->columns())), Capabilities::color($terminal)))->render(<<<'EOT'
             Usage:
-              crucible [options]
+              crucible [options] [path ...]     Run the suite, or only the test files and directories given
               crucible migrate-config      Convert phpunit.xml(.dist) to a crucible.php and exit
               crucible flakes [--rounds N]  Hunt order-dependent tests via seeded random rounds
               crucible phpstan-init        Wire Crucible's PHPStan extension into phpstan.neon

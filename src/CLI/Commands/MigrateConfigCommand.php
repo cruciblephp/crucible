@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\CLI\Commands;
 
+use LucianoPereira\Crucible\Compat\PhpUnitCompatibility;
 use LucianoPereira\Crucible\Configuration\Loader;
 use LucianoPereira\Crucible\Configuration\XmlMigrator;
 use LucianoPereira\Crucible\Exceptions\Exception;
@@ -62,8 +63,10 @@ final class MigrateConfigCommand
             return 1;
         }
 
+        $phpunitInstalled = PhpUnitCompatibility::phpUnitIsInstalled();
+
         try {
-            $result = (new XmlMigrator())->migrate($xml);
+            $result = (new XmlMigrator())->migrate($xml, $phpunitInstalled);
         } catch (Exception $e) {
             print $e->getMessage() . PHP_EOL;
 
@@ -79,6 +82,10 @@ final class MigrateConfigCommand
         }
 
         printf('Created %s from %s.' . PHP_EOL, $path, $xmlPath);
+
+        if ($phpunitInstalled) {
+            print PHP_EOL . 'phpunit/phpunit is installed, so ->phpunitCompatibility() is on: tests extending its TestCase run on Crucible.' . PHP_EOL;
+        }
 
         if ($result->notes !== []) {
             print PHP_EOL . 'Not migrated (no Crucible equivalent):' . PHP_EOL;

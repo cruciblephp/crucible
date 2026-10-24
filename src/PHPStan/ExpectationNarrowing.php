@@ -20,8 +20,10 @@ use PHPStan\Analyser\TypeSpecifierContext;
 use PHPStan\PhpDoc\TypeStringResolver;
 use PHPStan\Type\Accessory\AccessoryArrayListType;
 use PHPStan\Type\ArrayType;
-use PHPStan\Type\IntegerType;
+use PHPStan\Type\Constant\ConstantArrayType;
+use PHPStan\Type\IntegerRangeType;
 use PHPStan\Type\MixedType;
+use PHPStan\Type\NeverType;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeCombinator;
 use Throwable;
@@ -154,23 +156,22 @@ final readonly class ExpectationNarrowing
     }
 
     /**
-     * `toBeList()` and `assertIsList()`: a list of the value's elements.
-     * Not an intersection — a string-keyed array type can still be empty,
-     * and the empty array is a list, so the intersection's never would be
-     * unsound. One reading for both dialects (D-137); phpstan-phpunit's
-     * never is recorded in probe 30 as the divergence it is.
+     * `toBeList()` and `assertIsList()`: the value, intersected with list, as
+     * PHPStan reads `is_array($v) && array_is_list($v)` (D-158). A type that
+     * admits the empty array keeps it: `[]` is a list and a string-keyed
+     * array at once, so PHPStan before phpstan-src#6800 answered never where
+     * the answer is `array{}`. One reading for both dialects, on any PHPStan.
      */
     public function listOf(Type $value): Type
     {
-        $element = $value->isIterable()->yes() ? $value->getIterableValueType() : new MixedType();
+        $list = TypeCombinator::intersect(new ArrayType(IntegerRangeType::fromInterval(0, null), new MixedType()), new AccessoryArrayListType(), $value);
+        $none = new ConstantArrayType([], []);
 
-        // A declared `mixed` element stays the implicit mixed the
-        // incumbent answers with: the same values, read the same way.
-        if ($element instanceof MixedType) {
-            $element = new MixedType();
+        if ($list instanceof NeverType && !$value->isSuperTypeOf($none)->no()) {
+            return $none;
         }
 
-        return TypeCombinator::intersect(new ArrayType(new IntegerType(), $element), new AccessoryArrayListType());
+        return $list;
     }
 
     /**

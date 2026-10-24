@@ -109,7 +109,7 @@ final readonly class RunnerOptions
             requireCoverageMetadata: $overrides->requireCoverageMetadata ?? $configuration->requireCoverageMetadata,
             beStrictAboutCoverageMetadata: $strictCoverage ?? $configuration->beStrictAboutCoverageMetadata,
             coverageTargeting: $overrides->coverageTargeting ?? true,
-            disallowTestOutput: $overrides->disallowTestOutput ?? false,
+            disallowTestOutput: $overrides->disallowTestOutput ?? $configuration->beStrictAboutOutputDuringTests,
             enforceTimeLimit: $overrides->enforceTimeLimit ?? false,
             defaultTimeLimit: $overrides->defaultTimeLimit,
             stopOnDefect: $stopOnDefect ?? $configuration->stopOnDefect,

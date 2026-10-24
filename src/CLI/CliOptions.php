@@ -172,6 +172,7 @@ final readonly class CliOptions
      * @param list<non-empty-string>  $extensionClasses class names registered from the CLI, instantiated with no arguments
      * @param ?non-empty-string       $excludeFilter    the spec's --exclude-filter, the negated form of --filter
      * @param ?non-empty-string       $testFilesFile    the spec's --test-files-file: a file listing the test files to run
+     * @param list<non-empty-string>  $paths            the spec's bare arguments: test files or directories to run instead of the configured suites (D-152)
      * @param ?non-empty-string       $testIdFilterFile the spec's --test-id-filter-file: a file listing the test ids to run
      * @param list<non-empty-string>  $excludeTestsuite the spec's --exclude-testsuite; exclusion wins over --testsuite
      * @param list<non-empty-string>  $testSuffixes     the spec's --test-suffix; empty keeps each suite's own
@@ -363,6 +364,7 @@ final readonly class CliOptions
         public bool $debug = false,
         public bool $profile = false,
         public bool $dirty = false,
+        public array $paths = [],
     ) {}
 
 
@@ -462,6 +464,9 @@ final readonly class CliOptions
         $command         = null;
         $commandArgument = null;
 
+        /** @var list<non-empty-string> $paths */
+        $paths = [];
+
         /** @var ?non-empty-string $changed */
         $changed = null;
 
@@ -540,11 +545,18 @@ final readonly class CliOptions
                 continue;
             }
 
-            // ⚠ Only after a command, and only the first one. A bare word
-            // with no command before it is still an error, so a mistyped
-            // option cannot be silently swallowed as an argument.
+            // ⚠ Only after a command, and only the first one.
             if ($command !== null && $commandArgument === null && !str_starts_with($name, '-')) {
                 $commandArgument = $name;
+
+                continue;
+            }
+
+            // With no command, a bare word is a test file or directory, as
+            // the spec's CLI takes one (D-152); the run refuses one that
+            // does not exist, so a mistyped option is still not swallowed.
+            if ($command === null && $argument !== '' && !str_starts_with($argument, '-')) {
+                $paths[] = $argument;
 
                 continue;
             }
@@ -906,6 +918,7 @@ final readonly class CliOptions
             debug: isset($flags['--debug']),
             profile: isset($flags['--profile']),
             dirty: isset($flags['--dirty']),
+            paths: $paths,
         );
     }
 }

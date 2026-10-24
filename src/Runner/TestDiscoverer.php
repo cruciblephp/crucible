@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\Runner;
 
 use LucianoPereira\Crucible\Configuration\Configuration;
 use LucianoPereira\Crucible\Configuration\Source;
+use LucianoPereira\Crucible\Configuration\TestSuite;
 use LucianoPereira\Crucible\Dialect\Inline\InlineBuilder;
 use LucianoPereira\Crucible\Dialect\Pest\PestBuilder;
 use LucianoPereira\Crucible\Dialect\Pest\PestFileSniffer;
@@ -73,14 +74,23 @@ final readonly class TestDiscoverer
      * @param ?list<non-empty-string> $onlySuites   the spec's --testsuite selection; null discovers all
      * @param list<non-empty-string>  $exceptSuites the spec's --exclude-testsuite; exclusion wins over selection
      * @param list<non-empty-string>  $suffixes     the spec's --test-suffix; empty keeps each suite's own
+     * @param list<non-empty-string>  $paths        the spec's bare arguments (D-152): files and directories run
+     *                                              instead of the configured suites, whatever --testsuite says
      *
      * @return list<\LucianoPereira\Crucible\Test\TestGroup>
      */
-    public function discover(Configuration $configuration, WorkingDirectory $workingDirectory, ?array $onlySuites = null, array $exceptSuites = [], array $suffixes = []): array
+    public function discover(Configuration $configuration, WorkingDirectory $workingDirectory, ?array $onlySuites = null, array $exceptSuites = [], array $suffixes = [], array $paths = []): array
     {
         $groups = [];
+        $suites = $configuration->testSuites;
 
-        foreach ($configuration->testSuites as $suite) {
+        if ($paths !== []) {
+            $suites       = [$this->pathSuite($paths, $workingDirectory)];
+            $onlySuites   = null;
+            $exceptSuites = [];
+        }
+
+        foreach ($suites as $suite) {
             if ($onlySuites !== null && !in_array($suite->name, $onlySuites, true)) {
                 continue;
             }
@@ -102,8 +112,9 @@ final readonly class TestDiscoverer
         // source, discovered from the configured source(include:)
         // directories — config-driven, never content sniffing beyond
         // the marker pre-filter. --testsuite selects named suites and
-        // inline tests belong to none, so any selection skips them.
-        if ($onlySuites === null) {
+        // inline tests belong to none, so any selection skips them, and
+        // so do paths: they name what runs.
+        if ($onlySuites === null && $paths === []) {
             foreach ($this->inlineFiles($configuration->source, $workingDirectory) as $file) {
                 $group = $this->inlineBuilder->build($file, $this->relative($file, $workingDirectory));
 
@@ -373,6 +384,27 @@ final readonly class TestDiscoverer
                 DiscoveryProgress::$loadingFile,
             ));
         });
+    }
+
+    /**
+     * The paths as one suite, a directory taking the spec's default suffix.
+     *
+     * @param list<non-empty-string> $paths
+     */
+    private function pathSuite(array $paths, WorkingDirectory $workingDirectory): TestSuite
+    {
+        $directories = [];
+        $files       = [];
+
+        foreach ($paths as $path) {
+            if (is_dir($this->absolute($path, $workingDirectory))) {
+                $directories[] = $path;
+            } else {
+                $files[] = $path;
+            }
+        }
+
+        return new TestSuite('paths', $directories, $files);
     }
 
     /**

@@ -50,6 +50,9 @@
         "ext-mbstring": "*",
         "ext-simplexml": "*"
     },
+    "conflict": {
+        "phpstan/phpstan": "<2.1.23"
+    },
     "autoload": {
         "psr-4": {
             "LucianoPereira\\Crucible\\": "src/"

@@ -140,6 +140,25 @@ final class UsesResolverTest extends TestCase
         ], UsesResolver::scopedRegistrations($source));
     }
 
+    /**
+     * `->in(__DIR__)`, the spelling package boilerplate ships (D-157): `__DIR__`
+     * becomes the marker the reader replaces with the declaring directory, a
+     * concatenation is joined, and an argument it cannot read is left out whole.
+     */
+    public function testDirIsKeptAsAMarkerAndAnUnreadableArgumentIsLeftOut(): void
+    {
+        $source = <<<'PHP'
+            <?php
+            uses(TestCase::class)->in(__DIR__);
+            pest()->extend(TestCase::class)->in(__DIR__ . '/Feature', 'Unit', $elsewhere . '/Api', dirname(__DIR__));
+            PHP;
+
+        self::assertSame([
+            ['names' => ['TestCase'], 'globs' => [UsesResolver::DIR]],
+            ['names' => ['TestCase'], 'globs' => [UsesResolver::DIR . '/Feature', 'Unit']],
+        ], UsesResolver::scopedRegistrations($source));
+    }
+
     public function testOnlyClassReferencesCountAndEachNamespaceResolvesItsOwn(): void
     {
         $source = <<<'PHP'

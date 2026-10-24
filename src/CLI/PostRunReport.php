@@ -552,9 +552,9 @@ final readonly class PostRunReport
      * the project's own code, from a dependency it called, or from one
      * dependency calling another.
      */
-    public function printIssueDisplays(CliOptions $options, IssueLog $issueLog, OutcomeLog $outcomes): void
+    public function printIssueDisplays(CliOptions $options, IssueLog $issueLog, OutcomeLog $outcomes, bool $viewListsIssues = false): void
     {
-        $kinds = array_filter([
+        $kinds = $viewListsIssues ? [] : array_filter([
             IssueKind::Deprecation->value => $options->displayDeprecations,
             IssueKind::Notice->value      => $options->displayNotices,
             IssueKind::Warning->value     => $options->displayWarnings,

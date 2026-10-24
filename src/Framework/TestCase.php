@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Framework;
 
 use AssertionError;
+use Error;
 use LucianoPereira\Crucible\Assert\Assert;
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Assert\Exporter;
@@ -27,6 +28,8 @@ use ReflectionMethod;
 use Throwable;
 
 use function dirname;
+use function ob_get_contents;
+use function ob_get_level;
 use function preg_match;
 use function sprintf;
 use function str_contains;
@@ -44,6 +47,8 @@ use const E_USER_NOTICE;
  * invokeTest() is Crucible's internal orchestration entry — dialect
  * frontends bind it into a TestDefinition closure; the runner
  * classifies whatever it throws.
+ *
+ * @method string output() What the test has printed so far (D-159): served by __call(), so a test class's own output() wins
  */
 abstract class TestCase extends Assert
 {
@@ -58,6 +63,13 @@ abstract class TestCase extends Assert
     private int|string|null $expectedExceptionCode = null;
 
     private bool $doesNotPerformAssertions = false;
+
+    private ?string $expectedOutput = null;
+
+    /** @var ?non-empty-string */
+    private ?string $expectedOutputRegularExpression = null;
+
+    private bool $outputRetrieved = false;
 
     private ?TestDoubles $doubles = null;
 
@@ -126,6 +138,7 @@ abstract class TestCase extends Assert
 
         try {
             $result = $this->{$methodName}(...$arguments);
+            $this->verifyOutputExpectations();
             $this->verifyNoExpectedExceptionWasMissed();
             $this->verifyTestDoubles($this->allowsExpectationlessMocks($methodName));
 
@@ -260,6 +273,71 @@ abstract class TestCase extends Assert
         $this->expectException($exception::class);
         $this->expectExceptionMessage($exception->getMessage());
         $this->expectExceptionCode($exception->getCode());
+    }
+
+    /**
+     * ✓ PHPUnit 13.4.3 (D-155): the test's output must be this string,
+     * compared as assertSame() compares; a second call keeps the first.
+     */
+    final protected function expectOutputString(string $expectedString): void
+    {
+        $this->expectedOutput ??= $expectedString;
+        Assert::declareOutputExpected();
+    }
+
+    /**
+     * The test's output must match this pattern; a second call keeps the first.
+     *
+     * @param non-empty-string $expectedRegex
+     */
+    final protected function expectOutputRegex(string $expectedRegex): void
+    {
+        $this->expectedOutputRegularExpression ??= $expectedRegex;
+        Assert::declareOutputExpected();
+    }
+
+    /** What the test has printed so far; reading it makes the output expected. */
+    final protected function getActualOutputForAssertion(): string
+    {
+        $this->outputRetrieved = true;
+        Assert::declareOutputExpected();
+
+        return $this->capturedOutput();
+    }
+
+    /**
+     * The spec's output(), served here rather than declared (D-159): a test
+     * class may have an output() of its own, any signature, any visibility,
+     * and PHP calls that one. Any other unknown method is PHP's own error.
+     *
+     * @param list<mixed> $arguments
+     */
+    public function __call(string $name, array $arguments): mixed
+    {
+        // PHP passes extra arguments to a declared method without a word.
+        if ($name === 'output') {
+            return $this->capturedOutput();
+        }
+
+        throw new Error(sprintf('Call to undefined method %s::%s()', static::class, $name));
+    }
+
+    /** What the test has printed so far, its setUp() included. */
+    private function capturedOutput(): string
+    {
+        $output = ob_get_level() > 0 ? ob_get_contents() : '';
+
+        return $output === false ? '' : $output;
+    }
+
+    final public function expectsOutput(): bool
+    {
+        return $this->expectedOutput !== null || $this->expectedOutputRegularExpression !== null || $this->outputRetrieved;
+    }
+
+    final public function hasUnexpectedOutput(): bool
+    {
+        return $this->capturedOutput() !== '' && !$this->expectsOutput();
     }
 
     final protected function expectNotToPerformAssertions(): void
@@ -502,6 +580,22 @@ abstract class TestCase extends Assert
             || $this->expectedExceptionMessage !== null
             || $this->expectedExceptionMessageRegularExpression !== null
             || $this->expectedExceptionCode !== null;
+    }
+
+    /**
+     * Internal, like verifyTestDoubles(): the pattern first, then the
+     * string, each an assertion, as the spec checks them. invokeTest()
+     * calls it, and so does a dialect running its own lifecycle.
+     */
+    final public function verifyOutputExpectations(): void
+    {
+        if ($this->expectedOutputRegularExpression !== null) {
+            self::assertMatchesRegularExpression($this->expectedOutputRegularExpression, $this->capturedOutput());
+        }
+
+        if ($this->expectedOutput !== null) {
+            self::assertSame($this->expectedOutput, $this->capturedOutput());
+        }
     }
 
     private function verifyNoExpectedExceptionWasMissed(): void

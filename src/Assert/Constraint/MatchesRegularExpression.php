@@ -31,8 +31,9 @@ final class MatchesRegularExpression extends Constraint
         return is_string($other) && preg_match($this->pattern, $other) === 1;
     }
 
+    /** ✓ PHPUnit 13.4.3's words: `matches PCRE pattern "/^a$/"` (D-155). */
     public function toString(): string
     {
-        return sprintf('matches regular expression "%s"', $this->pattern);
+        return sprintf('matches PCRE pattern "%s"', $this->pattern);
     }
 }
