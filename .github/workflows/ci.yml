@@ -149,9 +149,15 @@ jobs:
       - name: PHPStan (composer analyse)
         run: composer analyse
 
+      # Each OS keeps its default shell: under Git Bash on Windows the
+      # environment differs and CapabilitiesTest's empty-TERM case fails.
       - name: The self-hosted suite, reported to the job summary
-        shell: bash
+        if: runner.os != 'Windows'
         run: php crucible --log-markdown "$GITHUB_STEP_SUMMARY"
+
+      - name: The self-hosted suite, reported to the job summary
+        if: runner.os == 'Windows'
+        run: php crucible --log-markdown "$env:GITHUB_STEP_SUMMARY"
 
       # composer check is NOT the whole gate, and this is the half that
       # most needs a machine other than the author's: the only gate that

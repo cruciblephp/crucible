@@ -17,6 +17,8 @@ use LucianoPereira\Crucible\Framework\TestCase;
 
 use function getenv;
 use function putenv;
+use function sprintf;
+use function var_export;
 
 /**
  * The two questions, and why they are two.
@@ -115,11 +117,22 @@ final class CapabilitiesTest extends TestCase
         self::assertFalse(Capabilities::animation($terminal));
     }
 
+    /**
+     * An empty TERM on a TTY claims no capability by omission, so it is
+     * treated as dumb: no colour.
+     *
+     * The premise is checked first: an environment that cannot hold an
+     * empty variable never builds the case, and that is not a colour bug.
+     */
     public function testAnEmptyTermIsTreatedAsDumb(): void
     {
         putenv('TERM=');
 
-        self::assertFalse(Capabilities::color(new FakeTerminal()));
+        self::assertSame('', getenv('TERM'), sprintf(
+            'The case under test needs TERM set to the empty string, but after putenv(\'TERM=\') getenv(\'TERM\') returned %s: this environment cannot hold an empty TERM, so it cannot ask what an empty TERM means.',
+            var_export(getenv('TERM'), true),
+        ));
+        self::assertFalse(Capabilities::color(new FakeTerminal()), 'An empty TERM on a TTY must get no colour: it names no terminal, and a terminal it does not name may print an SGR sequence as text.');
     }
 
     public function testAKnownTermIsFine(): void
