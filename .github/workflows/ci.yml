@@ -95,10 +95,7 @@ jobs:
           # The first CI run died on it in both versions. xdebug is slower
           # but collects, and it lets the xdebug-driver tests run here
           # instead of skipping.
-          # None on Windows PHP 8.3/8.4 only: with xdebug 3.5.3 loaded on
-          # 8.3.36/8.4.27 PHPStan read docblocks as empty. Windows 8.5 keeps
-          # it, so the suite still tests the xdebug driver on Windows.
-          coverage: ${{ (matrix.os == 'windows-latest' && matrix.php-version != '8.5') && 'none' || 'xdebug' }}
+          coverage: xdebug
           tools: composer:v2
 
       # Composer's own cache directory differs by OS (Windows is not
@@ -118,6 +115,27 @@ jobs:
           restore-keys: composer-${{ matrix.os }}-${{ matrix.php-version }}-
 
       - run: composer install --no-interaction --no-progress
+
+      # Temporary: on Windows PHP 8.3.36/8.4.27 PHPStan reads docblocks as empty.
+      # Same analysis without Crucible's extension: if the loss persists, it is not Crucible's.
+      # Healthy control (Linux 8.3.36): iterable=0 bc=0 run.php=0 with and without the extension.
+      - name: Diagnose PHPStan without Crucible's extension (Windows)
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        shell: bash
+        run: |
+          awk '
+            /^ *- phpstan\/extension.neon/ {next}
+            /^ *- phpstan\/crucible-dialect.neon/ {next}
+            /^rules:/ {skip=1; next}
+            skip && /^[^ #]/ {skip=0}
+            skip {next}
+            /^    tmpDir:/ {print "    tmpDir: .phpstan-noext.cache"; next}
+            {print}
+          ' phpstan.neon > phpstan-noext.neon
+          php vendor/bin/phpstan analyse -c phpstan-noext.neon --memory-limit=1G --no-progress --error-format=raw > noext.txt 2>/dev/null || true
+          echo "without extension: total=$(grep -cE ':[0-9]+:' noext.txt || true) iterable=$(grep -c 'no value type specified in iterable' noext.txt || true) bc=$(grep -c 'backward compatibility promise' noext.txt || true) run.php=$(grep -c 'run.php:' noext.txt || true)"
+          rm -rf .phpstan-noext.cache
 
       # composer check, one step per gate: the failing gate names itself, and the
       # suite writes its Markdown report to the job summary without a second run.
