@@ -95,7 +95,10 @@ jobs:
           # The first CI run died on it in both versions. xdebug is slower
           # but collects, and it lets the xdebug-driver tests run here
           # instead of skipping.
-          coverage: xdebug
+          # None on Windows PHP 8.3/8.4 only: with xdebug 3.5.3 loaded on
+          # 8.3.36/8.4.27 PHPStan read docblocks as empty. Windows 8.5 keeps
+          # it, so the suite still tests the xdebug driver on Windows.
+          coverage: ${{ (matrix.os == 'windows-latest' && matrix.php-version != '8.5') && 'none' || 'xdebug' }}
           tools: composer:v2
 
       # Composer's own cache directory differs by OS (Windows is not
@@ -115,28 +118,6 @@ jobs:
           restore-keys: composer-${{ matrix.os }}-${{ matrix.php-version }}-
 
       - run: composer install --no-interaction --no-progress
-
-      # Temporary: PHPStan loses docblocks on Windows PHP 8.3.36/8.4.27, serial too; which runtime lever clears it.
-      - name: Diagnose PHPStan on Windows
-        if: matrix.os == 'windows-latest'
-        continue-on-error: true
-        shell: bash
-        env:
-          PHPSTAN_ALLOW_XDEBUG: 1
-        run: |
-          php -m | tr '\n' ' '; echo
-          php -i | grep -iE '^(opcache\.enable|opcache\.jit|zend\.enable_gc|memory_limit|zend\.assertions)' || true
-          stan() { php vendor/bin/phpstan clear-result-cache >/dev/null 2>&1; php -d xdebug.mode=off -d memory_limit=1G "$@" vendor/bin/phpstan analyse --no-progress --error-format=raw --debug 2>/dev/null | grep 'run.php:' || true; }
-          echo '--- serial, as is, every error per file:'
-          php vendor/bin/phpstan clear-result-cache >/dev/null 2>&1
-          php -d xdebug.mode=off -d memory_limit=1G vendor/bin/phpstan analyse --no-progress --error-format=raw --debug > serial.txt 2>/dev/null || true
-          grep -vE '^[A-Za-z]:\\[^:]*\.php$' serial.txt | grep -oE '^[A-Za-z]:\\[^:]+' | sort | uniq -c | sort -rn || true
-          echo "total errors: $(grep -cE '^[A-Za-z]:\\[^:]+:[0-9]+:' serial.txt || true)"
-          echo "BC-promise errors (PHPStan's own @api docblocks unread): $(grep -c 'backward compatibility promise' serial.txt || true)"
-          echo '--- serial, run.php errors:';  stan
-          echo '--- serial, gc off:';        stan -d zend.enable_gc=0 | wc -l
-          echo '--- serial, opcache off:';   stan -d opcache.enable=0 -d opcache.enable_cli=0 | wc -l
-          echo '--- serial, no memory cap:'; stan -d memory_limit=-1 | wc -l
 
       # composer check, one step per gate: the failing gate names itself, and the
       # suite writes its Markdown report to the job summary without a second run.
