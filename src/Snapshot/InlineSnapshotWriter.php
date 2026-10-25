@@ -149,14 +149,14 @@ final class InlineSnapshotWriter
         // The opening paren must follow the name across only whitespace.
         $open = null;
 
-        for ($i = $name + 1; $i < $count; $i++) {
-            if ($tokens[$i]->text === '(') {
-                $open = $i;
+        for ($next = $name + 1; $next < $count; $next++) {
+            if ($tokens[$next]->text === '(') {
+                $open = $next;
 
                 break;
             }
 
-            if (!$tokens[$i]->is(T_WHITESPACE)) {
+            if (!$tokens[$next]->is(T_WHITESPACE)) {
                 break;
             }
         }
@@ -172,8 +172,8 @@ final class InlineSnapshotWriter
         $close  = null;
         $commas = [];
 
-        for ($i = $open; $i < $count; $i++) {
-            $text = $tokens[$i]->text;
+        for ($scan = $open; $scan < $count; $scan++) {
+            $text = $tokens[$scan]->text;
 
             if ($text === '(' || $text === '[') {
                 $depth++;
@@ -181,12 +181,12 @@ final class InlineSnapshotWriter
                 $depth--;
 
                 if ($depth === 0) {
-                    $close = $i;
+                    $close = $scan;
 
                     break;
                 }
             } elseif ($text === ',' && $depth === 1) {
-                $commas[] = $i;
+                $commas[] = $scan;
             }
         }
 
@@ -213,17 +213,17 @@ final class InlineSnapshotWriter
 
         $out = '';
 
-        for ($i = 0; $i < $count; $i++) {
-            if ($i <= $keepThrough) {
-                $out .= $tokens[$i]->text;
+        for ($at = 0; $at < $count; $at++) {
+            if ($at <= $keepThrough) {
+                $out .= $tokens[$at]->text;
             }
 
-            if ($i === $keepThrough) {
+            if ($at === $keepThrough) {
                 $out .= $insert;
             }
 
-            if ($i >= $close) {
-                $out .= $tokens[$i]->text;
+            if ($at >= $close) {
+                $out .= $tokens[$at]->text;
             }
         }
 

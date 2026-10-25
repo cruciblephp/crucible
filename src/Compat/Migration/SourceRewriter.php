@@ -253,9 +253,9 @@ final readonly class SourceRewriter
 
             $applicable = [];
 
-            foreach ($patterns as $pattern) {
-                if (in_array($token->text, $pattern->methods, true)) {
-                    $applicable[] = $pattern;
+            foreach ($patterns as $candidate) {
+                if (in_array($token->text, $candidate->methods, true)) {
+                    $applicable[] = $candidate;
                 }
             }
 
@@ -335,8 +335,8 @@ final readonly class SourceRewriter
         $close      = null;
         $firstComma = null;
 
-        for ($i = $open; $i < $count; $i++) {
-            $text = $tokens[$i]->text;
+        for ($scan = $open; $scan < $count; $scan++) {
+            $text = $tokens[$scan]->text;
 
             if ($text === '(' || $text === '[') {
                 $depth++;
@@ -344,12 +344,12 @@ final readonly class SourceRewriter
                 $depth--;
 
                 if ($depth === 0) {
-                    $close = $i;
+                    $close = $scan;
 
                     break;
                 }
             } elseif ($text === ',' && $depth === 1 && $firstComma === null) {
-                $firstComma = $i;
+                $firstComma = $scan;
             }
         }
 
@@ -359,13 +359,13 @@ final readonly class SourceRewriter
 
         $firstArgLiteral = null;
 
-        for ($i = $open + 1; $i < ($firstComma ?? $close); $i++) {
-            if ($tokens[$i]->is(T_WHITESPACE)) {
+        for ($arg = $open + 1; $arg < ($firstComma ?? $close); $arg++) {
+            if ($tokens[$arg]->is(T_WHITESPACE)) {
                 continue;
             }
 
-            if ($tokens[$i]->is(T_CONSTANT_ENCAPSED_STRING)) {
-                $firstArgLiteral = $tokens[$i]->text;
+            if ($tokens[$arg]->is(T_CONSTANT_ENCAPSED_STRING)) {
+                $firstArgLiteral = $tokens[$arg]->text;
             }
 
             break;
@@ -374,15 +374,15 @@ final readonly class SourceRewriter
         $restArgsRaw = '';
 
         if ($firstComma !== null) {
-            for ($i = $firstComma + 1; $i < $close; $i++) {
-                $restArgsRaw .= $tokens[$i]->text;
+            for ($rest = $firstComma + 1; $rest < $close; $rest++) {
+                $restArgsRaw .= $tokens[$rest]->text;
             }
         }
 
         $fullText = '';
 
-        for ($i = $name; $i <= $close; $i++) {
-            $fullText .= $tokens[$i]->text;
+        for ($piece = $name; $piece <= $close; $piece++) {
+            $fullText .= $tokens[$piece]->text;
         }
 
         return [$close, $firstArgLiteral, $restArgsRaw, $fullText];

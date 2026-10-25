@@ -206,9 +206,9 @@ final class DoubleState
         // what it had.
         $matching = [];
 
-        foreach (array_reverse($this->configurators) as $configurator) {
-            if ($configurator->appliesTo($method, $arguments)) {
-                $matching[] = $configurator;
+        foreach (array_reverse($this->configurators) as $candidate) {
+            if ($candidate->appliesTo($method, $arguments)) {
+                $matching[] = $candidate;
             }
         }
 
@@ -223,8 +223,8 @@ final class DoubleState
         // the return value comes from the newest one that actually
         // carries a behavior — not from an emptier configurator that
         // would otherwise shadow it.
-        foreach ($matching as $configurator) {
-            $configurator->registerInvocation();
+        foreach ($matching as $matched) {
+            $matched->registerInvocation();
         }
 
         foreach ($matching as $configurator) {

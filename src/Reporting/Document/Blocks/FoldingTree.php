@@ -96,10 +96,7 @@ final readonly class FoldingTree implements Block
         }
 
         if (count($folded) === 1) {
-            foreach ($folded as $label => $node) {
-                $visible[$label] = $node;
-            }
-
+            $visible += $folded;
             $folded = [];
         }
 

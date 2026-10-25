@@ -378,7 +378,7 @@ against Crucible's own class only._
 | PHPUnit's output expectations, `beStrictAboutOutputDuringTests()`, and unexpected output printed and reported (D-155) | `Framework\TestCase::expectOutputString()`, `Runner\TestRunner`, `Configuration\Builder` |
 | `output()` served through `__call()`, so a test class may keep an `output()` of its own (D-159) | `Framework\TestCase::__call()` |
 | `No tests found` names the classes left out by the compatibility aliases being off; `migrate-config` turns them on with PHPUnit installed (D-156) | `CLI\Commands\RunTestsCommand::incumbentTestClasses()`, `Configuration\XmlMigrator` |
-| PHPStan's result cache follows `Pest.php`; `->in(__DIR__)` resolves in the analysis; PHPStan 2.1.23 is the declared minimum (D-157) | `PHPStan\PestConfigurationHash`, `PHPStan\UsesResolver`, `PHPStan\DialectThisResolver` |
+| PHPStan's result cache follows `Pest.php`, per file; `->in(__DIR__)` resolves in the analysis; PHPStan 2.3 is the declared minimum (D-157) | `PHPStan\DialectThisResolver::forScope()`, `PHPStan\UsesResolver` |
 | `toBeList()` and `assertIsList()` narrow as PHPStan with phpstan-src#6800, on every supported version (D-158) | `PHPStan\ExpectationNarrowing::listOf()` |
 
 ## Design inputs honored

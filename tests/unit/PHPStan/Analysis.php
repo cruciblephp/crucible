@@ -22,6 +22,7 @@ use function array_map;
 use function dirname;
 use function file_put_contents;
 use function implode;
+use function is_dir;
 use function is_file;
 use function is_string;
 use function mkdir;
@@ -48,8 +49,9 @@ final class Analysis
      * @param list<string>       $includes neon files, absolute
      * @param list<class-string> $rules    registered on their own
      * @param array<non-empty-string, string|list<string>> $parameters over level max: bootstrapFiles, a lower level
+     * @param string             $directory a run's own directory, kept across runs so a second one reads the first's result cache
      */
-    public static function run(array $paths, array $includes = [], array $rules = [], array $parameters = []): PhpstanReport
+    public static function run(array $paths, array $includes = [], array $rules = [], array $parameters = [], string $directory = ''): PhpstanReport
     {
         $root = self::root();
 
@@ -57,8 +59,11 @@ final class Analysis
             throw new SkippedTestError('phpstan is not installed (require-dev).');
         }
 
-        $directory = sys_get_temp_dir() . '/crucible-phpstan-' . uniqid();
-        mkdir($directory, 0o777, true);
+        $directory = $directory !== '' ? $directory : sys_get_temp_dir() . '/crucible-phpstan-' . uniqid();
+
+        if (!is_dir($directory)) {
+            mkdir($directory, 0o777, true);
+        }
 
         file_put_contents($directory . '/phpstan.neon', PhpstanNeon::analysis($includes, [
             'level' => 'max',

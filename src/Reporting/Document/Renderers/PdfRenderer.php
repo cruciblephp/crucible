@@ -335,8 +335,8 @@ final class PdfRenderer
     {
         $total = 0;
 
-        foreach ($bar->shares as $share) {
-            $total += $share->count;
+        foreach ($bar->shares as $counted) {
+            $total += $counted->count;
         }
 
         if ($total === 0) {

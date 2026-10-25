@@ -1718,7 +1718,7 @@ final class RunTestsCommand
             ob_end_clean();
         }
 
-        if ($collector instanceof CoverageCollector && $manifest->coverageArtifact !== null) {
+        if ($collector instanceof CoverageCollector) {
             file_put_contents($manifest->coverageArtifact, $collector->data()->toJson());
         }
 

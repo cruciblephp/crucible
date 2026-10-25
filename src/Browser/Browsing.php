@@ -159,7 +159,7 @@ final class Browsing
         self::$session ??= Session::start($configuration, self::workingDirectory(), self::$server);
         self::$browser ??= self::$session->launch();
 
-        if ($relative && self::$server instanceof InProcessServer) {
+        if ($relative) {
             $url = rtrim(self::$server->baseUrl(), '/') . (str_starts_with($url, '/') ? $url : '/' . $url);
         }
 

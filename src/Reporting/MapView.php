@@ -975,7 +975,7 @@ final class MapView implements ProgressViewContract
     {
         $parts = explode('.', Version::NUMBER);
 
-        return $parts[0] . '.' . ($parts[1] ?? '0');
+        return $parts[0] . '.' . $parts[1];
     }
 
     private function mapRow(int $row, int $width): Line

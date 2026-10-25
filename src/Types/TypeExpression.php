@@ -351,8 +351,12 @@ final readonly class TypeExpression
     {
         $shape = $this->name;
 
-        if ($shape === 'iterable' ? !is_iterable($value) : !is_array($value)) {
-            return $this->expected($path, $shape === 'iterable' ? 'iterable' : 'array', $value);
+        if ($shape === 'iterable') {
+            if (!is_iterable($value)) {
+                return $this->expected($path, 'iterable', $value);
+            }
+        } elseif (!is_array($value)) {
+            return $this->expected($path, 'array', $value);
         }
 
         if (in_array($shape, ['list', 'non-empty-list'], true) && is_array($value) && !array_is_list($value)) {

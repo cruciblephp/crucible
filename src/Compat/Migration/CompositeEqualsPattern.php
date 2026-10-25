@@ -171,8 +171,8 @@ final readonly class CompositeEqualsPattern
         $close  = null;
         $commas = [];
 
-        for ($i = $open; $i < $count; $i++) {
-            $text = $tokens[$i]->text;
+        for ($scan = $open; $scan < $count; $scan++) {
+            $text = $tokens[$scan]->text;
 
             if ($text === '(' || $text === '[') {
                 $depth++;
@@ -180,12 +180,12 @@ final readonly class CompositeEqualsPattern
                 $depth--;
 
                 if ($depth === 0) {
-                    $close = $i;
+                    $close = $scan;
 
                     break;
                 }
             } elseif ($text === ',' && $depth === 1) {
-                $commas[] = $i;
+                $commas[] = $scan;
             }
         }
 
@@ -202,8 +202,8 @@ final readonly class CompositeEqualsPattern
 
         $fullText = '';
 
-        for ($i = $name; $i <= $close; $i++) {
-            $fullText .= $tokens[$i]->text;
+        for ($piece = $name; $piece <= $close; $piece++) {
+            $fullText .= $tokens[$piece]->text;
         }
 
         return [$close, $arg1, $arg2, $fullText];
@@ -436,9 +436,9 @@ final readonly class CompositeEqualsPattern
 
         $valueStart = null;
 
-        for ($i = $arrow + 1; $i <= $to; $i++) {
-            if (!$tokens[$i]->is(T_WHITESPACE)) {
-                $valueStart = $i;
+        for ($scan = $arrow + 1; $scan <= $to; $scan++) {
+            if (!$tokens[$scan]->is(T_WHITESPACE)) {
+                $valueStart = $scan;
 
                 break;
             }

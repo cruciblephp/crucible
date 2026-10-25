@@ -12,6 +12,8 @@ namespace LucianoPereira\Crucible\PHPStan;
 
 use LucianoPereira\Crucible\Dialect\Pest\PestTestCase;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+use PHPStan\Analyser\DependencyTracker;
+use PHPStan\Analyser\Scope;
 use PHPStan\Type\ObjectType;
 use PHPStan\Type\Type;
 
@@ -57,6 +59,25 @@ final class DialectThisResolver
     public function forFile(string $file): Type
     {
         return $this->byFile[$file] ??= $this->resolve($file);
+    }
+
+    /**
+     * The type for the scope's file, with every Pest.php that could decide
+     * it tracked as a dependency of that file, present or not: PHPStan's
+     * result cache re-analyses the file when one is created, changed or
+     * deleted (D-157).
+     *
+     * @param Scope&DependencyTracker $scope
+     */
+    public function forScope(Scope $scope): Type
+    {
+        $file = $scope->getFile();
+
+        foreach (self::configurationDirectories(dirname($file)) as $directory) {
+            $scope->trackFileDependency($directory . DIRECTORY_SEPARATOR . 'Pest.php');
+        }
+
+        return $this->forFile($file);
     }
 
     private function resolve(string $file): Type

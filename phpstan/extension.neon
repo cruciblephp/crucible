@@ -83,15 +83,10 @@ services:
     # shared per-file resolver feeds the function-level surface
     # (test/it/check/beforeEach/afterEach/property) and the
     # method-level one (TestCall higher-order steps and closure
-    # skips, pest()->beforeEach hooks).
+    # skips, pest()->beforeEach hooks). Each file tracks the Pest.php
+    # files it was resolved from, so the result cache follows them (D-157).
     -
         class: LucianoPereira\Crucible\PHPStan\DialectThisResolver
-    -
-        class: LucianoPereira\Crucible\PHPStan\PestConfigurationHash
-        arguments:
-            analysedPaths: %analysedPaths%
-        tags:
-            - phpstan.resultCacheMetaExtension
     -
         class: LucianoPereira\Crucible\PHPStan\DialectClosureThisExtension
         tags:

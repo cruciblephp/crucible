@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\PHPStan;
 
 use Override;
 use PhpParser\Node\Expr\FuncCall;
+use PHPStan\Analyser\DependencyTracker;
 use PHPStan\Analyser\Scope;
 use PHPStan\Reflection\FunctionReflection;
 use PHPStan\Reflection\ParameterReflection;
@@ -49,6 +50,9 @@ final readonly class DialectClosureThisExtension implements FunctionParameterClo
         return (self::BOUND_PARAMETERS[$functionReflection->getName()] ?? null) === $parameter->getName();
     }
 
+    /**
+     * @param Scope&DependencyTracker $scope
+     */
     #[Override]
     public function getClosureThisTypeFromFunctionCall(FunctionReflection $functionReflection, FuncCall $functionCall, ParameterReflection $parameter, Scope $scope): Type
     {
@@ -62,6 +66,6 @@ final readonly class DialectClosureThisExtension implements FunctionParameterClo
             $this->properties->markHook($scope->getFile(), $hook->value->getStartLine(), $hook->value->getEndLine());
         }
 
-        return $this->resolver->forFile($scope->getFile());
+        return $this->resolver->forScope($scope);
     }
 }

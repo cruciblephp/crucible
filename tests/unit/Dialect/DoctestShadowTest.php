@@ -14,6 +14,7 @@ use LucianoPereira\Crucible\Attributes\CoversClass;
 use LucianoPereira\Crucible\Dialect\Inline\DoctestShadow;
 use LucianoPereira\Crucible\Framework\TestCase;
 
+use function array_keys;
 use function array_values;
 use function explode;
 
@@ -50,7 +51,7 @@ final class DoctestShadowTest extends TestCase
         // The map points every expression at its origin docblock line.
         self::assertSame([8, 9], array_values($shadow->lines));
 
-        foreach ($shadow->lines as $shadowLine => $originLine) {
+        foreach (array_keys($shadow->lines) as $shadowLine) {
             $line = explode("\n", $shadow->content)[$shadowLine - 1];
 
             self::assertStringContainsString('static fn () =>', $line);

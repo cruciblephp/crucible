@@ -6743,12 +6743,16 @@ output describes.
 
 `$this` in a Pest file comes from the ancestor `Pest.php` files, read beside the analysis, so
 PHPStan's result cache could not see them. ✓ PHPStan 2.2.6: changing `pest()->extend(A)` to a class
-without the method kept the warm cache's exit 0. `PestConfigurationHash`, a
-`ResultCacheMetaExtension` (PHPStan 2.1.2 on), hashes every `Pest.php` the resolver can read; a
-change re-analyses, no change restores the cache with nothing re-analysed. The analysis also ignored
+without the method kept the warm cache's exit 0. For each file whose `$this` it answers, the resolver
+tracks the `Pest.php` of every directory it walks, present or not, through PHPStan 2.3's
+`trackFileDependency()`: creating, changing or deleting one re-analyses the files it can configure,
+and nothing else. ✓ Five analyses on one warm cache (none, created, changed, again, deleted) follow
+every step; with the tracking removed the run fails at the created file. The analysis also ignored
 `->in(__DIR__)`, typing `$this` as the base test case: `__DIR__` is now read, joined with `.`, and an
-argument it cannot read is left out whole, as D-150 does at run time. ✓ The extension itself loads
-from PHPStan 2.1.23 (bisected), now a declared Composer conflict.
+argument it cannot read is left out whole, as D-150 does at run time. ✓ PHPStan 2.1 has had no
+release since 2026-05-26 and 2.2 none since 2.3.0 (2026-10-06); the declared minimum is PHPStan 2.3,
+a Composer conflict. A `ResultCacheMetaExtension` hash of every `Pest.php` worked from 2.1.23, but
+re-analysed the whole project on any change and is deprecated in 2.3.
 
 ### D-158: a list is the value intersected with list
 

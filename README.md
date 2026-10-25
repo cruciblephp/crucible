@@ -45,7 +45,7 @@ with a stock PHP build.
 | PHP | `>= 8.3` |
 | Extensions | `ext-dom`, `ext-mbstring`, `ext-simplexml` |
 | Composer dependencies | none |
-| Optional | `ext-xdebug` or `ext-pcov` for coverage · Node for the browser tier · PHPStan `>= 2.1.23` for the built-in extension |
+| Optional | `ext-xdebug` or `ext-pcov` for coverage · Node for the browser tier · PHPStan `>= 2.3` for the built-in extension |
 
 The floor is deliberate: a suite on 8.3 should not have to move the whole project to a newer
 PHP to change test runner.
@@ -120,9 +120,9 @@ Dataset rows that the test cannot take are reported before anything runs, `asser
 `*.types.php` files are tests in the run, and `Gen::of('<type>')` draws property-test data from a
 type string.
 
-It needs PHPStan 2.1.23 or newer, declared as a Composer conflict. PHPStan's result cache stays
-honest: editing a `Pest.php` re-analyses the files it configures, and `->in(__DIR__)` resolves as it
-does at run time. `toBeList()` and `assertIsList()` narrow as PHPStan reads `array_is_list()` with
+It needs PHPStan 2.3 or newer, declared as a Composer conflict. PHPStan's result cache stays
+honest: creating, editing or deleting a `Pest.php` re-analyses the files it configures, and
+`->in(__DIR__)` resolves as it does at run time. `toBeList()` and `assertIsList()` narrow as PHPStan reads `array_is_list()` with
 its own fix for the empty array, on every supported version: a string-keyed array becomes `array{}`.
 
 ---

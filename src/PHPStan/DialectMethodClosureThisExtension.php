@@ -14,6 +14,7 @@ use LucianoPereira\Crucible\Dialect\Pest\ScopeRegistration;
 use LucianoPereira\Crucible\Dialect\Pest\TestCall;
 use Override;
 use PhpParser\Node\Expr\MethodCall;
+use PHPStan\Analyser\DependencyTracker;
 use PHPStan\Analyser\Scope;
 use PHPStan\Reflection\MethodReflection;
 use PHPStan\Reflection\ParameterReflection;
@@ -62,9 +63,12 @@ final readonly class DialectMethodClosureThisExtension implements MethodParamete
         return false;
     }
 
+    /**
+     * @param Scope&DependencyTracker $scope
+     */
     #[Override]
     public function getClosureThisTypeFromMethodCall(MethodReflection $methodReflection, MethodCall $methodCall, ParameterReflection $parameter, Scope $scope): Type
     {
-        return $this->resolver->forFile($scope->getFile());
+        return $this->resolver->forScope($scope);
     }
 }

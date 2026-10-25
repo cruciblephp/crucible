@@ -18,10 +18,10 @@ Every release, as it ships. RELEASE.md is the full record of what shipped, each 
 - Fixed the regular-expression assertions' failure message to say `matches PCRE pattern`, as PHPUnit's does
 - Changed `No tests found` to say how many test classes were left out because they extend PHPUnit's TestCase with the compatibility aliases off
 - Changed `migrate-config` to add `->phpunitCompatibility()` when phpunit/phpunit is installed
-- Fixed PHPStan's result cache keeping an old answer after a `Pest.php` changed: the extension adds those files to the cache's metadata
+- Fixed PHPStan's result cache keeping an old answer after a `Pest.php` was created, changed or deleted: each Pest file records the `Pest.php` files that decide its `$this`, and only those files are re-analysed
 - Fixed `->in(__DIR__)` in `Pest.php` being ignored by the PHPStan extension, which typed `$this` as the base test case
 - Changed `toBeList()` and `assertIsList()` to narrow as PHPStan reads `array_is_list()` with phpstan-src#6800, on every supported version: `array{}` for a string-keyed array, never where no value can pass
-- Changed the PHPStan extension's minimum to PHPStan 2.1.23, declared as a Composer conflict: older versions could not load it
+- Changed the PHPStan extension's minimum to PHPStan 2.3, declared as a Composer conflict: PHPStan 2.1 and 2.2 no longer get releases, and the cache tracking uses PHPStan 2.3's file dependencies
 
 ## v1.1.7 — 2026-10-20
 
