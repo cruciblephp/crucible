@@ -2,8 +2,9 @@ name: CI
 
 # The gate, run somewhere that is not the author's machine.
 #
-# `composer check` is FOUR of the nine gates — Pint (PER-CS 2.0) → Rector
-# → PHPStan max + strict → the self-hosted suite — which is why the jobs
+# `composer check` (run below as its four steps) is FOUR of the nine
+# gates — Pint (PER-CS 2.0) → Rector → PHPStan max + strict → the
+# self-hosted suite — which is why the jobs
 # below add the rest rather than stopping there: `composer conformance`
 # runs the fixture suites against the real oracles, `analyse:generated`
 # reads the code Crucible writes at runtime, and the coverage run is its
@@ -115,22 +116,42 @@ jobs:
 
       - run: composer install --no-interaction --no-progress
 
-      # Temporary: PHPStan loses docblocks on Windows PHP 8.3.36/8.4.27 in the full run only; restart x parallel.
+      # Temporary: PHPStan loses docblocks on Windows PHP 8.3.36/8.4.27, serial too; which runtime lever clears it.
       - name: Diagnose PHPStan on Windows
         if: matrix.os == 'windows-latest'
         continue-on-error: true
         shell: bash
+        env:
+          PHPSTAN_ALLOW_XDEBUG: 1
         run: |
-          count() { grep -c 'run.php:' || true; }
-          clear() { php vendor/bin/phpstan clear-result-cache >/dev/null 2>&1; }
-          clear; echo "--- restart, parallel: $(php vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=raw 2>/dev/null | count)"
-          clear; echo "--- restart, serial:   $(php vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=raw --debug 2>/dev/null | count)"
-          clear; echo "--- no restart, parallel: $(PHPSTAN_ALLOW_XDEBUG=1 php vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=raw 2>/dev/null | count)"
-          clear; echo "--- no restart, serial:   $(PHPSTAN_ALLOW_XDEBUG=1 php vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=raw --debug 2>/dev/null | count)"
-          clear; echo "--- composer analyse: $(composer analyse -- --no-progress --error-format=raw 2>/dev/null | count)"
+          php -m | tr '\n' ' '; echo
+          php -i | grep -iE '^(opcache\.enable|opcache\.jit|zend\.enable_gc|memory_limit|zend\.assertions)' || true
+          stan() { php vendor/bin/phpstan clear-result-cache >/dev/null 2>&1; php -d xdebug.mode=off -d memory_limit=1G "$@" vendor/bin/phpstan analyse --no-progress --error-format=raw --debug 2>/dev/null | grep 'run.php:' || true; }
+          echo '--- serial, as is, every error per file:'
+          php vendor/bin/phpstan clear-result-cache >/dev/null 2>&1
+          php -d xdebug.mode=off -d memory_limit=1G vendor/bin/phpstan analyse --no-progress --error-format=raw --debug > serial.txt 2>/dev/null || true
+          grep -vE '^[A-Za-z]:\\[^:]*\.php$' serial.txt | grep -oE '^[A-Za-z]:\\[^:]+' | sort | uniq -c | sort -rn || true
+          echo "total errors: $(grep -cE '^[A-Za-z]:\\[^:]+:[0-9]+:' serial.txt || true)"
+          echo "BC-promise errors (PHPStan's own @api docblocks unread): $(grep -c 'backward compatibility promise' serial.txt || true)"
+          echo '--- serial, run.php errors:';  stan
+          echo '--- serial, gc off:';        stan -d zend.enable_gc=0 | wc -l
+          echo '--- serial, opcache off:';   stan -d opcache.enable=0 -d opcache.enable_cli=0 | wc -l
+          echo '--- serial, no memory cap:'; stan -d memory_limit=-1 | wc -l
 
-      - name: composer check
-        run: composer check
+      # composer check, one step per gate: the failing gate names itself, and the
+      # suite writes its Markdown report to the job summary without a second run.
+      - name: Style (composer lint)
+        run: composer lint
+
+      - name: Rector (composer refactor:check)
+        run: composer refactor:check
+
+      - name: PHPStan (composer analyse)
+        run: composer analyse
+
+      - name: The self-hosted suite, reported to the job summary
+        shell: bash
+        run: php crucible --log-markdown "$GITHUB_STEP_SUMMARY"
 
       # composer check is NOT the whole gate, and this is the half that
       # most needs a machine other than the author's: the only gate that
