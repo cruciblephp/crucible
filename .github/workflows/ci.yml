@@ -115,19 +115,19 @@ jobs:
 
       - run: composer install --no-interaction --no-progress
 
-      # Temporary: PHPStan loses docblocks on Windows PHP 8.3.36/8.4.27; with and without the PCRE JIT.
-      - name: Diagnose PCRE on Windows
+      # Temporary: PHPStan loses docblocks on Windows PHP 8.3.36/8.4.27 in the full run only; restart x parallel.
+      - name: Diagnose PHPStan on Windows
         if: matrix.os == 'windows-latest'
         continue-on-error: true
         shell: bash
-        env:
-          PHPSTAN_ALLOW_XDEBUG: 1
         run: |
-          php -r 'echo PHP_VERSION, " PCRE ", PCRE_VERSION, " jit=", var_export(ini_get("pcre.jit"), true), PHP_EOL;'
-          echo '--- pcre.jit=1'
-          php -d pcre.jit=1 vendor/bin/phpstan analyse --memory-limit=1G --debug --no-progress --error-format=raw conformance/cli/run.php || true
-          echo '--- pcre.jit=0'
-          php -d pcre.jit=0 vendor/bin/phpstan analyse --memory-limit=1G --debug --no-progress --error-format=raw conformance/cli/run.php || true
+          count() { grep -c 'run.php:' || true; }
+          clear() { php vendor/bin/phpstan clear-result-cache >/dev/null 2>&1; }
+          clear; echo "--- restart, parallel: $(php vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=raw 2>/dev/null | count)"
+          clear; echo "--- restart, serial:   $(php vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=raw --debug 2>/dev/null | count)"
+          clear; echo "--- no restart, parallel: $(PHPSTAN_ALLOW_XDEBUG=1 php vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=raw 2>/dev/null | count)"
+          clear; echo "--- no restart, serial:   $(PHPSTAN_ALLOW_XDEBUG=1 php vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=raw --debug 2>/dev/null | count)"
+          clear; echo "--- composer analyse: $(composer analyse -- --no-progress --error-format=raw 2>/dev/null | count)"
 
       - name: composer check
         run: composer check
