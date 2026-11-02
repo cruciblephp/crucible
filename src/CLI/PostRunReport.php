@@ -14,11 +14,13 @@ use LucianoPereira\Crucible\Clock\Clock;
 use LucianoPereira\Crucible\Clock\SystemClock;
 use LucianoPereira\Crucible\Configuration\Configuration;
 use LucianoPereira\Crucible\Console\Components\Spinner;
+use LucianoPereira\Crucible\Coverage\CacheManifest;
 use LucianoPereira\Crucible\Coverage\CloverWriter;
 use LucianoPereira\Crucible\Coverage\CoberturaWriter;
 use LucianoPereira\Crucible\Coverage\CoverageCollector;
 use LucianoPereira\Crucible\Coverage\CoverageData;
 use LucianoPereira\Crucible\Coverage\CoverageMap;
+use LucianoPereira\Crucible\Coverage\CoveragePercent;
 use LucianoPereira\Crucible\Coverage\Crap4jWriter;
 use LucianoPereira\Crucible\Coverage\GitInformation;
 use LucianoPereira\Crucible\Coverage\HtmlReport;
@@ -53,7 +55,7 @@ use function is_string;
 use function max;
 use function printf;
 use function realpath;
-use function round;
+use function rtrim;
 use function sprintf;
 use function str_ends_with;
 use function str_starts_with;
@@ -250,6 +252,11 @@ final readonly class PostRunReport
             printf('Merged %d coverage artifact(s) from processes outside this run.' . PHP_EOL, $external);
         }
 
+        // The target narrows what is reported and judged; the caches below
+        // keep what the run collected, since impact and mutation read them.
+        $collected = $data;
+        $data      = $options->coverageTargets === [] ? $collected : $collected->narrowedTo($this->targets($options->coverageTargets, $workingDirectory));
+
         $textReport = new TextReport($options->onlySummaryForCoverageText, $options->showUncoveredForCoverageText);
 
         if ($options->coverage || $options->coverageBranch) {
@@ -318,15 +325,15 @@ final readonly class PostRunReport
             printf('HTML coverage written to %s/index.html.' . PHP_EOL, $options->coverageHtml);
         }
 
-        CoverageMap::save(
-            $workingDirectory->absolute($cacheDirectory) . '/coverage-map.json',
-            CoverageMap::fromData($data, $workingDirectory->path),
-        );
+        $lines = TestLineMap::fromData($collected, $workingDirectory->path);
+
+        CoverageMap::save($cache . '/coverage-map.json', CoverageMap::fromData($collected, $workingDirectory->path), $lines->hashes);
+        CacheManifest::record($cache, 'coverage-map.json', CoverageMap::VERSION);
 
         // The per-test line map (D-047): the mutation query's data,
         // refreshed beside the impact map on every coverage run.
-        TestLineMap::fromData($data, $workingDirectory->path)
-            ->save($workingDirectory->absolute($cacheDirectory) . '/coverage-lines.json');
+        $lines->save($cache . '/coverage-lines.json');
+        CacheManifest::record($cache, 'coverage-lines.json', TestLineMap::VERSION);
 
         return $data;
     }
@@ -356,13 +363,36 @@ final readonly class PostRunReport
     }
 
     /**
+     * Each `--coverage-target`, absolute: a directory ending in `/`, so
+     * `modules/Auth` never takes `modules/AuthExtra`, or a file as is.
+     *
+     * @param list<non-empty-string> $targets
+     *
+     * @return list<non-empty-string>
+     */
+    private function targets(array $targets, WorkingDirectory $workingDirectory): array
+    {
+        $absolute = [];
+
+        foreach ($targets as $target) {
+            $path = realpath($workingDirectory->absolute($target));
+
+            if ($path !== false) {
+                $absolute[] = is_dir($path) ? rtrim($path, '/') . '/' : $path;
+            }
+        }
+
+        return $absolute;
+    }
+
+    /**
      * The coverage floor (`--min`): a breach message when line coverage
      * came in under the percentage asked for, null when it did not.
      *
-     * The number judged is the one the text report *prints* — rounded to
-     * two places — not the raw quotient. A gate that failed a run whose
-     * report reads `Total: 90.00%` against `--min=90` would be arguing
-     * with the user about a third decimal they cannot see.
+     * The number judged is the one the text report *prints* — floored to
+     * two places, never rounded up — and the floor is the typed one
+     * rounded to two places, so neither side argues with a third decimal
+     * nobody can see, and 99.996% does not pass `--min=100`.
      *
      * An empty scope is a breach rather than a pass. Zero executable
      * lines means the run measured nothing, and a gate that reports
@@ -390,17 +420,20 @@ final readonly class PostRunReport
             return 'Coverage floor cannot be judged: the coverage scope contains no executable lines.';
         }
 
-        $percent = round(100 * $totals['covered'] / $totals['executable'], 2);
+        // Both sides as the report shows them, so the verdict never argues
+        // with the figures printed beside it.
+        $percent = CoveragePercent::of($totals['covered'], $totals['executable']);
+        $floor   = CoveragePercent::floor($minimum);
 
-        if ($percent >= $minimum) {
+        if ($percent >= $floor) {
             return null;
         }
 
         return sprintf(
-            'Coverage below the required minimum: %.2f%% of %d executable lines covered, at least %s%% required.',
+            'Coverage below the required minimum: %.2f%% of %d executable lines covered, at least %.2f%% required.',
             $percent,
             $totals['executable'],
-            $minimum,
+            $floor,
         );
     }
 

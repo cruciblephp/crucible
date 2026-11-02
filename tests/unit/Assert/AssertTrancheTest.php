@@ -84,7 +84,8 @@ final class AssertTrancheTest extends TestCase
             Assert::assertObjectEquals(new ($money::class)(7), $money);
             $this->fail('Expected an assertion failure.');
         } catch (AssertionFailedError $e) {
-            $this->assertStringContainsString('according to', $e->getMessage());
+            // ✓ PHPUnit 13.4.3's sentence for an equals() that answered false.
+            $this->assertStringStartsWith('Failed asserting that two objects are equal.', $e->getMessage());
         }
     }
 

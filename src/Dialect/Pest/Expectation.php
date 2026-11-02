@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Dialect\Pest;
 
 use ArrayAccess;
+use BadMethodCallException;
 use Closure;
 use InvalidArgumentException;
 use LucianoPereira\Crucible\Architecture\Architecture;
@@ -38,6 +39,7 @@ use LucianoPereira\Crucible\Assert\Constraint\IsTrue;
 use LucianoPereira\Crucible\Assert\Constraint\IsType;
 use LucianoPereira\Crucible\Assert\Constraint\LessThan;
 use LucianoPereira\Crucible\Assert\Constraint\LogicalNot;
+use LucianoPereira\Crucible\Assert\Constraint\LogicalOr;
 use LucianoPereira\Crucible\Assert\Constraint\MatchesRegularExpression;
 use LucianoPereira\Crucible\Assert\Constraint\MatchesShape;
 use LucianoPereira\Crucible\Assert\Constraint\ObjectHasProperty;
@@ -47,6 +49,7 @@ use LucianoPereira\Crucible\Assert\Constraint\StringStartsWith;
 use LucianoPereira\Crucible\Assert\Constraint\TraversableContains;
 use LucianoPereira\Crucible\Assert\Constraint\TraversableContainsOnlyInstancesOf;
 use LucianoPereira\Crucible\Assert\Exporter;
+use LucianoPereira\Crucible\Assert\PhpUnitExporter;
 use LucianoPereira\Crucible\Assert\ValueType;
 use LucianoPereira\Crucible\Configuration\Quirk;
 use LucianoPereira\Crucible\Snapshot\Snapshots;
@@ -57,6 +60,7 @@ use ReflectionMethod;
 use ReflectionNamedType;
 use Stringable;
 use Throwable;
+use UnitEnum;
 
 use function array_all;
 use function array_any;
@@ -80,6 +84,9 @@ use function enum_exists;
 use function explode;
 use function filter_var;
 use function func_num_args;
+use function get_mangled_object_vars;
+use function get_object_vars;
+use function gettype;
 use function implode;
 use function in_array;
 use function interface_exists;
@@ -98,12 +105,16 @@ use function is_writable;
 use function iterator_to_array;
 use function json_decode;
 use function mb_strlen;
+use function mb_substr;
 use function method_exists;
 use function preg_match;
 use function preg_replace;
 use function property_exists;
 use function sprintf;
 use function str_contains;
+use function str_replace;
+use function str_starts_with;
+use function strtolower;
 use function trait_exists;
 use function trigger_error;
 use function trim;
@@ -400,12 +411,9 @@ final class Expectation
         $root    = $this->root ?? $this;
         $subject = $this->shouldReset ? $root->value : $this->value;
 
+        // ✓ Pest 5.3.3 errors here, naming the value's type as gettype() does.
         if (!is_object($subject)) {
-            Assert::fail(sprintf(
-                'Method %s() is neither a matcher nor callable on the expectation value (%s).',
-                $name,
-                Exporter::describe($subject),
-            ));
+            throw new BadMethodCallException(sprintf('Method [%s] does not exist in [%s].', $name, gettype($subject)));
         }
 
         $child       = new self($subject->{$name}(...$arguments));
@@ -589,9 +597,10 @@ final class Expectation
         return $this->assert(new GreaterThan($expected));
     }
 
+    /** ✓ Pest 5.3.3, as PHPUnit: equal or greater, `1 is equal to 5 or is greater than 5`. */
     public function toBeGreaterThanOrEqual(mixed $expected): self
     {
-        return $this->assert(new LogicalNot(new LessThan($expected)));
+        return $this->assert(new LogicalOr(new IsEqual($expected), new GreaterThan($expected)));
     }
 
     public function toBeLessThan(mixed $expected): self
@@ -601,7 +610,7 @@ final class Expectation
 
     public function toBeLessThanOrEqual(mixed $expected): self
     {
-        return $this->assert(new LogicalNot(new GreaterThan($expected)));
+        return $this->assert(new LogicalOr(new IsEqual($expected), new LessThan($expected)));
     }
 
     /**
@@ -610,9 +619,13 @@ final class Expectation
      */
     public function toBeBetween(mixed $lowest, mixed $highest): self
     {
+        // ✓ Pest 5.3.3 checks the lower bound and then the upper, each as PHPUnit words it.
         return $this->assert(new Callback(
             static fn(mixed $value): bool => $value >= $lowest && $value <= $highest,
             'is between ' . Exporter::describe($lowest) . ' and ' . Exporter::describe($highest),
+            static fn(mixed $value): string => $value >= $lowest
+                ? sprintf('Failed asserting that %s is equal to %2$s or is less than %2$s.', PhpUnitExporter::export($value), PhpUnitExporter::export($highest))
+                : sprintf('Failed asserting that %s is equal to %2$s or is greater than %2$s.', PhpUnitExporter::export($value), PhpUnitExporter::export($lowest)),
         ));
     }
 
@@ -621,9 +634,11 @@ final class Expectation
      */
     public function toBeIn(array $values): self
     {
+        // ✓ Pest 5.3.3 asks the list: `an array contains 1.`
         return $this->assert(new Callback(
             static fn(mixed $value): bool => in_array($value, $values, true),
             'is in the expected list',
+            static fn(mixed $value): string => sprintf('Failed asserting that an array contains %s.', PhpUnitExporter::export($value)),
         ));
     }
 
@@ -653,8 +668,13 @@ final class Expectation
         return $this->assert(new MatchesRegularExpression($pattern));
     }
 
+    /** ✓ Pest 5.3.3 asks for a string first, and says so: `true is of type string`. */
     public function toBeJson(): self
     {
+        if (!$this->negated && !$this->spread && !is_string($this->value)) {
+            return $this->assert(new IsType(ValueType::String));
+        }
+
         return $this->assert(new IsJson());
     }
 
@@ -1555,10 +1575,12 @@ final class Expectation
     /** String length for strings, element count for everything countable. */
     public function toHaveLength(int $length): self
     {
+        // ✓ Pest 5.3.3 compares the length as equal: `3 matches expected 2.`
         if (is_string($this->value)) {
             return $this->assert(new Callback(
                 static fn(mixed $value): bool => is_string($value) && mb_strlen($value) === $length,
                 sprintf('has length %d', $length),
+                static fn(mixed $value): string => sprintf('Failed asserting that %s matches expected %s.', PhpUnitExporter::export(is_string($value) ? mb_strlen($value) : $value), PhpUnitExporter::export($length)),
             ));
         }
 
@@ -1597,7 +1619,17 @@ final class Expectation
             ));
         }
 
-        $this->assert(new ArrayHasKey($key));
+        // ✓ Pest 5.3.3 negates the whole call: a key with another value is not "having" it.
+        if ($this->negated && func_num_args() > 1) {
+            return $this->assertNegatedCompound(fn(): mixed => $this->toHaveKey($key, $value), sprintf("has the key '%s' with the expected value", $key));
+        }
+
+        // ✓ Pest 5.3.3 words a missing key itself: `an array has the key [x]`, no period.
+        $this->assert($this->negated ? new ArrayHasKey($key) : new Callback(
+            static fn(mixed $subject): bool => (new ArrayHasKey($key))->evaluate($subject, '', true) === true,
+            'has the key ' . PhpUnitExporter::export($key),
+            static fn(): string => sprintf('Failed asserting that an array has the key [%s]', $key),
+        ));
 
         if (func_num_args() > 1 && is_array($this->value)) {
             (new self($this->value[$key] ?? null))->toEqual($value);
@@ -1670,6 +1702,7 @@ final class Expectation
                 return array_all($array, fn($value, $key) => array_key_exists($key, $subject) && (new IsEqual($value))->matches($subject[$key]));
             },
             'matches the array ' . Exporter::export($array),
+            static fn(mixed $subject): string => self::matchFailure($subject, $array, 'an array has a key', 'Failed asserting that an array matches the array ' . Exporter::export($array) . '.'),
         ));
     }
 
@@ -1756,6 +1789,7 @@ final class Expectation
                 return array_all($object, fn($value, $property) => property_exists($subject, (string) $property) && (new IsEqual($value))->matches($subject->{$property}));
             },
             'matches the object ' . Exporter::export($object),
+            static fn(mixed $subject): string => self::matchFailure(is_object($subject) ? get_object_vars($subject) : $subject, $object, 'an object has a property', 'Failed asserting that an object matches the object ' . Exporter::export($object) . '.'),
         ));
     }
 
@@ -1790,7 +1824,7 @@ final class Expectation
         } catch (Throwable $thrown) {
             if ($this->negated) {
                 if ($this->matchesThrown($thrown, $exception, $message)) {
-                    Assert::fail('Expected no ' . ($exception instanceof Throwable ? $exception::class : $exception) . ' to be thrown, but caught ' . $thrown::class . '.');
+                    Assert::fail($this->opposite($this->value));
                 }
 
                 Assert::assertThat(true, new IsTrue()); // counted: the mismatch was verified
@@ -1813,7 +1847,8 @@ final class Expectation
             return $this;
         }
 
-        Assert::fail('Expected ' . ($exception instanceof Throwable ? $exception::class : $exception) . ' to be thrown, but nothing was.');
+        // ✓ Pest 5.3.3's words.
+        Assert::fail('Exception [' . ($exception instanceof Throwable ? $exception::class : $exception) . '] not thrown.');
     }
 
     /**
@@ -1944,6 +1979,90 @@ final class Expectation
     }
 
     /**
+     * ✓ Pest 5.3.3 reports the first key whose value differs, and the
+     * comparison under it: `an array has a key 'a' with the value 1.`
+     *
+     * @param array<array-key, mixed> $expected
+     */
+    private static function matchFailure(mixed $subject, array $expected, string $phrase, string $otherwise): string
+    {
+        if (!is_array($subject)) {
+            return $otherwise;
+        }
+
+        foreach ($expected as $key => $value) {
+            if (!array_key_exists($key, $subject)) {
+                return $otherwise;
+            }
+
+            try {
+                (new IsEqual($value))->evaluate($subject[$key]);
+            } catch (AssertionFailedError $failure) {
+                return sprintf("Failed asserting that %s %s with the value %s.\n%s", $phrase, PhpUnitExporter::export($key), PhpUnitExporter::export($subject[$key]), $failure->getMessage());
+            }
+        }
+
+        return $otherwise;
+    }
+
+    /**
+     * The failure of a negated matcher whose positive form held, as Pest
+     * 5.3.3 writes it: the value shortened, the matcher's name in words,
+     * each argument exported whole, `Expecting […] not to have key 'a'.`
+     */
+    private function opposite(mixed $subject): string
+    {
+        [$matcher, $arguments] = $this->calledMatcher();
+
+        return sprintf(
+            'Expecting %s not %s %s.',
+            $this->pestValue($subject),
+            strtolower((string) preg_replace('/(?<!^)[A-Z]/', ' $0', $matcher)),
+            implode(' ', array_map(PhpUnitExporter::export(...), $arguments)),
+        );
+    }
+
+    /**
+     * The matcher the test called on this expectation: the outermost
+     * `to…` frame of this object, so a matcher built on another reads as
+     * the one written.
+     *
+     * @return array{string, list<mixed>}
+     */
+    private function calledMatcher(): array
+    {
+        $called = ['', []];
+
+        foreach (debug_backtrace(DEBUG_BACKTRACE_PROVIDE_OBJECT) as $frame) {
+            if (($frame['object'] ?? null) === $this && str_starts_with($frame['function'], 'to')) {
+                $called = [$frame['function'], $frame['args'] ?? []];
+            }
+        }
+
+        return $called;
+    }
+
+    /** ✓ How Pest 5.3.3 shortens the value of a negation: `'ab…cd'`, `[…]`, `stdClass`, `Closure Object ()`. */
+    private function pestValue(mixed $value): string
+    {
+        if (is_string($value)) {
+            $exported = "'" . str_replace("\n", '', $value) . "'";
+
+            return mb_strlen($exported) > 40 ? mb_substr($exported, 0, 30) . "\u{2026}" . mb_substr($exported, -7) : $exported;
+        }
+
+        if (is_array($value)) {
+            return $value === [] ? '[]' : "[\u{2026}]";
+        }
+
+        if (is_object($value) && !$value instanceof UnitEnum) {
+            return get_mangled_object_vars($value) === [] ? $value::class . ' Object ()' : $value::class;
+        }
+
+        return PhpUnitExporter::export($value);
+    }
+
+    /**
      * $requires is the subject type the matcher declines to work
      * without — see refuse(). It is checked here rather than in the
      * matcher so the refusal happens before LogicalNot is applied, and
@@ -1951,16 +2070,18 @@ final class Expectation
      */
     private function assert(Constraint $constraint, ?SubjectRule $requires = null): self
     {
-        $applied = $this->negated ? new LogicalNot($constraint) : $constraint;
+        $applied  = $this->negated ? new LogicalNot($constraint) : $constraint;
+        $subjects = $this->spread ? $this->items('each') : [$this->value];
 
-        if ($this->spread) {
-            foreach ($this->items('each') as $item) {
-                $this->refuse($item, $requires);
-                Assert::assertThat($item, $applied);
+        foreach ($subjects as $subject) {
+            $this->refuse($subject, $requires);
+
+            try {
+                Assert::assertThat($subject, $applied);
+            } catch (AssertionFailedError $failure) {
+                // ✓ Pest 5.3.3 words a negation itself: `Expecting 'a' not to be 'a'.`
+                throw $this->negated ? new AssertionFailedError($this->opposite($subject)) : $failure;
             }
-        } else {
-            $this->refuse($this->value, $requires);
-            Assert::assertThat($this->value, $applied);
         }
 
         $this->negated     = false;
@@ -2029,7 +2150,11 @@ final class Expectation
             $allSatisfied = false;
         }
 
-        return $this->assert(new Callback(static fn(): bool => !$allSatisfied, $summary));
+        if ($allSatisfied) {
+            Assert::fail($this->opposite($this->value));
+        }
+
+        return $this->assert(new Callback(static fn(): bool => true, $summary));
     }
 
     /**
@@ -2062,7 +2187,7 @@ final class Expectation
                 continue;
             }
 
-            Assert::fail(sprintf('Expecting %s not to have the key %s.', Exporter::export($this->value), Exporter::export($name)));
+            Assert::fail(sprintf('Expecting %s not to have key %s.', $this->pestValue($this->value), PhpUnitExporter::export($name)));
         }
 
         Assert::countSatisfiedAssertion();

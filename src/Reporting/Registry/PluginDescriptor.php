@@ -20,9 +20,9 @@ namespace LucianoPereira\Crucible\Reporting\Registry;
 final readonly class PluginDescriptor
 {
     /**
-     * @param  class-string  $class  not narrowed to the kind's own contract — a
-     *         broken registration (wrong class, missing interface) is still a valid descriptor,
-     *         represented via `available: false`, not excluded from this type
+     * @param  string  $class  not narrowed to a class at all — a broken registration
+     *         (a class that does not exist, a wrong class, a missing interface) is still a valid
+     *         descriptor, represented via `available: false`, not excluded from this type
      * @param  array<string>  $requires
      * @param  list<array{name: string, type: string, required: bool, default?: mixed, description: string, comment?: string}>  $params
      * @param  list<string>  $missingRequirements

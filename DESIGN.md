@@ -6775,6 +6775,188 @@ the buffer through a private method of its own, so a test class's `output()` cha
 Any other unknown method throws PHP's own `Error`, `Call to undefined method Class::name()`, and
 PHPStan still reports the typo. A suite valid on PHPUnit cannot have its own `output()`, so none of
 its results move; `method_exists($test, 'output')` is the one observable difference.
+### D-160: a mutation report says what changed, once
+
+✓ Found running `crucible mutate` on the Oracle driver, Crucible 1.1.8, PHP 8.5.12, Xdebug 3.5.3.
+Xdebug marks a `match` arm's line unrun whenever another arm matched, although its condition was
+evaluated, so a mutant in an arm ran only the data set whose arm matched, and escaped although
+three others kill it. ✓ Reproduced here: line 14 of a four-arm `match (true)` escaped on 1.1.8 and
+is killed now. A line inside a `match` takes the tests of every line of the outermost `match`
+holding it, its keyword line included. A warm mutant that cannot compile printed PHP's fatal and
+its trace between the progress lines; the child now records the fatal as the errored reason, and
+the report prints each reason on one line, without PHP's prefix or the temporary file. An escape
+prints the lines it changed under it, `-` and `+`, so a line with two operators says which one
+survived. Errored, timed-out and not-covered mutants are listed as escapes are, twenty each. An
+escape printed live is left out of the final list, so a log holds each once; a resumed escape is
+listed at the end. A run that decides every mutant rewrites the journal to its own verdicts,
+written beside and renamed over, so the file is the report just printed: a superseded verdict and a
+mutant this run did not generate are dropped. An interrupted run keeps the journal as it was, and
+resuming is unchanged; a run over a narrower scope re-runs what a wider one had decided. An errored
+mutant already counts as detected in the score, so it stays its own figure in the tally.
+
+### D-161: the cache is a format other tools read
+
+A tool outside Crucible, a PHPStan rule that knows which methods no test runs among them, can read
+the per-test line map, but nothing told it whether the lines still meant what they did, nor which
+files to watch. Coverage drift was judged by time: a covered file newer than the map. Now each
+map records the SHA-256 of every file it names as the run read it, `coverage-lines.json` and
+`coverage-map.json` are version 2, and a version 1 map reads as empty, which costs one coverage
+run and never fails one. `manifest.json` lists the artifacts with their format version, their own
+hash and the Crucible that wrote them, rewritten beside and renamed over, so a reader hashes one
+file to know whether anything changed. `mutate` warns about a drifted file by its hash, so a
+checkout that touches every file's time no longer warns, and an edit within the same second
+does. spec/cache-formats.md is the contract a reader, or another runner writing these files,
+works from; Crucible does not need the reader and the reader does not need Crucible.
+
+### D-162: a failing mock reads as PHPUnit's
+
+✓ Measured while checking what PHPUnit 13.4.3 and Pest 5.3.3 print for a `#[\SensitiveParameter]`
+argument: both print it, in the mock's failure, and Crucible printed neither only because its
+failures were its own sentences. A `with()` that rejected a call said `check() was expected to be
+called once, but was called 0 time(s).`, which names the wrong mistake. Twenty-two cases on PHPUnit
+13.4.3 fix the words: a count judged at the end is `App\Repo::count() was expected to be invoked
+once but was never invoked.`, with PHPUnit's phrase for each window (`0 times`, `at least 1 time`,
+`at most once`); an exact count fails at the call that exceeds it, `App\Repo::count(): int was not
+expected to be called more than once, actually called 2 times.`, and `never()` at the first call;
+`atMost()` is judged at the end. A rejected call fails at the call, `Expectation for
+App\Repo::find() failed.`, the parameter by `$name` or by its position past the declared ones, and
+the constraint's own failure; too few arguments is `Parameter count … is too low.`; a rejection the
+code under test caught is reported again when the test ends. The call is written as PHPUnit shortens
+it: an array `[...]`, an object `stdClass Object (...)`, a string cut to its first 30 and last 7
+characters past 40, a NUL making it `Binary String: 0x…`, the return type without its `?`. An
+omitted optional argument is compared as its default, as PHPUnit does, so `with(1, 'x')` now accepts
+`record(1)` when `'x'` is the default. A stub's `with()` was a behaviour selector here; D-166
+refuses it, as PHPUnit does. The Mockery grammar keeps its own messages. The constraint's failure
+under it follows D-165.
+
+### D-163: a test run checks the phpdocs it calls through
+
+PHPStan believes a docblock; nothing checked one against the values a suite actually passes.
+`--observe-types` includes every file of the configured source with probes in it: the arguments when
+a function is entered, the value of each `return`, and the body wrapped so a call that throws is
+told apart. Only a call that returned counts; one that threw is a test probing the edge of the
+contract. Each value is checked against the function's phpdoc by `TypeExpression` (D-131), read as
+PHPStan reads it: `@phpstan-` over `@psalm-` over the plain tag, a tag the method does not restate
+inherited from what it overrides or implements, every name resolved in the file the tag is written
+in. A slot naming a template or a type alias, `self`, `static` or `$this`, or written in syntax
+`TypeExpression` does not read, is not checked. A refused value fails the run through a `Check`
+(D-078), `Claim(slots refused, 0)`, with the first refused value and how many were; every slot's
+types, the narrowest PHPStan type naming each value, go to `observed-types.json`
+(spec/cache-formats.md, listed in the manifest of D-161) for a tool that suggests the type a phpdoc
+lacks.
+
+✓ The files keep their own paths: a copy of each rewritten file under a cache path, the prototype's
+approach, died at the first file Crucible's own runner requires by path, as `Cannot redeclare
+class`. A `file://` stream wrapper serves the rewritten source to `include` under the original path,
+so `__FILE__`, `getFileName()` and `require_once` see nothing different. ✓ It is in place only while
+a class autoloads: in place for the whole run, every file `proc_open()` was given for a child's
+output became a user-space stream, `Bad file descriptor`, and no PHPStan, Vitest or worker process
+started. A file required by its path is included as it is. ✓ A check that needs a class not yet
+loaded is put off, behind an autoloader that refuses for the length of the check, and settled when
+the suite is over: loading a class in the middle of a call changes when it loads, and the runner may
+require its file next. An iterator is named and never checked, since checking it would consume it. A
+slot checks the first sixteen values of each type it observes: checking walks the whole value, and
+every call over a large array made one run quadratic.
+
+✓ Measured with a known control on Hallmark (665 tests): two phpdocs made wrong on purpose and one
+made right were the two reported and the one not; the unchanged source reports none over 160
+functions and 47,742 calls, the counts the prototype measured. Interleaved, the suite took 3.5, 4.1
+and 4.0 s plain and 4.7, 4.9 and 5.0 s observed. Two readings of `TypeExpression` were found wrong
+on the way and follow PHPStan 2.3.2 now, measured: a trait's name is a `class-string`, and
+`class-string<A&B>` and `class-string<A|B>` admit a class of the intersection or union. ✓ Crucible's
+own suite, whose runner is the source watched: 1675 passed and none failed both ways, over
+34,058,037 calls; 64.7 and 63.0 s plain, 396.4 and 379.3 s observed. Four phpdocs said
+`class-string` where a test passes a name no class has, and the code takes it on purpose: the plugin
+registry reports a missing class as a broken registration, and Mockery's `type()` matches nothing
+for an unknown name. They say `string` now, the builder keeps `class-string` for what a user writes,
+and the same tests observed again report none.
+
+### D-164: a data set, a listing and the testdox file as PHPUnit writes them
+
+✓ PHPUnit 13.4.3 numbers the rows of a data provider that have no name alone, across every
+provider and `#[TestWith]` of the method: `['a' => …, …, 5 => …]` is `"a"`, `#0`, `#1`, whatever
+the key. Crucible counted every row, so a provider mixing named and unnamed rows gave the unnamed
+ones ids off by the named rows before them, and those ids are what `--filter`, the result cache
+and a baseline key on. `--list-tests` printed each data set as its bare method; it names it,
+`#0` or `"name"`. The listings take PHPUnit's headings, singular for none or one entry and always
+plural for the files, each group and suite with its count, a test in no group in `default`, an
+empty suite left out, and files by absolute path. `--testdox-text` writes PHPUnit's file, a format
+a reader may parse: `Prettified (Namespace\Class)` with the `Test` suffix dropped from both,
+` [x] ` for a test that passed, a risky one included, ` [ ] ` for any other, no tally. A file that
+declares no class, a Pest file, keeps its path. Checked against PHPUnit itself on the same class.
+`--list-test-ids` keeps Crucible's `file::method` ids, the ones `--run-test-id` and the cache use,
+and `--list-tests-xml` keeps printing its own document: both are recorded as open.
+
+### D-165: a failing assertion reads as the incumbent's
+
+Crucible wrote its own sentences for half of PHPUnit's assertions, on the reading that failure
+presentation was Crucible's to design: `7 is equal to 8`, `an array contains only values of type
+int`, `'/tmp/x' file exists`. ✓ All 175 assertions failed on purpose and 60 variants, on PHPUnit
+13.4.3 and on Crucible, compared sentence by sentence through each run's JUnit file: 101 differed.
+They now read as PHPUnit's, all 236. A value inside a sentence is written as PHPUnit writes it,
+`Array &0 [`, `stdClass Object #12 (`, a line break as `\n` and the break, by a second exporter
+used only there: the comparison diff and the snapshots keep Crucible's, since what is on disk must
+not move. The default sentence names an array `an array` and an object `an instance of class X`
+and exports anything else; the constraints that differ say so, measured: a type check and a
+contains-only write the value whole, emptiness and lists name the kind, paths are quoted, a string
+search gives each string's encoding and length in bytes, JSON names PHPUnit's error for each code,
+an XML document is `two DOM documents are equal`. A negation negates the constraint's own
+description, which is what writes `Array &0 [...] is not equal to Array &0 [...]`.
+`assertGreaterThanOrEqual()` is equal-or-greater, as PHPUnit builds it. Two answers moved, not
+only words: an instanceof assertion naming a type that does not exist and a count of a generator
+are errors, as in PHPUnit, under its exception names; nothing was passing that should fail.
+
+✓ The pest dialect over Pest 5.3.3, 44 matchers over eleven values and 36 calls with arguments, both
+forms: a negation whose positive form held is Pest's own sentence, `Expecting 'a' not to be 'a'.`,
+the value shortened as Pest shortens it (`[…]`, `stdClass`, a string cut around `…`), the matcher's
+name in words, each argument exported whole. `toBeBetween()`, `toBeIn()`, `toHaveLength()` of a
+string, `toMatchArray()`, `toMatchObject()`, `toHaveKey()` and `toThrow()` word their failures as
+Pest does; an unknown method on a value that is no object is Pest's `BadMethodCallException`;
+`not->toHaveKey('a', 2)` on `['a' => 1]` now passes, as there, where the key alone was checked.
+The matchers Pest builds on a bare `assertTrue()` keep Crucible's sentence, as `reduced()` records:
+Pest's is `false is true`, the same verdict with nothing to read. Recorded as open: the JUnit file's
+error element, where PHPUnit writes the test, `Class: message` and the trace.
+
+### D-166: a stub has no with(), a mock one per method
+
+A stub's `with()` chose a return value here, and two `with()`s for one method were two selectors.
+✓ PHPUnit 13.4.3 has neither: `createStub()` returns a double with no `expects()` and no `with()`,
+PHP's own `Call to undefined method`, and a mock refuses a second `with()` for a method,
+`MethodParametersAlreadyConfiguredForAnotherMatcherException`, because `with()` is an
+expectation, not a way to pick a return value; a plain `method()->willReturn()` beside one `with()`
+is taken. Crucible's own suite is written in the phpunit dialect, so there is no other dialect for
+the selector to live in: the dialect answers as its incumbent does, the two tests that used the
+selector now pin the refusals, and the exception is aliased under PHPUnit's name.
+`createStubForIntersectionOfInterfaces()` made a mock; it makes a stub. A double built through
+`TestDoubles::create()`, outside the PHPUnit API, keeps the selector.
+
+### D-167: what Crucible alone prints keeps a sensitive value out
+
+✓ Measured, PHPUnit 13.4.3 and Pest 5.3.3 both print a `#[\SensitiveParameter]` value: in a mock's
+failure (`App\Gate::check('ann', 'actual-S2')`), in a data set's name (`with data ('ann',
+'data-S4')`); only the trace leaves it out. So the phpunit and pest dialects print it too, as their
+incumbents do, and nothing there changed. Two outputs belong to no incumbent: a `table()` case,
+named after its call, `login('ann', 'hunter2') = false`, and a property's shrunk counterexample.
+Both now write a value bound to a sensitive parameter as PHP's own trace writes it,
+`Object(SensitiveParameterValue)`, a variadic one for every position it takes. Nothing of it is
+shown, not a last four characters either: the attribute is the language's, and the language shows
+nothing.
+
+### D-168: a coverage score as printed and as judged, for a target
+
+Ported from laravel-module-test's `ScopedCoverageReport` (MIT, oki-technologies). A score was
+rounded to nearest, so 99.996% printed `100.00%` and passed `--min=100` with lines uncovered, and the
+breach printed the typed floor raw beside a rounded score. `CoveragePercent` floors a score at two
+places, after rounding the product to six to keep 806.999… from losing a hundredth, and rounds a
+typed floor to two; the text and HTML reports print it and the floor judges it. ✓ PHPUnit 13.4.3
+truncates the same way: probe 26 now checks both text reports print 42.85% for 3 of 7, where it
+tolerated 42.86% here. The XML, Cobertura and Crap4J writers keep the incumbents' own numbers. Each
+row of the text report lists the lines nobody ran as runs and singles, a dead line breaking no run
+it is not in, ten entries at most and the rest counted. `--coverage-target`, repeatable, narrows
+lines, branches and paths together to the files under a path, on a path boundary, after collection:
+the reports and `--min` judge that scope, an empty one cannot be judged as before, and the caches
+keep what was collected. Per-target floors wait until targets are named things.
+
 ---
 
 ## Closing the planned record

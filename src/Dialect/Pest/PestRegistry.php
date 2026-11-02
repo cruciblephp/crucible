@@ -14,12 +14,12 @@ use Closure;
 use LucianoPereira\Crucible\Architecture\Architecture;
 use LucianoPereira\Crucible\Architecture\ArchRule;
 use LucianoPereira\Crucible\Assert\Exporter;
+use LucianoPereira\Crucible\Assert\SensitiveArguments;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 use LucianoPereira\Crucible\Property\Gen;
 use LucianoPereira\Crucible\Property\Property;
 use ReflectionFunction;
 
-use function array_map;
 use function array_pop;
 use function array_slice;
 use function array_values;
@@ -410,7 +410,7 @@ final class PestRegistry
 
             $name = is_string($key)
                 ? $base . ': ' . $key
-                : $base . '(' . implode(', ', array_map(Exporter::describe(...), $arguments)) . ') = ' . Exporter::describe($expected);
+                : $base . '(' . implode(', ', SensitiveArguments::render($subject, $arguments, Exporter::describe(...))) . ') = ' . Exporter::describe($expected);
 
             $call          = self::test(self::uniqueName($name), null, 'test');
             $call->chain[] = ['expect', [static fn(): mixed => $subject(...$arguments)], false];

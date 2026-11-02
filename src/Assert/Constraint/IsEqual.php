@@ -14,6 +14,7 @@ use DateTimeInterface;
 use LucianoPereira\Crucible\Assert\ComparisonFailure;
 use LucianoPereira\Crucible\Assert\Differ;
 use LucianoPereira\Crucible\Assert\Exporter;
+use LucianoPereira\Crucible\Assert\PhpUnitExporter;
 use Override;
 use Stringable;
 
@@ -31,6 +32,8 @@ use function is_object;
 use function is_string;
 use function mb_strtolower;
 use function spl_object_id;
+use function sprintf;
+use function str_contains;
 
 /**
  * assertEquals(): the loose-equality spec — numeric juggling between
@@ -60,25 +63,28 @@ final class IsEqual extends Constraint
 
     public function toString(): string
     {
-        return 'is equal to ' . Exporter::describe($this->expected);
+        $expected = is_string($this->expected) && str_contains($this->expected, "\n") ? '<text>' : PhpUnitExporter::export($this->expected);
+
+        return 'is equal to ' . $expected . ($this->delta === 0.0 ? '' : sprintf(' with delta <%F>', $this->delta));
     }
 
+    /** ✓ PHPUnit 13.4.3: two of a kind are "two arrays are equal", two scalars "7 matches expected 8". */
+    #[Override]
+    protected function ownFailure(mixed $other): string
+    {
+        return match (true) {
+            is_string($this->expected) && is_string($other) => 'Failed asserting that two strings are equal.',
+            is_array($this->expected) && is_array($other)   => 'Failed asserting that two arrays are equal.',
+            is_object($this->expected) && is_object($other) => 'Failed asserting that two objects are equal.',
+            default                                         => sprintf('Failed asserting that %s matches expected %s.', PhpUnitExporter::export($other), PhpUnitExporter::export($this->expected)),
+        };
+    }
+
+    /** Negated, the value is written whole: `Array &0 [...] is not equal to Array &0 [...]`. */
     #[Override]
     protected function failureDescription(mixed $other): string
     {
-        if (is_string($this->expected) && is_string($other)) {
-            return 'Failed asserting that two strings are equal.';
-        }
-
-        if (is_array($this->expected) && is_array($other)) {
-            return 'Failed asserting that two arrays are equal.';
-        }
-
-        if (is_object($this->expected) && is_object($other)) {
-            return 'Failed asserting that two objects are equal.';
-        }
-
-        return parent::failureDescription($other);
+        return 'Failed asserting that ' . PhpUnitExporter::export($other) . ' ' . $this->toString() . '.';
     }
 
     protected function comparison(mixed $other): ?ComparisonFailure

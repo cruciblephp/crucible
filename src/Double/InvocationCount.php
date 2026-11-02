@@ -29,10 +29,14 @@ final class InvocationCount
 {
     private int $invocations = 0;
 
+    /**
+     * @param string $expected how PHPUnit 13.4.3 words the window in "was expected to be invoked …"
+     */
     private function __construct(
         public readonly int $min,
         public readonly ?int $max,
         public readonly string $description,
+        public readonly string $expected = '',
     ) {}
 
     public static function any(): self
@@ -42,32 +46,32 @@ final class InvocationCount
 
     public static function never(): self
     {
-        return new self(0, 0, 'never');
+        return new self(0, 0, 'never', '0 times');
     }
 
     public static function once(): self
     {
-        return new self(1, 1, 'once');
+        return new self(1, 1, 'once', 'once');
     }
 
     public static function exactly(int $count): self
     {
-        return new self($count, $count, sprintf('exactly %d time(s)', $count));
+        return new self($count, $count, sprintf('exactly %d time(s)', $count), $count === 1 ? 'once' : $count . ' times');
     }
 
     public static function atLeastOnce(): self
     {
-        return new self(1, null, 'at least once');
+        return new self(1, null, 'at least once', 'at least once');
     }
 
     public static function atLeast(int $count): self
     {
-        return new self($count, null, sprintf('at least %d time(s)', $count));
+        return new self($count, null, sprintf('at least %d time(s)', $count), 'at least ' . PhpUnitInvocation::times($count));
     }
 
     public static function atMost(int $count): self
     {
-        return new self(0, $count, sprintf('at most %d time(s)', $count));
+        return new self(0, $count, sprintf('at most %d time(s)', $count), $count === 1 ? 'at most once' : sprintf('at most %d times', $count));
     }
 
     /** The Mockery grammar's between($min, $max) window. */

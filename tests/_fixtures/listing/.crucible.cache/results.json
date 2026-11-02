@@ -1,0 +1,96 @@
+{
+    "version": 1,
+    "tests": {
+        "tests/ListedTest.php::testA": {
+            "outcomes": [
+                "pass",
+                "pass",
+                "pass",
+                "pass"
+            ],
+            "duration": 8.0142e-5
+        },
+        "tests/ListedTest.php::testFails": {
+            "outcomes": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+            ],
+            "duration": 0.000448972
+        },
+        "tests/ListedTest.php::testIsRisky": {
+            "outcomes": [
+                "risky",
+                "risky",
+                "risky",
+                "risky"
+            ],
+            "duration": 1.8915e-5
+        },
+        "tests/ListedTest.php::testRows#first": {
+            "outcomes": [
+                "pass",
+                "pass",
+                "pass",
+                "pass"
+            ],
+            "duration": 0.000100615
+        },
+        "tests/ListedTest.php::testRows#0": {
+            "outcomes": [
+                "fail",
+                "fail",
+                "fail"
+            ],
+            "duration": 0.000368389
+        },
+        "tests/ListedTest.php::testRows#1": {
+            "outcomes": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+            ],
+            "duration": 0.000211964
+        },
+        "tests/ListedTest.php::testWith#0": {
+            "outcomes": [
+                "pass",
+                "pass",
+                "pass",
+                "pass"
+            ],
+            "duration": 6.7667e-5
+        },
+        "tests/ListedTest.php::testWith#named": {
+            "outcomes": [
+                "pass",
+                "pass",
+                "pass",
+                "pass"
+            ],
+            "duration": 1.8136e-5
+        },
+        "tests/ListedTest.php::testWith#1": {
+            "outcomes": [
+                "pass",
+                "pass",
+                "pass"
+            ],
+            "duration": 1.6078e-5
+        },
+        "tests/ListedTest.php::testRows#2": {
+            "outcomes": [
+                "fail"
+            ],
+            "duration": 0.000232839
+        },
+        "tests/ListedTest.php::testWith#2": {
+            "outcomes": [
+                "pass"
+            ],
+            "duration": 1.4309e-5
+        }
+    }
+}

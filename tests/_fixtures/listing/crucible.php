@@ -1,0 +1,9 @@
+<?php
+
+declare(strict_types=1);
+
+use LucianoPereira\Crucible\Configuration\Crucible;
+
+return Crucible::configure()
+    ->testSuite('unit', 'tests')
+    ->testSuite('empty', 'tests/none');

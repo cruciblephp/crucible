@@ -1,7 +1,7 @@
 argv: --stop-on-failure
 exit: 1
 --- stdout
-crucible 1.1.6 by Luciano Federico Pereira.
+crucible 1.2.0 by Luciano Federico Pereira.
 
 Configuration: <project>/crucible.php
 
@@ -16,5 +16,6 @@ tests                                   1    <t>s   <bar>
 +- MixedOutcomes                        1    <t>s   <bar>
 
 Tests: 2. Passed: 1, Failed: 1, Errors: 0, Skipped: 0, Incomplete: 0, Risky: 0. Time: <t>s
+FAILURES!
 --- stderr
 

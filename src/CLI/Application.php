@@ -441,6 +441,7 @@ final class Application
               --coverage-text[=<file>]  Write the text coverage report to <file>, or the terminal when bare
               --coverage-crap4j <file>  Write the Crap4J XML report (complexity against coverage) to <file>
               --coverage-filter <dir>   Add <dir> to the coverage scope, alongside whatever ->source() declares
+              --coverage-target <path>  Report and judge --min on the files under <path> alone
               --coverage-text-summary  Text coverage report: totals only, no per-file rows
               --coverage-text-uncovered  Text coverage report: keep the files with no covered line
               --coverage-xml <dir>      Write the XML coverage report into <dir>
@@ -497,6 +498,7 @@ final class Application
               --default-time-limit <sec>  The budget for a test that declares no size
               --diff-context <n>        Unchanged lines to keep around each change in a diff
               --disallow-test-output    A test that prints anything is risky
+              --observe-types           Check the phpdocs the run calls through; write observed-types.json
               --display-all-issues      All six of the above at once
               --display-deprecations    List the deprecations the tally counted, with their scope
               --display-errors          List the errored tests and their reasons

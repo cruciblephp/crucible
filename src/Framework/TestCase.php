@@ -376,7 +376,7 @@ abstract class TestCase extends Assert
      */
     final protected function createStub(string $originalClassName): object
     {
-        return $this->testDoubles()->create($originalClassName);
+        return $this->testDoubles()->stub([$originalClassName]);
     }
 
     /**
@@ -485,7 +485,7 @@ abstract class TestCase extends Assert
      */
     final protected function createStubForIntersectionOfInterfaces(array $interfaces): object
     {
-        return $this->createMockForIntersectionOfInterfaces($interfaces);
+        return $this->testDoubles()->stub($interfaces);
     }
 
     /**

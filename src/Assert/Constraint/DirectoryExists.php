@@ -14,6 +14,7 @@ use Override;
 
 use function is_dir;
 use function is_string;
+use function sprintf;
 
 final class DirectoryExists extends Constraint
 {
@@ -25,6 +26,12 @@ final class DirectoryExists extends Constraint
 
     public function toString(): string
     {
-        return 'directory exists';
+        return 'exists';
+    }
+
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return sprintf('Failed asserting that directory "%s" %s.', is_string($other) ? $other : '', $this->toString());
     }
 }

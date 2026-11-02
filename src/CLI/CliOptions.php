@@ -73,6 +73,7 @@ final readonly class CliOptions
         '--disable-coverage-ignore', '--disable-coverage-targeting',
         '--without-class-view', '--without-file-view', '--coverage-xml-no-source',
         '--include-git-information', '--enforce-time-limit', '--disallow-test-output', '--with-telemetry',
+        '--observe-types',
         '--warm-coverage-cache', '--validate-configuration', '--all',
         '--check-php-configuration', '--reproducible',
         '--php-advisory',
@@ -95,7 +96,7 @@ final readonly class CliOptions
         '--key', '--out', '--view', '--min',
     ];
 
-    private const array REPEATABLE = ['--testsuite', '--group', '--exclude-group', '--related', '--report', '--subscriber', '--extension', '--exclude-testsuite', '--test-suffix', '--covers', '--uses', '--requires-ext', '--run-test-id', '--coverage-filter'];
+    private const array REPEATABLE = ['--testsuite', '--group', '--exclude-group', '--related', '--report', '--subscriber', '--extension', '--exclude-testsuite', '--test-suffix', '--covers', '--uses', '--requires-ext', '--run-test-id', '--coverage-filter', '--coverage-target'];
 
     /**
      * Spellings the spec uses for something Crucible already spells its
@@ -187,6 +188,7 @@ final readonly class CliOptions
      * @param ?int<0, max>            $diffContext      the spec's --diff-context: unchanged lines kept around each change
      * @param ?int                    $repeat           the spec's --repeat: run every selected test this many times
      * @param list<non-empty-string>  $coverageFilter   the spec's --coverage-filter: directories coverage is restricted to
+     * @param list<non-empty-string>  $coverageTargets  --coverage-target: the paths the coverage report and its floor judge alone
      * @param ?string                 $coverageText     the spec's --coverage-text; '' = the terminal, a path = that file
      * @param ?float                  $minCoverage      the spec's --min: the run fails below this line-coverage percentage
      * @param bool                    $reproducible     Crucible-native: normalise what describes the RUN, so two runs of the same code write identical bytes
@@ -365,6 +367,8 @@ final readonly class CliOptions
         public bool $profile = false,
         public bool $dirty = false,
         public array $paths = [],
+        public bool $observeTypes = false,
+        public array $coverageTargets = [],
     ) {}
 
 
@@ -919,6 +923,8 @@ final readonly class CliOptions
             profile: isset($flags['--profile']),
             dirty: isset($flags['--dirty']),
             paths: $paths,
+            observeTypes: isset($flags['--observe-types']),
+            coverageTargets: $noCoverage ? [] : ($lists['--coverage-target'] ?? []),
         );
     }
 }

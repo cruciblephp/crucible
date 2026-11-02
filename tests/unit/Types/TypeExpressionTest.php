@@ -13,6 +13,7 @@ namespace LucianoPereira\Crucible\Tests\Types;
 use ArrayIterator;
 use ArrayObject;
 use Countable;
+use Exception;
 use LucianoPereira\Crucible\Attributes\CoversClass;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 use LucianoPereira\Crucible\Framework\TestCase;
@@ -20,6 +21,7 @@ use LucianoPereira\Crucible\Types\TypeExpression;
 use LucianoPereira\Crucible\Types\TypeParser;
 use RuntimeException;
 use SplObjectStorage;
+use stdClass;
 
 use function get_debug_type;
 
@@ -59,9 +61,14 @@ final class TypeExpressionTest extends TestCase
             ['int<5, max>', PHP_INT_MAX, true],
             ['class-string', Countable::class, true],
             ['class-string', \LucianoPereira\Crucible\Event\Outcome::class, true],
+            ['class-string', \LucianoPereira\Crucible\Tests\Dialect\BrewsCoffee::class, true],
             ['class-string', 'No\\Such\\ClassName', false],
             ['class-string<\Throwable>', RuntimeException::class, true],
             ['class-string<\Throwable>', ArrayObject::class, false],
+            ['class-string<\Countable&\Traversable>', ArrayObject::class, true],
+            ['class-string<\Countable&\Traversable>', stdClass::class, false],
+            ['class-string<\Countable|\Stringable>', Exception::class, true],
+            ['class-string<\Countable|\Stringable>', stdClass::class, false],
             ['class-string<\Throwable>', 7, false],
             ['\Countable&\ArrayAccess', new ArrayObject(), true],
             ['\Countable&\ArrayAccess', new SplObjectStorage(), true],

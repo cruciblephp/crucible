@@ -125,6 +125,11 @@ honest: creating, editing or deleting a `Pest.php` re-analyses the files it conf
 `->in(__DIR__)` resolves as it does at run time. `toBeList()` and `assertIsList()` narrow as PHPStan reads `array_is_list()` with
 its own fix for the empty array, on every supported version: a string-keyed array becomes `array{}`.
 
+PHPStan believes a docblock. `crucible --observe-types` checks it: the suite runs with the source
+watched, and a phpdoc that refuses what a call passed or returned, `@return Book` on a method a
+test saw return `null`, fails the run with the value. What every function received and returned is written to
+`observed-types.json`, for the types a docblock does not state yet.
+
 ---
 
 ## Documentation

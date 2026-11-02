@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Assert\Constraint;
 
+use LucianoPereira\Crucible\Assert\PhpUnitExporter;
 use LucianoPereira\Crucible\Assert\ValueType;
 use Override;
 
@@ -43,6 +44,12 @@ final class TraversableContainsOnlyType extends Constraint
 
     public function toString(): string
     {
-        return 'contains only values of type ' . $this->type->value;
+        return 'contains only values of type "' . $this->type->value . '"';
+    }
+
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return 'Failed asserting that ' . PhpUnitExporter::export($other) . ' ' . $this->toString() . '.';
     }
 }

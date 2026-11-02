@@ -184,7 +184,7 @@ final class PostRunReportTest extends TestCase
         self::assertIsString($breach);
         self::assertStringContainsString('80.00%', $breach);
         self::assertStringContainsString('10 executable lines', $breach);
-        self::assertStringContainsString('90%', $breach);
+        self::assertStringContainsString('at least 90.00% required', $breach);
     }
 
     public function testNoMinimumIsNoGate(): void
@@ -206,10 +206,24 @@ final class PostRunReportTest extends TestCase
 
     public function testTheGateJudgesThePrintedPercentage(): void
     {
-        // 22499 of 25000 is 89.996%, which the report prints as 90.00%.
-        // Failing that run against --min=90 would argue with the user
-        // about a decimal place the report never shows them.
-        self::assertNull((new PostRunReport())->coverageFloor($this->coverage(22499, 2501), 90.0));
+        // 22499 of 25000 is 89.996%, printed 89.99%, never rounded up to a
+        // 90.00% the lines do not reach; the verdict says the same number.
+        $breach = (new PostRunReport())->coverageFloor($this->coverage(22499, 2501), 90.0);
+
+        self::assertIsString($breach);
+        self::assertStringContainsString('89.99% of 25000', $breach);
+        self::assertNull((new PostRunReport())->coverageFloor($this->coverage(9000, 1000), 90.0), '90.00% meets 90');
+        self::assertNull((new PostRunReport())->coverageFloor($this->coverage(10, 0), 100.0), '100.00% meets 100');
+        self::assertIsString((new PostRunReport())->coverageFloor($this->coverage(99996, 4), 100.0), '99.996% does not meet 100');
+    }
+
+    public function testATypedFloorIsComparedAsDisplayed(): void
+    {
+        $report = new PostRunReport();
+
+        self::assertSame($report->coverageFloor($this->coverage(2828, 7172), 28.284), $report->coverageFloor($this->coverage(2828, 7172), 28.28));
+        self::assertSame($report->coverageFloor($this->coverage(2828, 7172), 28.285), $report->coverageFloor($this->coverage(2828, 7172), 28.29));
+        self::assertStringContainsString('at least 28.29% required', (string) $report->coverageFloor($this->coverage(2828, 7172), 28.285));
     }
 
     public function testAFloorOfZeroCannotBeBreached(): void

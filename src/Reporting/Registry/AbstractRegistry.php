@@ -52,7 +52,10 @@ use function substr;
  */
 abstract class AbstractRegistry
 {
-    /** @param array<string, array{class: class-string, params: array<string, mixed>}> $configured keyed by plugin key */
+    /**
+     * @param array<string, array{class: string, params: array<string, mixed>}> $configured keyed by plugin key; a
+     *        class that does not exist is a broken registration describe() reports, so any string is taken
+     */
     public function __construct(protected readonly array $configured) {}
 
     /** @return class-string<PluginAttribute> the attribute class reflected for on a configured class */
@@ -128,7 +131,6 @@ abstract class AbstractRegistry
     }
 
     /**
-     * @param  class-string  $class
      * @param  list<string>  $problems
      */
     protected function brokenDescriptor(string $key, string $class, array $problems): PluginDescriptor

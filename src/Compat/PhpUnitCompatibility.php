@@ -15,7 +15,10 @@ use LucianoPereira\Crucible\Assert\Assert;
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Assert\Constraint\Constraint;
 use LucianoPereira\Crucible\Assert\Constraint\LogicalNot;
+use LucianoPereira\Crucible\Assert\GeneratorNotSupportedException;
+use LucianoPereira\Crucible\Assert\UnknownClassOrInterfaceException;
 use LucianoPereira\Crucible\Dialect\Pest\RealPhpUnitBootstrap;
+use LucianoPereira\Crucible\Double\MethodParametersAlreadyConfiguredForAnotherMatcherException;
 use LucianoPereira\Crucible\Double\MockBuilder;
 use LucianoPereira\Crucible\Double\Mocked;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
@@ -130,7 +133,9 @@ final class PhpUnitCompatibility
             // The spec's failure subclass: aliasing it to the same
             // hierarchy keeps framework catch-blocks working (found
             // by the Phase 9 Laravel gate, like the two below).
-            'PHPUnit\Framework\ExpectationFailedException' => AssertionFailedError::class,
+            'PHPUnit\Framework\ExpectationFailedException'       => AssertionFailedError::class,
+            'PHPUnit\Framework\UnknownClassOrInterfaceException' => UnknownClassOrInterfaceException::class,
+            'PHPUnit\Framework\GeneratorNotSupportedException'   => GeneratorNotSupportedException::class,
             // Frameworks subclass the constraint base for their own
             // assertions (Laravel's assertDatabaseHas, assertJson);
             // the hook surface (matches/toString/failureDescription)
@@ -143,10 +148,11 @@ final class PhpUnitCompatibility
             // The double surface (D-046): mocks and stubs are one
             // concept in Crucible, so both spec interfaces alias the
             // Mocked marker and both builders alias the one builder.
-            'PHPUnit\Framework\MockObject\MockObject'      => Mocked::class,
-            'PHPUnit\Framework\MockObject\Stub'            => Mocked::class,
-            'PHPUnit\Framework\MockObject\MockBuilder'     => MockBuilder::class,
-            'PHPUnit\Framework\MockObject\TestStubBuilder' => MockBuilder::class,
+            'PHPUnit\Framework\MockObject\MockObject'                                                  => Mocked::class,
+            'PHPUnit\Framework\MockObject\Stub'                                                        => Mocked::class,
+            'PHPUnit\Framework\MockObject\MockBuilder'                                                 => MockBuilder::class,
+            'PHPUnit\Framework\MockObject\TestStubBuilder'                                             => MockBuilder::class,
+            'PHPUnit\Framework\MockObject\MethodParametersAlreadyConfiguredForAnotherMatcherException' => MethodParametersAlreadyConfiguredForAnotherMatcherException::class,
         ];
 
         $attributeFiles = glob(__DIR__ . '/../Attributes/*.php');

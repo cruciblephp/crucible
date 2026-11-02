@@ -41,11 +41,12 @@ use const JSON_UNESCAPED_SLASHES;
  * container lookups; execution can. File-level on both axes, the
  * Ekstazi granularity, project-relative so the file survives moves.
  * Refreshed whenever a coverage run happens; corrupt = empty, never
- * a failed run.
+ * a failed run. Version 2 adds each source file's SHA-256 beside the
+ * edges (spec/cache-formats.md); a version 1 map reads as empty.
  */
 final readonly class CoverageMap
 {
-    public const int VERSION = 1;
+    public const int VERSION = 2;
 
     /**
      * @param non-empty-string $root absolute project root
@@ -122,8 +123,9 @@ final readonly class CoverageMap
 
     /**
      * @param array<string, list<string>> $edges
+     * @param array<string, string>       $hashes source file => SHA-256 when the edges were recorded
      */
-    public static function save(string $file, array $edges): void
+    public static function save(string $file, array $edges, array $hashes = []): void
     {
         $directory = dirname($file);
 
@@ -132,7 +134,7 @@ final readonly class CoverageMap
         }
 
         file_put_contents($file, json_encode(
-            ['version' => self::VERSION, 'edges' => $edges],
+            ['version' => self::VERSION, 'edges' => $edges, 'hashes' => $hashes],
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
         ));
     }

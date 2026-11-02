@@ -44,22 +44,27 @@ use const JSON_UNESCAPED_SLASHES;
  *
  * Beside it, every line the driver reported per file, run or not: a
  * line absent there compiles to no opcode, which is how `mutate` tells
- * an attribute argument from an executable line nobody ran. A map
- * written before that key existed reads as knowing no file's lines.
+ * an attribute argument from an executable line nobody ran.
+ *
+ * Version 2 records each file's SHA-256 as it was run, so a reader can
+ * skip a file whose lines have moved; a version 1 map reads as empty.
+ * spec/cache-formats.md is the contract.
  */
 final readonly class TestLineMap
 {
-    public const int VERSION = 1;
+    public const int VERSION = 2;
 
     /**
      * @param array<string, array<string, list<int>>> $tests      test id => relative file => executed lines
      * @param array<string, list<int>>                $executable relative file => every line the driver reported
      * @param array<string, list<string>>             $loaded     test id => relative test-directory files it executed outside the source scope
+     * @param array<string, string>                   $hashes     relative file => SHA-256 when the map was written
      */
     public function __construct(
         public array $tests = [],
         public array $executable = [],
         public array $loaded = [],
+        public array $hashes = [],
     ) {}
 
     /**
@@ -110,7 +115,15 @@ final readonly class TestLineMap
 
         ksort($loaded);
 
-        return new self($tests, $executable, $loaded);
+        $named = array_keys($executable);
+
+        foreach ($loaded as $files) {
+            foreach ($files as $file) {
+                $named[] = $file;
+            }
+        }
+
+        return new self($tests, $executable, $loaded, SourceHashes::of($root, $named));
     }
 
     /**
@@ -199,7 +212,7 @@ final readonly class TestLineMap
             }
         }
 
-        return new self($tests, $executable, $loaded);
+        return new self($tests, $executable, $loaded, SourceHashes::read($decoded['hashes'] ?? null));
     }
 
     public function save(string $file): void
@@ -211,7 +224,7 @@ final readonly class TestLineMap
         }
 
         file_put_contents($file, json_encode(
-            ['version' => self::VERSION, 'tests' => $this->tests, 'executable' => $this->executable, 'loaded' => $this->loaded],
+            ['version' => self::VERSION, 'tests' => $this->tests, 'executable' => $this->executable, 'loaded' => $this->loaded, 'hashes' => $this->hashes],
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
         ));
     }

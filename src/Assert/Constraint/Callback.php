@@ -20,12 +20,20 @@ use Override;
 final class Callback extends Constraint
 {
     /**
-     * @param Closure(mixed): bool $predicate
+     * @param Closure(mixed): bool    $predicate
+     * @param ?Closure(mixed): string $failure   the whole failure sentence, for a matcher that words its own
      */
     public function __construct(
         private readonly Closure $predicate,
         private readonly string $description = 'is accepted by callback',
+        private readonly ?Closure $failure = null,
     ) {}
+
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return $this->failure instanceof Closure ? ($this->failure)($other) : parent::failureDescription($other);
+    }
 
     #[Override]
     public function matches(mixed $other): bool

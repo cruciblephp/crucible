@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Assert\Constraint;
 
+use LucianoPereira\Crucible\Assert\PhpUnitExporter;
 use Override;
 
 use function array_is_list;
@@ -26,5 +27,12 @@ final class IsList extends Constraint
     public function toString(): string
     {
         return 'is a list';
+    }
+
+    /** ✓ PHPUnit 13.4.3 names the kind: `an array is a list`, `a string is a list`. */
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return 'Failed asserting that ' . PhpUnitExporter::noun($other) . ' ' . $this->toString() . '.';
     }
 }

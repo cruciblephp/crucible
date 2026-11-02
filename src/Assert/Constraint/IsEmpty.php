@@ -14,6 +14,10 @@ use Countable;
 use Override;
 
 use function count;
+use function gettype;
+use function is_array;
+use function is_object;
+use function is_string;
 
 final class IsEmpty extends Constraint
 {
@@ -30,5 +34,19 @@ final class IsEmpty extends Constraint
     public function toString(): string
     {
         return 'is empty';
+    }
+
+    /** ✓ PHPUnit 13.4.3 names the kind: `an array`, `a string`, `an object`, else `a ` and gettype(): `a integer`. */
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        $subject = match (true) {
+            is_array($other)  => 'an array',
+            is_string($other) => 'a string',
+            is_object($other) => 'an object',
+            default           => 'a ' . gettype($other),
+        };
+
+        return 'Failed asserting that ' . $subject . ' ' . $this->toString() . '.';
     }
 }

@@ -21,7 +21,10 @@ use function json_encode;
 use function ksort;
 use function max;
 use function sort;
+use function str_ends_with;
+use function str_starts_with;
 
+use const ARRAY_FILTER_USE_KEY;
 use const JSON_THROW_ON_ERROR;
 use const JSON_UNESCAPED_SLASHES;
 
@@ -50,6 +53,34 @@ final class CoverageData
         public array $paths = [],
         public array $loaded = [],
     ) {}
+
+    /**
+     * Only the files under $targets, lines, branches and paths together,
+     * so the three totals describe one set of files; a target is an
+     * absolute directory ending in `/` or an absolute file.
+     *
+     * @param list<non-empty-string> $targets
+     */
+    public function narrowedTo(array $targets): self
+    {
+        $keep = static function (string $file) use ($targets): bool {
+            foreach ($targets as $target) {
+                if ($file === $target || (str_ends_with($target, '/') && str_starts_with($file, $target))) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        return new self(
+            array_filter($this->lines, $keep, ARRAY_FILTER_USE_KEY),
+            $this->tests,
+            array_filter($this->branches, $keep, ARRAY_FILTER_USE_KEY),
+            array_filter($this->paths, $keep, ARRAY_FILTER_USE_KEY),
+            $this->loaded,
+        );
+    }
 
     /**
      * Folds one test's collection in. The per-test executed map comes

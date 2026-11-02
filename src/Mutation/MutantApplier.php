@@ -14,6 +14,7 @@ use RuntimeException;
 use Throwable;
 
 use function class_exists;
+use function error_get_last;
 use function file_get_contents;
 use function file_put_contents;
 use function function_exists;
@@ -27,11 +28,16 @@ use function pcntl_fork;
 use function pcntl_waitpid;
 use function posix_getpid;
 use function posix_kill;
+use function register_shutdown_function;
 use function sys_get_temp_dir;
 use function tempnam;
 use function unlink;
 use function usleep;
 
+use const E_COMPILE_ERROR;
+use const E_CORE_ERROR;
+use const E_ERROR;
+use const E_PARSE;
 use const SIGKILL;
 use const WNOHANG;
 
@@ -201,6 +207,24 @@ final readonly class MutantApplier
         // Only the child is capped. The parent is bookkeeping and must
         // outlive every mutant it runs.
         ini_set('memory_limit', self::MEMORY_LIMIT);
+
+        // A mutant that cannot compile is a verdict, not a trace on the
+        // parent's terminal: the fatal is recorded as the reason.
+        ini_set('display_errors', '0');
+        ini_set('log_errors', '0');
+        register_shutdown_function(static function () use ($resultTmp, $parentPid): void {
+            $error = error_get_last();
+
+            if ($error === null || ($error['type'] & (E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR)) === 0 || (string) @file_get_contents($resultTmp) !== '') {
+                return;
+            }
+
+            file_put_contents($resultTmp, (string) json_encode(['outcome' => 'errored', 'reason' => $error['message']]));
+
+            if (posix_getpid() !== $parentPid) {
+                posix_kill(posix_getpid(), SIGKILL);
+            }
+        });
 
         $this->autoloader->activate($mutant->class, $mutatedTmp);
 

@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Assert\Constraint;
 
+use LucianoPereira\Crucible\Assert\PhpUnitExporter;
 use Override;
 use ReflectionObject;
 
@@ -33,6 +34,12 @@ final class ObjectHasProperty extends Constraint
 
     public function toString(): string
     {
-        return sprintf('has the property "%s"', $this->property);
+        return sprintf('has property "%s"', $this->property);
+    }
+
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return sprintf('Failed asserting that %s %s.', is_object($other) ? 'object of class "' . $other::class . '"' : PhpUnitExporter::export($other), $this->toString());
     }
 }

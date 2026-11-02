@@ -11,7 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Assert\Constraint;
 
 use ArrayAccess;
-use LucianoPereira\Crucible\Assert\Exporter;
+use LucianoPereira\Crucible\Assert\PhpUnitExporter;
 use Override;
 
 use function array_key_exists;
@@ -39,6 +39,12 @@ final class ArrayHasKey extends Constraint
 
     public function toString(): string
     {
-        return 'has the key ' . Exporter::export($this->key);
+        return 'has the key ' . PhpUnitExporter::export($this->key);
+    }
+
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return 'Failed asserting that an array ' . $this->toString() . '.';
     }
 }

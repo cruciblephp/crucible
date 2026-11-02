@@ -32,7 +32,7 @@ final class StringEqualsStringIgnoringLineEndings extends Constraint
 
     public function toString(): string
     {
-        return 'is equal to ' . Exporter::describe($this->expected) . ' ignoring line endings';
+        return 'is equal to "' . self::normalize($this->expected) . '" ignoring line endings';
     }
 
     protected function comparison(mixed $other): ?ComparisonFailure

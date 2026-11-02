@@ -479,6 +479,17 @@ Needs **pcov** (fast, line coverage) or **xdebug** (slower, also branch coverage
 `--coverage-branch`). Keep the extension out of your `php.ini` and load it only when asked,
 so normal runs stay at full speed.
 
+Each file's row lists the lines no test ran, as runs: `12..18, 30`. A score is floored at two
+places and never rounded up, as PHPUnit prints it, so 99.996% reads `99.99%` and fails `--min=100`.
+
+```bash
+crucible --coverage --coverage-target modules/Auth --min=100
+```
+
+`--coverage-target` judges only the files under a path: the rows, the total and the floor. The
+coverage caches still record everything the run collected, so impact selection and `mutate` see
+the whole picture.
+
 pcov 1.0.12, the version the distributions ship, works on every supported PHP from 1.1.5 on.
 If a worker process is killed during a coverage run, its tests say which signal killed it and
 which driver was loaded, so a crashing extension doesn't look like a crashing test.
@@ -536,7 +547,14 @@ killed ÷ covered.
 A line that compiles to no code of its own, such as an attribute's arguments, a property
 default or an inner line of an array literal, never appears in coverage, so its mutant runs
 the tests of its method, or of the class outside any method. A line that could run and that
-no test ran stays not covered.
+no test ran stays not covered. A line inside a `match` runs the tests of every line of that
+`match`, because coverage marks an arm unrun whenever another arm matched, although its
+condition was evaluated.
+
+An escaped mutant is printed with the lines it changed, `-` before and `+` after, the moment it
+is found. The report then lists the errored mutants with PHP's reason on one line, the
+timed-out and not-covered ones, and the declared equivalents. A finished run leaves
+`.crucible.cache/mutation-verdicts.ndjson` holding its own verdicts, one line per mutant.
 
 Covering tests run **fastest first**, so the cheapest test gets the first chance at the kill.
 An interrupted run resumes where it stopped. A mutant is judged again when its covering tests,
@@ -677,6 +695,33 @@ PHPStan analyses the files once, through your phpstan.neon. An error on no asser
 file with no assertion at all, is the file's own errored entry: a type test that tests nothing is
 not a pass. The suite is named `types`, so `--exclude-testsuite types` keeps a quick edit loop
 quick.
+
+### Observed types
+
+```bash
+crucible --observe-types
+```
+
+The suite runs with every class of the configured source watched: each call that returns records
+the types its parameters received and it returned, and checks them against the function's
+phpdoc. A docblock that says `@return Book` on a method a test saw return `null` fails the run,
+with the value:
+
+```
+Check "phpdoc contradicted by a test" failed: expected 0, got 1.
+src/Shelf.php:19 App\Shelf::find() return: @return Book, $: expected App\Book, got null (1 of 2 calls)
+```
+
+A call that throws is left out: a test passing a value the contract forbids, to see the exception,
+is testing the edge of the contract, not the contract. A tag the method does not restate is read
+from what it overrides or implements, and its names where that tag is written. A slot whose type
+names a template or a type alias, `self`, `static` or `$this`, or uses syntax Crucible's type reader
+does not read, is not checked. Every slot's types go to `.crucible.cache/observed-types.json`, where
+a type a phpdoc does not state yet can be read off — spec/cache-formats.md describes it.
+
+The files keep their own paths while they are watched, so `__FILE__` and reflection see nothing
+different. A class is watched when it autoloads; a file required by its path is not, and neither are
+tests running in another process, `--parallel` or process isolation.
 
 ---
 

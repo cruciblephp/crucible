@@ -10,7 +10,12 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Coverage;
 
+use function array_key_last;
+use function array_slice;
+use function count;
+use function implode;
 use function ksort;
+use function sort;
 use function sprintf;
 use function str_starts_with;
 use function strlen;
@@ -23,6 +28,8 @@ use function substr;
  */
 final readonly class TextReport
 {
+    private const int RUNS = 10;
+
     /**
      * @param bool $onlySummary   the spec's --only-summary-for-coverage-text: totals, no per-file rows
      * @param bool $showUncovered the spec's --show-uncovered-for-coverage-text: keep the 0% files a report otherwise elides
@@ -69,7 +76,7 @@ final readonly class TextReport
                 continue;
             }
 
-            $rows[$relative] = [$covered, $executable, CoverageData::branchCounts($data->branches[$file] ?? [])];
+            $rows[$relative] = [$covered, $executable, CoverageData::branchCounts($data->branches[$file] ?? []), self::missed($lines)];
         }
 
         ksort($rows);
@@ -77,15 +84,16 @@ final readonly class TextReport
         $withBranches = $data->branches !== [];
         $report       = sprintf("Coverage (%s):\n", $driver);
 
-        foreach ($this->onlySummary ? [] : $rows as $file => [$covered, $executable, $branches]) {
+        foreach ($this->onlySummary ? [] : $rows as $file => [$covered, $executable, $branches, $missed]) {
             $report .= sprintf(
-                "  %6.2f%%  %s  (%d/%d)%s\n",
-                $executable > 0 ? 100 * $covered / $executable : 0.0,
+                "  %6.2f%%  %s  (%d/%d)%s%s\n",
+                CoveragePercent::of($covered, $executable),
                 $file,
                 $covered,
                 $executable,
+                $missed === '' ? '' : '  ' . $missed,
                 $withBranches && $branches['total'] > 0
-                    ? sprintf('  branches %.2f%% (%d/%d)', 100 * $branches['covered'] / $branches['total'], $branches['covered'], $branches['total'])
+                    ? sprintf('  branches %.2f%% (%d/%d)', CoveragePercent::of($branches['covered'], $branches['total']), $branches['covered'], $branches['total'])
                     : '',
             );
         }
@@ -97,7 +105,7 @@ final readonly class TextReport
         $totals = $data->totals();
         $report .= sprintf(
             "  Total: %.2f%% (%d of %d executable lines)\n",
-            $totals['executable'] > 0 ? 100 * $totals['covered'] / $totals['executable'] : 0.0,
+            CoveragePercent::of($totals['covered'], $totals['executable']),
             $totals['covered'],
             $totals['executable'],
         );
@@ -110,7 +118,7 @@ final readonly class TextReport
 
         $report .= sprintf(
             "  Branches: %.2f%% (%d of %d)\n",
-            $branchTotals['total'] > 0 ? 100 * $branchTotals['covered'] / $branchTotals['total'] : 0.0,
+            CoveragePercent::of($branchTotals['covered'], $branchTotals['total']),
             $branchTotals['covered'],
             $branchTotals['total'],
         );
@@ -123,9 +131,55 @@ final readonly class TextReport
 
         return $report . sprintf(
             "  Paths: %.2f%% (%d of %d)\n",
-            100 * $pathTotals['covered'] / $pathTotals['total'],
+            CoveragePercent::of($pathTotals['covered'], $pathTotals['total']),
             $pathTotals['covered'],
             $pathTotals['total'],
         );
+    }
+
+    /**
+     * The executable lines nobody ran, as runs and singles: `12..18, 30`.
+     * A dead line is not executable and never listed; two missed lines with
+     * one between them are two entries, since they are not consecutive. A
+     * row stops at ten entries and counts the rest, so it never wraps a
+     * terminal into noise.
+     *
+     * @param array<int, int> $lines line => value
+     */
+    public static function missed(array $lines): string
+    {
+        $missed = [];
+
+        foreach ($lines as $line => $value) {
+            if ($value === -1) {
+                $missed[] = $line;
+            }
+        }
+
+        sort($missed);
+
+        $runs = [];
+
+        foreach ($missed as $line) {
+            $last = array_key_last($runs);
+
+            if ($last !== null && $runs[$last][1] === $line - 1) {
+                $runs[$last][1] = $line;
+            } else {
+                $runs[] = [$line, $line];
+            }
+        }
+
+        $written = [];
+
+        foreach (array_slice($runs, 0, self::RUNS) as [$from, $to]) {
+            $written[] = $from === $to ? (string) $from : $from . '..' . $to;
+        }
+
+        if (count($runs) > self::RUNS) {
+            $written[] = sprintf('… and %d more', count($runs) - self::RUNS);
+        }
+
+        return implode(', ', $written);
     }
 }

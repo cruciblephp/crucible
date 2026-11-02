@@ -1,4 +1,4 @@
-.TH CRUCIBLE 1 2026-09-22 "Crucible 1.0" "User Commands"
+.TH CRUCIBLE 1 2026-10-26 "Crucible 1.2.0" "User Commands"
 .SH NAME
 crucible \- an independent, XML-free test framework for PHP
 .SH SYNOPSIS
@@ -58,7 +58,14 @@ Run only tests whose name matches.
 Run only the named suite.
 .TP
 .B \-\-coverage
-Collect line coverage and print the per\-file summary.
+Collect line coverage and print the per\-file summary, with each file's missed lines.
+.TP
+.BI \-\-coverage\-target " path"
+Report and judge
+.B \-\-min
+on the files under
+.I path
+alone; repeatable.
 .TP
 .BI \-\-parallel " N"
 Run test classes in N worker processes.

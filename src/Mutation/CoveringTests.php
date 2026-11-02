@@ -21,6 +21,7 @@ use function array_flip;
 use function array_values;
 use function count;
 use function file_get_contents;
+use function range;
 use function substr_count;
 
 /**
@@ -34,10 +35,14 @@ use function substr_count;
  * decorates) or, outside every method, of all the file's methods. A
  * reported line nobody ran stays not covered, and so does every line
  * of a file the map holds no lines for.
+ *
+ * ✓ Xdebug 3.5.3 marks a `match` arm's line unrun whenever another arm
+ * matched, although its condition was evaluated, so a line inside a
+ * `match` takes the tests of every line of it, its `match` line included.
  */
 final class CoveringTests
 {
-    /** @var array<string, array{methods: list<array{int, int}>, attributes: array<int, int>}> */
+    /** @var array<string, array{methods: list<array{int, int}>, attributes: array<int, int>, matches: list<array{int, int}>}> */
     private array $shapes = [];
 
     /** @var array<string, array<int, int>> */
@@ -55,6 +60,16 @@ final class CoveringTests
      */
     public function of(string $absoluteFile, string $relativeFile, int $line): array
     {
+        $match = $this->widestMatch($absoluteFile, $line);
+
+        if ($match !== null) {
+            $tests = $this->index->coveringAny($relativeFile, range($match[0], $match[1]));
+
+            if ($tests !== []) {
+                return $tests;
+            }
+        }
+
         $direct = $this->index->coveringTests($relativeFile, $line);
 
         if ($direct !== [] || !isset($this->map->executable[$relativeFile])) {
@@ -95,6 +110,26 @@ final class CoveringTests
     }
 
     /**
+     * The outermost `match` whose lines hold $line, from its keyword to its closing brace.
+     *
+     * @param non-empty-string $absoluteFile
+     *
+     * @return ?array{int, int}
+     */
+    private function widestMatch(string $absoluteFile, int $line): ?array
+    {
+        $widest = null;
+
+        foreach ($this->shape($absoluteFile)['matches'] as [$start, $end]) {
+            if ($line >= $start && $line <= $end && ($widest === null || $end - $start > $widest[1] - $widest[0])) {
+                $widest = [$start, $end];
+            }
+        }
+
+        return $widest;
+    }
+
+    /**
      * @param list<int> $reported
      */
     private function nearest(array $reported, int $start, int $end, int $line): ?int
@@ -123,7 +158,7 @@ final class CoveringTests
      *
      * @param non-empty-string $absoluteFile
      *
-     * @return array{methods: list<array{int, int}>, attributes: array<int, int>}
+     * @return array{methods: list<array{int, int}>, attributes: array<int, int>, matches: list<array{int, int}>}
      */
     private function shape(string $absoluteFile): array
     {
@@ -140,11 +175,51 @@ final class CoveringTests
         }
 
         $source = @file_get_contents($absoluteFile);
+        $tokens = $source === false ? [] : PhpToken::tokenize($source);
 
         return $this->shapes[$absoluteFile] = [
             'methods'    => $methods,
-            'attributes' => $source === false ? [] : $this->attributeLines(PhpToken::tokenize($source)),
+            'attributes' => $this->attributeLines($tokens),
+            'matches'    => $this->matchLines($tokens),
         ];
+    }
+
+    /**
+     * @param array<PhpToken> $tokens
+     *
+     * @return list<array{int, int}> the line of each `match` keyword and of its closing brace
+     */
+    private function matchLines(array $tokens): array
+    {
+        $tokens  = array_values($tokens);
+        $matches = [];
+        $count   = count($tokens);
+
+        for ($i = 0; $i < $count; $i++) {
+            if (!$tokens[$i]->is(T_MATCH)) {
+                continue;
+            }
+
+            $j = $i + 1;
+
+            while ($j < $count && $tokens[$j]->text !== '{') {
+                $j++;
+            }
+
+            $depth = 0;
+
+            for (; $j < $count; $j++) {
+                if ($tokens[$j]->text === '{' || $tokens[$j]->is([T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES])) {
+                    $depth++;
+                } elseif ($tokens[$j]->text === '}' && --$depth === 0) {
+                    $matches[] = [$tokens[$i]->line, $tokens[$j]->line];
+
+                    break;
+                }
+            }
+        }
+
+        return $matches;
     }
 
     /**

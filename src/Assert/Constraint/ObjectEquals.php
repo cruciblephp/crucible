@@ -65,6 +65,6 @@ final class ObjectEquals extends Constraint
             );
         }
 
-        return parent::failureDescription($other);
+        return 'Failed asserting that two objects are equal.';
     }
 }

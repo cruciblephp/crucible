@@ -37,6 +37,7 @@ use LucianoPereira\Crucible\Configuration\ExecutionOrder;
 use LucianoPereira\Crucible\Configuration\LoadedConfiguration;
 use LucianoPereira\Crucible\Configuration\Loader;
 use LucianoPereira\Crucible\Configuration\Overrides;
+use LucianoPereira\Crucible\Configuration\TestSuite;
 use LucianoPereira\Crucible\Console\Components\Splash;
 use LucianoPereira\Crucible\Console\Runtime\Runtime;
 use LucianoPereira\Crucible\Console\Style\Style as ConsoleStyle;
@@ -99,6 +100,8 @@ use LucianoPereira\Crucible\Snapshot\InlineSnapshotWriter;
 use LucianoPereira\Crucible\Snapshot\SnapshotLog;
 use LucianoPereira\Crucible\Snapshot\SnapshotPruner;
 use LucianoPereira\Crucible\Test\TestGroup;
+use LucianoPereira\Crucible\Types\Observed\ObservedRun;
+use LucianoPereira\Crucible\Types\Observed\ObservedTypesCheck;
 use LucianoPereira\Crucible\Types\TypeTestRunner;
 use LucianoPereira\Crucible\Types\TypeTestSuite;
 use LucianoPereira\Crucible\Vitest\VitestRunner;
@@ -113,6 +116,8 @@ use function array_pad;
 use function array_unique;
 use function array_values;
 use function class_exists;
+use function count;
+use function ctype_digit;
 use function explode;
 use function file;
 use function file_put_contents;
@@ -129,6 +134,7 @@ use function is_file;
 use function is_string;
 use function is_subclass_of;
 use function json_encode;
+use function ksort;
 use function max;
 use function mkdir;
 use function ob_end_clean;
@@ -214,6 +220,17 @@ final class RunTestsCommand
         $overrides = $this->overrides($options, $workingDirectory);
 
         $this->applyPhpSettings($configuration, $workingDirectory, $overrides, $options->includePaths);
+
+        // Observed in this process alone: a worker's calls never reach it.
+        if ($options->observeTypes) {
+            if (($options->parallel ?? 1) > 1) {
+                print '--observe-types watches the calls of this process, so it cannot run with --parallel.' . PHP_EOL;
+
+                return 2;
+            }
+
+            ObservedRun::start($configuration->source, $workingDirectory);
+        }
 
         $emitter = new Emitter($this->clockFor($options));
 
@@ -866,7 +883,7 @@ final class RunTestsCommand
         // selecting option above still applies, which is what makes
         // `--list-tests --group slow` the useful form.
         if ($options->list !== null) {
-            $this->printListing($options->list, $groups, $configuration);
+            $this->printListing($options->list, $groups, $configuration, $workingDirectory);
 
             return 0;
         }
@@ -1099,6 +1116,10 @@ final class RunTestsCommand
         $vitest    = $vitestSuites;
         $types     = $typeSuites;
         $typeCache = $workingDirectory->absolute($cacheDirectory);
+
+        if ($options->observeTypes) {
+            $checks[] = new ObservedTypesCheck($typeCache);
+        }
 
         $afterTests = $configuration->commandGates === [] && $checks === [] && $vitest === [] && $types === []
             ? null
@@ -1877,14 +1898,39 @@ final class RunTestsCommand
      * for the same list, emitted directly rather than through the
      * reporting layer — it describes the plan, not a run.
      *
+     * ✓ The plain listings are PHPUnit 13.4.3's: a heading, singular for one
+     * entry or none (the files' always plural), each data set named, each
+     * group and suite with its count, an empty suite left out, a test in no
+     * group in `default`, and files by absolute path.
+     *
      * @param non-empty-string $what
      * @param list<TestGroup>  $groups
      */
-    private function printListing(string $what, array $groups, Configuration $configuration): void
+    private function printListing(string $what, array $groups, Configuration $configuration, WorkingDirectory $workingDirectory): void
     {
+        $counted = static fn(int $count): string => sprintf('%d test%s', $count, $count === 1 ? '' : 's');
+
         if ($what === 'suites') {
+            $counts = [];
+
             foreach ($configuration->testSuites as $suite) {
-                print ' - ' . $suite->name . PHP_EOL;
+                $count = 0;
+
+                foreach ($groups as $group) {
+                    foreach ($group->tests as $test) {
+                        $count += $this->inSuite($test->id->file, $suite, $workingDirectory) ? 1 : 0;
+                    }
+                }
+
+                if ($count > 0) {
+                    $counts[$suite->name] = $count;
+                }
+            }
+
+            print (count($counts) > 1 ? 'Available test suites:' : 'Available test suite:') . PHP_EOL;
+
+            foreach ($counts as $name => $count) {
+                print ' - ' . $name . ' (' . $counted($count) . ')' . PHP_EOL;
             }
 
             foreach ($configuration->vitest as $suite) {
@@ -1899,21 +1945,28 @@ final class RunTestsCommand
         }
 
         if ($what === 'groups') {
-            $names = [];
+            $counts = [];
 
             foreach ($groups as $group) {
                 foreach ($group->tests as $test) {
+                    $names = [];
+
                     foreach ($test->metadata->ofType(Group::class) as $membership) {
                         $names[$membership->name] = true;
+                    }
+
+                    foreach ($names === [] ? ['default'] : array_keys($names) as $name) {
+                        $counts[$name] = ($counts[$name] ?? 0) + 1;
                     }
                 }
             }
 
-            $names = array_keys($names);
-            sort($names);
+            ksort($counts);
 
-            foreach ($names as $name) {
-                print ' - ' . $name . PHP_EOL;
+            print (count($counts) > 1 ? 'Available test groups:' : 'Available test group:') . PHP_EOL;
+
+            foreach ($counts as $name => $count) {
+                print ' - ' . $name . ' (' . $counted($count) . ')' . PHP_EOL;
             }
 
             return;
@@ -1931,8 +1984,10 @@ final class RunTestsCommand
             $files = array_keys($files);
             sort($files);
 
+            print 'Available test files:' . PHP_EOL;
+
             foreach ($files as $file) {
-                print ' - ' . $file . PHP_EOL;
+                print ' - ' . $workingDirectory->absolute($file) . PHP_EOL;
             }
 
             return;
@@ -1960,13 +2015,53 @@ final class RunTestsCommand
 
         // tests and test-ids: the same list, named for a human or for a
         // --run-test-id round trip.
+        if ($what === 'tests') {
+            $total = 0;
+
+            foreach ($groups as $group) {
+                $total += count($group->tests);
+            }
+
+            print ($total > 1 ? 'Available tests:' : 'Available test:') . PHP_EOL;
+        }
+
         foreach ($groups as $group) {
             foreach ($group->tests as $test) {
                 print $what === 'test-ids'
                     ? $test->id->toString() . PHP_EOL
-                    : ' - ' . $group->name . '::' . $test->id->name . PHP_EOL;
+                    : ' - ' . $group->name . '::' . $test->id->name . $this->dataSetSuffix($test->id->dataset) . PHP_EOL;
             }
         }
+    }
+
+    /** A data set as PHPUnit's listing writes it: `#0` by number, `"name"` by name. */
+    private function dataSetSuffix(?string $dataset): string
+    {
+        if ($dataset === null) {
+            return '';
+        }
+
+        return ctype_digit($dataset) ? '#' . $dataset : '"' . $dataset . '"';
+    }
+
+    /** Whether a test file, project-relative, is one the suite selects. */
+    private function inSuite(string $file, TestSuite $suite, WorkingDirectory $workingDirectory): bool
+    {
+        $absolute = $workingDirectory->absolute($file);
+
+        foreach ($suite->files as $selected) {
+            if ($workingDirectory->absolute($selected) === $absolute) {
+                return true;
+            }
+        }
+
+        foreach ($suite->directories as $directory) {
+            if (str_starts_with($absolute, rtrim($workingDirectory->absolute($directory), '/') . '/')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

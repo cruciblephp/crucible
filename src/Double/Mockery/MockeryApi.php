@@ -82,7 +82,7 @@ final class MockeryApi
             return new IsType($valueType);
         }
 
-        /** @var class-string $expected the oracle's late-binding instanceof: an unknown name simply never matches */
+        // The oracle's late-binding instanceof: an unknown name simply never matches.
         return new IsInstanceOf($expected);
     }
 

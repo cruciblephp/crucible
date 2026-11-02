@@ -47,12 +47,28 @@ final class TestDoubles
     }
 
     /**
+     * A stub as PHPUnit's createStub() makes one: no expects(), no with().
+     *
+     * @template T of object
+     *
+     * @param non-empty-list<class-string<T>> $targets
+     *
+     * @return T&Mocked
+     */
+    public function stub(array $targets): object
+    {
+        /** @var T&Mocked */
+        return $this->fromSpecification(new DoubleSpecification($targets, mergeConfigurations: true, prefixArgumentMatching: true), stub: true);
+    }
+
+    /**
      * @param bool $advisesExpectations mock-flavored creation: no
      *                                  expects() by test end = advisory
+     * @param bool $stub                PHPUnit's stub: no expects(), no with()
      *
      * @return Mocked
      */
-    public function fromSpecification(DoubleSpecification $specification, bool $advisesExpectations = false): object
+    public function fromSpecification(DoubleSpecification $specification, bool $advisesExpectations = false, bool $stub = false): object
     {
         $doubleClass = $this->generator->classFor($specification);
         $reflection  = new ReflectionClass($doubleClass);
@@ -71,6 +87,7 @@ final class TestDoubles
             $advisesExpectations,
             mergeConfigurations: $specification->mergeConfigurations,
             prefixArgumentMatching: $specification->prefixArgumentMatching,
+            stub: $stub,
         );
 
         $reflection->getProperty('__crucibleState')->setValue($double, $state);

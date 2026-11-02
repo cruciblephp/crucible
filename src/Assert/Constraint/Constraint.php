@@ -12,7 +12,7 @@ namespace LucianoPereira\Crucible\Assert\Constraint;
 
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Assert\ComparisonFailure;
-use LucianoPereira\Crucible\Assert\Exporter;
+use LucianoPereira\Crucible\Assert\PhpUnitExporter;
 use ReflectionMethod;
 
 use function str_starts_with;
@@ -76,7 +76,7 @@ abstract class Constraint
 
         // The extra description goes on a line of its own, as the incumbent
         // writes it; one that starts with its own newline keeps it (D-147).
-        $failure    = $this->failureSentence($other);
+        $failure    = $this->ownFailure($other) ?? $this->failureSentence($other);
         $additional = $this->additionalFailureDescription($other);
 
         if ($additional !== '') {
@@ -90,9 +90,19 @@ abstract class Constraint
         throw new AssertionFailedError($failure, $this->comparison($other));
     }
 
+    /**
+     * A failure the constraint states in words of its own, apart from the
+     * description its negation reads: PHPUnit says `7 matches expected 8`
+     * and, negated, `7 is not equal to 7`.
+     */
+    protected function ownFailure(mixed $other): ?string
+    {
+        return null;
+    }
+
     protected function failureDescription(mixed $other): string
     {
-        return 'Failed asserting that ' . Exporter::describe($other) . ' ' . $this->toString() . '.';
+        return 'Failed asserting that ' . PhpUnitExporter::subject($other) . ' ' . $this->toString() . '.';
     }
 
     /**

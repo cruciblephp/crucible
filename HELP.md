@@ -335,6 +335,7 @@ what is written for machines, not what is shown to you.
 | `--coverage-text-summary` | Text report: totals only, no per-file rows |
 | `--coverage-text-uncovered` | Text report: keep the files with no covered line |
 | `--coverage-filter <dir>` | Add `dir` to the coverage scope, alongside `->source()` |
+| `--coverage-target <path>` | Report and judge `--min` on the files under `path` alone; repeatable |
 | `--disable-coverage-targeting` | Every test contributes all it executed, not only its declared targets |
 | `--disable-coverage-ignore` | Accepted: there is no coverage-ignore metadata to disable |
 | `--coverage-crap4j <file>` | Crap4J XML: complexity against coverage, per method |
@@ -550,6 +551,7 @@ for someone to discover they do nothing.
 | `--enforce-time-limit` | A test slower than its declared size allows is risky |
 | `--default-time-limit <sec>` | The budget for a test that declares no size |
 | `--disallow-test-output` | A test that prints output it did not expect is risky; `->beStrictAboutOutputDuringTests()` in `crucible.php` |
+| `--observe-types` | Records the types each source function receives and returns, writes `observed-types.json`, and fails the run on a phpdoc a test proved wrong; not with `--parallel` |
 | `--atleast-version <v>` | Exits `0` only if the running version is at least `<v>` |
 | `--check-version` | Reports that Crucible has no update channel, and exits `0` |
 | `--validate-configuration` | Checks that `crucible.php` loads and every path it names exists |

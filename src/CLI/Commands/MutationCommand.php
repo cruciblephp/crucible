@@ -16,6 +16,7 @@ use LucianoPereira\Crucible\CLI\CliOptions;
 use LucianoPereira\Crucible\Configuration\Loader;
 use LucianoPereira\Crucible\Console\Components\Progress;
 use LucianoPereira\Crucible\Coverage\MutationIndex;
+use LucianoPereira\Crucible\Coverage\SourceHashes;
 use LucianoPereira\Crucible\Coverage\TestLineMap;
 use LucianoPereira\Crucible\Dialect\PhpUnit\ClassLocator;
 use LucianoPereira\Crucible\Exceptions\Exception;
@@ -26,6 +27,7 @@ use LucianoPereira\Crucible\Mutation\CoveringTests;
 use LucianoPereira\Crucible\Mutation\EquivalentMarkers;
 use LucianoPereira\Crucible\Mutation\Mutant;
 use LucianoPereira\Crucible\Mutation\MutantApplier;
+use LucianoPereira\Crucible\Mutation\MutantDiff;
 use LucianoPereira\Crucible\Mutation\MutantGenerator;
 use LucianoPereira\Crucible\Mutation\MutationJournal;
 use LucianoPereira\Crucible\Mutation\MutationOutcome;
@@ -45,7 +47,6 @@ use function array_values;
 use function count;
 use function explode;
 use function file_get_contents;
-use function filemtime;
 use function implode;
 use function intdiv;
 use function is_file;
@@ -53,6 +54,7 @@ use function json_encode;
 use function ksort;
 use function md5;
 use function microtime;
+use function preg_replace;
 use function printf;
 use function realpath;
 use function rtrim;
@@ -60,6 +62,7 @@ use function sprintf;
 use function str_starts_with;
 use function strlen;
 use function substr;
+use function trim;
 
 use const JSON_PRETTY_PRINT;
 use const JSON_THROW_ON_ERROR;
@@ -173,7 +176,7 @@ final class MutationCommand
         $index   = MutationIndex::build($map, $durations);
         $covered = array_keys($index->toArray());
 
-        $this->warnIfCoverageStale($mapFile, $covered, $workingDirectory);
+        $this->warnIfCoverageStale($map, $covered, $workingDirectory);
 
         // Set up as a run does, before any suite file loads; the warm forks inherit it.
         try {
@@ -301,16 +304,22 @@ final class MutationCommand
         $bar->current = count($done);
         $bar->start();
 
+        $shown = [];
+
         (new MutationRunner($cold, $warm, $coveringIds))
-            ->run($pending, $this->progress($bar, $workingDirectory, $journal, $judgedBy, count($done), count($mutants)));
+            ->run($pending, $this->progress($bar, $workingDirectory, $journal, $judgedBy, count($done), count($mutants), $shown));
 
         $bar->finish();
+
+        // Every mutant is decided, so the journal can drop what this run
+        // did not generate and read as the report below.
+        $journal->keepOnly($mutants);
 
         // The report is the WHOLE run, read back from the journal: the
         // verdicts this process just appended plus the ones an earlier
         // one did. Scoring $report alone would rate a resumed run on
         // only the mutants it happened to finish.
-        return $this->printMutationReport(new MutationReport($journal->verdictsFor($mutants)), $workingDirectory);
+        return $this->printMutationReport(new MutationReport($journal->verdictsFor($mutants)), $workingDirectory, $shown);
     }
 
     /**
@@ -436,33 +445,24 @@ final class MutationCommand
     }
 
     /**
-     * Coverage that predates the source it maps is a lie — an escaped
+     * Coverage of a source that has changed since is a lie — an escaped
      * mutant might just be a covering test that no longer runs. Warn (not
-     * refuse: the user may know better) and name the drift.
+     * refuse: the user may know better) and name the drift, judged by
+     * each file's hash in the map rather than by its time.
      *
      * @param list<string>     $coveredFiles relative paths
      */
-    private function warnIfCoverageStale(string $mapFile, array $coveredFiles, WorkingDirectory $workingDirectory): void
+    private function warnIfCoverageStale(TestLineMap $map, array $coveredFiles, WorkingDirectory $workingDirectory): void
     {
-        $coverageTime = @filemtime($mapFile);
-
-        if ($coverageTime === false) {
-            return;
-        }
-
-        $stale = [];
+        $recorded = [];
 
         foreach ($coveredFiles as $relative) {
-            if ($relative === '') {
-                continue;
-            }
-
-            $sourceTime = @filemtime($workingDirectory->absolute($relative));
-
-            if ($sourceTime !== false && $sourceTime > $coverageTime) {
-                $stale[] = $relative;
+            if (isset($map->hashes[$relative])) {
+                $recorded[$relative] = $map->hashes[$relative];
             }
         }
+
+        $stale = SourceHashes::changed($workingDirectory->path, $recorded);
 
         if ($stale !== []) {
             printf(
@@ -489,16 +489,17 @@ final class MutationCommand
      * @param array<string, string> $judgedBy         mutant key => covering-tests fingerprint
      * @param int                   $resumed          verdicts an earlier run already decided
      * @param int                   $overall          mutants in the whole run, resumed included
+     * @param array<string, true>   $shown            filled with the key of every escape printed here
      *
      * @return Closure(MutationVerdict, int, int): void
      */
-    private function progress(Progress $bar, WorkingDirectory $workingDirectory, MutationJournal $journal, array $judgedBy, int $resumed, int $overall): Closure
+    private function progress(Progress $bar, WorkingDirectory $workingDirectory, MutationJournal $journal, array $judgedBy, int $resumed, int $overall, array &$shown): Closure
     {
         $started = microtime(true);
         $last    = 0.0;
         $escaped = 0;
 
-        return function (MutationVerdict $verdict, int $done, int $total) use ($bar, $workingDirectory, $journal, $judgedBy, $resumed, $overall, $started, &$last, &$escaped): void {
+        return function (MutationVerdict $verdict, int $done, int $total) use ($bar, $workingDirectory, $journal, $judgedBy, $resumed, $overall, $started, &$last, &$escaped, &$shown): void {
             $journal->append($verdict->mutant, $verdict, $judgedBy[MutationJournal::keyOf($verdict->mutant)] ?? '');
 
             // $done counts THIS process; the rate must too. Dividing the
@@ -515,14 +516,13 @@ final class MutationCommand
                 $escaped++;
 
                 // Through the bar, not print: an escape is history and has
-                // to scroll away above a frame that stays put. Without a
-                // bar on screen this is the same line it always was.
-                $bar->interrupt(sprintf(
-                    '  ESCAPED  %s:%d  %s',
-                    $this->relativeTo($verdict->mutant->file, $workingDirectory),
-                    $verdict->mutant->line,
-                    $verdict->mutant->mutatorId,
-                ));
+                // to scroll away above a frame that stays put. Printed here,
+                // it is left out of the final list, so a log holds it once.
+                foreach ($this->describe('ESCAPED', $verdict, $workingDirectory) as $line) {
+                    $bar->interrupt($line);
+                }
+
+                $shown[MutationJournal::keyOf($verdict->mutant)] = true;
             }
 
             $now = microtime(true);
@@ -628,42 +628,42 @@ final class MutationCommand
             : sprintf('%dm%02ds', intdiv($whole, 60), $whole % 60);
     }
 
-    private function printMutationReport(MutationReport $report, WorkingDirectory $workingDirectory): int
+    /**
+     * @param array<string, true> $shown escapes this process already printed
+     */
+    private function printMutationReport(MutationReport $report, WorkingDirectory $workingDirectory, array $shown): int
     {
-        $escaped = array_values(array_filter(
+        $of = static fn(MutationOutcome $outcome): array => array_values(array_filter(
             $report->verdicts,
-            static fn(MutationVerdict $verdict): bool => $verdict->outcome === MutationOutcome::Escaped,
+            static fn(MutationVerdict $verdict): bool => $verdict->outcome === $outcome,
         ));
 
-        foreach (array_slice($escaped, 0, 20) as $verdict) {
-            printf('  ESCAPED  %s:%d  %s' . PHP_EOL, $this->relativeTo($verdict->mutant->file, $workingDirectory), $verdict->mutant->line, $verdict->mutant->mutatorId);
-        }
-
-        if (count($escaped) > 20) {
-            printf('  … and %d more escaped.' . PHP_EOL, count($escaped) - 20);
-        }
-
-        if ($escaped !== []) {
-            print PHP_EOL;
-        }
-
-        $equivalent = array_values(array_filter(
-            $report->verdicts,
-            static fn(MutationVerdict $verdict): bool => $verdict->outcome === MutationOutcome::Equivalent,
-        ));
+        $escaped = $of(MutationOutcome::Escaped);
 
         // Declared equivalents are listed, never hidden (D-134): the
         // decision stays in front of whoever reads the report.
-        foreach (array_slice($equivalent, 0, 20) as $verdict) {
-            printf('  EQUIVALENT  %s:%d  %s — %s' . PHP_EOL, $this->relativeTo($verdict->mutant->file, $workingDirectory), $verdict->mutant->line, $verdict->mutant->mutatorId, (string) $verdict->reason);
-        }
+        $sections = [
+            ['ESCAPED', array_values(array_filter($escaped, static fn(MutationVerdict $verdict): bool => !isset($shown[MutationJournal::keyOf($verdict->mutant)]))), 'escaped'],
+            ['ERRORED', $of(MutationOutcome::Errored), 'errored'],
+            ['TIMED OUT', $of(MutationOutcome::TimedOut), 'timed out'],
+            ['NOT COVERED', $of(MutationOutcome::NotCovered), 'not covered'],
+            ['EQUIVALENT', $of(MutationOutcome::Equivalent), 'declared equivalent'],
+        ];
 
-        if (count($equivalent) > 20) {
-            printf('  … and %d more declared equivalent.' . PHP_EOL, count($equivalent) - 20);
-        }
+        foreach ($sections as [$label, $verdicts, $rest]) {
+            foreach (array_slice($verdicts, 0, 20) as $verdict) {
+                foreach ($this->describe($label, $verdict, $workingDirectory) as $line) {
+                    print $line . PHP_EOL;
+                }
+            }
 
-        if ($equivalent !== []) {
-            print PHP_EOL;
+            if (count($verdicts) > 20) {
+                printf('  … and %d more %s.' . PHP_EOL, count($verdicts) - 20, $rest);
+            }
+
+            if ($verdicts !== []) {
+                print PHP_EOL;
+            }
         }
 
         printf(
@@ -673,11 +673,54 @@ final class MutationCommand
             $report->count(MutationOutcome::Errored),
             $report->count(MutationOutcome::TimedOut),
             $report->count(MutationOutcome::NotCovered),
-            count($equivalent),
+            $report->count(MutationOutcome::Equivalent),
         );
         printf('MSI: %.1f%% over %d covered mutant(s).' . PHP_EOL, $report->score(), $report->covered());
 
         return $escaped === [] ? 0 : 1;
+    }
+
+    /**
+     * One verdict as report lines: where and which mutator, the reason on
+     * the same line, and the change itself for a mutant that survived.
+     *
+     * @return non-empty-list<string>
+     */
+    private function describe(string $label, MutationVerdict $verdict, WorkingDirectory $workingDirectory): array
+    {
+        $mutant = $verdict->mutant;
+        $reason = $verdict->reason === null ? '' : ' — ' . $this->firstLine($verdict->reason);
+        $lines  = [sprintf('  %s  %s:%d  %s%s', $label, $this->relativeTo($mutant->file, $workingDirectory), $mutant->line, $mutant->mutatorId, $reason)];
+
+        if ($verdict->outcome === MutationOutcome::Escaped) {
+            $original = @file_get_contents($mutant->file);
+
+            foreach ($original === false ? [] : MutantDiff::of($original, $mutant->mutatedSource) as $change) {
+                $lines[] = '      ' . $change;
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * The first line of a reason, without PHP's `Fatal error:` prefix or
+     * the temporary file the mutant was loaded from: the trace stays in
+     * the journal.
+     */
+    private function firstLine(string $reason): string
+    {
+        foreach (explode("\n", $reason) as $line) {
+            $line = trim($line);
+
+            if ($line !== '') {
+                $line = (string) preg_replace('/^(PHP )?(Fatal|Parse) error: +/', '', $line);
+
+                return (string) preg_replace('/ in \S*crucible-mutant-\S* on line \d+$/', '', $line);
+            }
+        }
+
+        return $reason;
     }
 
     private function relativeTo(string $file, WorkingDirectory $workingDirectory): string

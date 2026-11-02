@@ -13,6 +13,7 @@ namespace LucianoPereira\Crucible\Assert\Constraint;
 use DOMDocument;
 use LucianoPereira\Crucible\Assert\ComparisonFailure;
 use LucianoPereira\Crucible\Assert\Differ;
+use LucianoPereira\Crucible\Assert\PhpUnitExporter;
 use LucianoPereira\Crucible\Assert\XmlException;
 use Override;
 
@@ -51,8 +52,31 @@ final class XmlEqualsXml extends Constraint
 
     public function toString(): string
     {
-        return 'is equal XML to the expected document'
-            . ($this->withComments ? ' considering comments' : '');
+        return 'is equal to ' . PhpUnitExporter::export($this->document($this->expected));
+    }
+
+    #[Override]
+    protected function ownFailure(mixed $other): string
+    {
+        return 'Failed asserting that two DOM documents are equal.';
+    }
+
+    /** Negated, PHPUnit writes the two documents: `DOMDocument Object #1 () is not equal to DOMDocument Object #2 ()`. */
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return 'Failed asserting that ' . PhpUnitExporter::export(is_string($other) ? $this->document($other) : $other) . ' ' . $this->toString() . '.';
+    }
+
+    private function document(string $xml): DOMDocument
+    {
+        $document = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        @$document->loadXML($xml);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        return $document;
     }
 
     #[Override]

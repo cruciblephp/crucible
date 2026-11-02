@@ -19,7 +19,10 @@ use function preg_quote;
 use function preg_replace_callback;
 use function preg_split;
 use function str_contains;
+use function str_ends_with;
 use function str_replace;
+use function str_starts_with;
+use function substr;
 
 use const PREG_SPLIT_DELIM_CAPTURE;
 
@@ -39,9 +42,9 @@ final class LogicalNot extends Constraint
         'is '          => 'is not ',
         'are '         => 'are not ',
         'matches '     => 'does not match ',
-        'starts with ' => 'starts not with ',
-        'ends with '   => 'ends not with ',
-        'reference '   => "don't reference ",
+        'starts with ' => 'does not start with ',
+        'ends with '   => 'does not end with ',
+        'reference '   => 'do not reference ',
     ];
 
     public function __construct(
@@ -81,11 +84,15 @@ final class LogicalNot extends Constraint
     #[Override]
     protected function failureDescription(mixed $other): string
     {
-        if (self::writesItsOwnSentence($this->constraint)) {
-            return parent::failureDescription($other);
+        $positive = $this->constraint->failureDescription($other);
+
+        // ✓ PHPUnit 13.4.3 negates the constraint's own description,
+        // its value written as that constraint writes it.
+        if (self::writesItsOwnSentence($this->constraint) && str_starts_with($positive, 'Failed asserting that ') && str_ends_with($positive, '.')) {
+            $positive = substr($positive, 22, -1);
         }
 
-        return 'Failed asserting that ' . $this->negate($this->constraint->failureDescription($other)) . '.';
+        return 'Failed asserting that ' . $this->negate($positive) . '.';
     }
 
     /**

@@ -47,6 +47,12 @@ final class StringMatchesFormat extends Constraint
         return sprintf('matches format "%s"', $this->format);
     }
 
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return 'Failed asserting that string matches format description.';
+    }
+
     /**
      * @return non-empty-string
      */

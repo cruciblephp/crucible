@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-10-24 (D-001..D-159, 1.1.8). Every entry traces to a `DESIGN.md` decision
+_As of 2026-10-26 (D-001..D-168, 1.2.0). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -380,6 +380,20 @@ against Crucible's own class only._
 | `No tests found` names the classes left out by the compatibility aliases being off; `migrate-config` turns them on with PHPUnit installed (D-156) | `CLI\Commands\RunTestsCommand::incumbentTestClasses()`, `Configuration\XmlMigrator` |
 | PHPStan's result cache follows `Pest.php`, per file; `->in(__DIR__)` resolves in the analysis; PHPStan 2.3 is the declared minimum (D-157) | `PHPStan\DialectThisResolver::forScope()`, `PHPStan\UsesResolver` |
 | `toBeList()` and `assertIsList()` narrow as PHPStan with phpstan-src#6800, on every supported version (D-158) | `PHPStan\ExpectationNarrowing::listOf()` |
+
+## 1.2.0
+
+| Shipped | Records |
+|---|---|
+| `mutate` runs a `match` arm's mutant against the tests of its whole `match`, prints each escape once with the lines it changed, lists errored, timed-out and not-covered mutants, and leaves the journal holding the last finished run (D-160) | `Mutation\CoveringTests`, `Mutation\MutantDiff`, `Mutation\MutationJournal::keepOnly()`, `CLI\Commands\MutationCommand` |
+| The cache is a documented format: `manifest.json`, hashed version 2 coverage maps, and the stale-coverage warning by hash (D-161) | `Coverage\CacheManifest`, `Coverage\SourceHashes`, spec/cache-formats.md |
+| A failing mock reads as PHPUnit's: count windows, the call shortened as PHPUnit writes it, a rejected `with()` failing at the call, omitted arguments compared as their defaults (D-162) | `Double\PhpUnitInvocation`, `Double\MethodConfigurator`, `Double\DoubleState::rejectMismatch()` |
+| `--observe-types`: the phpdocs a run proves wrong fail it, and `observed-types.json` records what each function received and returned (D-163) | `Types\Observed\ObservedRun`, `Types\Observed\Observer`, `Types\Observed\ObservedTypesCheck` |
+| Data sets numbered, tests listed and the testdox file written as PHPUnit does (D-164) | `Dialect\PhpUnit\TestBuilder`, `CLI\Commands\RunTestsCommand::printListing()`, `Reporting\TestDoxDocument::text()` |
+| A failing assertion reads as its dialect's incumbent: PHPUnit's sentences and value export, Pest's negations and matcher failures (D-165) | `Assert\PhpUnitExporter`, `Assert\Constraint\Constraint::ownFailure()`, `Assert\Constraint\LogicalOr`, `Dialect\Pest\Expectation` |
+| `createStub()` makes a stub with no `expects()` or `with()`, and a mock refuses a second `with()` per method (D-166) | `Double\TestDoubles::stub()`, `Double\DoubleState` |
+| A `#[\SensitiveParameter]` value stays out of `table()` case names and property counterexamples (D-167) | `Assert\SensitiveArguments` |
+| Coverage floored as PHPUnit prints it, missed lines as runs, `--coverage-target` (D-168) | `Coverage\CoveragePercent`, `Coverage\CoverageData::narrowedTo()`, `Coverage\TextReport` |
 
 ## Design inputs honored
 

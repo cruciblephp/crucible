@@ -161,11 +161,11 @@ $repeatLog = new ArrayObject();
 
 \test('not()->toContain() with multiple needles, all present', function (): void {
     \expect(['a', 'b'])->not()->toContain('a', 'b');
-})->fails('contains all of');
+})->fails("not to contain 'a' 'b'.");
 
 \test('not()->toHaveKeys() fails as soon as any single key is found, even last in the list', function (): void {
     \expect(['a' => 1, 'b' => 2])->not()->toHaveKeys(['y', 'a']);
-})->fails("not to have the key 'a'");
+})->fails("not to have key 'a'.");
 
 \test('not()->toHaveProperties() fails only when every property is present', function (): void {
     $subject = new class {

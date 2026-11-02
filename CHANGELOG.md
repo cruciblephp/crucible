@@ -2,6 +2,40 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.2.0 — 2026-10-26
+
+- Fixed a mutant in a `match` arm escaping although a test kills it: coverage marks an arm's line unrun whenever another arm matched, so the mutant now runs the tests of every line of its `match`
+- Fixed a mutant that cannot compile printing PHP's fatal error and stack trace between the progress lines: it is an errored verdict whose reason is printed on one line
+- Added the changed lines under each escaped mutant, so a line with several operators says which change survived
+- Added the errored, timed-out and not-covered mutants to the `mutate` report, listed as escaped ones are
+- Changed `mutate` to print each escaped mutant once: one printed while running is left out of the final list
+- Changed `mutation-verdicts.ndjson` to hold only the verdicts of the last run that finished, one line per mutant
+- Added `manifest.json` to the cache directory, listing each artifact with its format version and hash, and the formats' specification in spec/cache-formats.md
+- Changed `coverage-lines.json` and `coverage-map.json` to version 2, recording each file's hash; a version 1 map is read as empty, so the first coverage run after updating rebuilds it
+- Changed `mutate` to warn about stale coverage by each covered file's hash instead of its modification time
+- Fixed a mock whose `with()` rejected a call failing as if the method had never been called: the call fails when it is made, naming the parameter, as PHPUnit does
+- Changed mock failures to PHPUnit's words: `was expected to be invoked once but was never invoked`, `was not expected to be called more than once, actually called 2 times`, with the call written as PHPUnit shortens it
+- Fixed `atMost()` failing at the call that exceeded it: it is judged when the test ends, as PHPUnit does
+- Fixed an omitted optional argument failing a mock's `with()` that names its default: it is compared as the default, as PHPUnit does
+- Fixed a mock's rejected call that the code under test caught passing the test: it is reported again when the test ends
+- Added `--observe-types`: the suite runs with the source watched, every phpdoc a test proves wrong fails the run with the value that disproved it, and the types each function received and returned are written to `observed-types.json`
+- Fixed `toMatchShape()` and `assertMatchesShape()` refusing a trait's name as a `class-string`, which PHPStan accepts
+- Fixed `class-string<A&B>` and `class-string<A|B>` refusing every value: a class of the intersection or union is accepted, as PHPStan does
+- Fixed the unnamed rows of a data provider being numbered with the named ones counted: they are `#0`, `#1` among themselves, across providers and `#[TestWith]`, as PHPUnit numbers them, so their ids, filters and cached results change
+- Changed `--list-tests` to name each data set, and the listings to PHPUnit's headings, counts, `default` group and absolute file paths
+- Changed `--testdox-text` to write PHPUnit's file: the class in the heading, `[x]` and `[ ]` marks, no tally
+- Changed every assertion's failure to PHPUnit's sentence, values written as PHPUnit writes them: `7 matches expected 8`, `Array &0 [...] contains only values of type "int"`, `file "/tmp/x" exists`
+- Fixed `assertInstanceOf()` with a type that does not exist, and `assertCount()` of a generator, failing instead of erroring as PHPUnit does
+- Changed a negated Pest expectation to fail in Pest's words, `Expecting 'a' not to be 'a'.`, and `toBeBetween()`, `toBeIn()`, `toHaveLength()`, `toMatchArray()`, `toMatchObject()`, `toHaveKey()` and `toThrow()` to Pest's failures
+- Fixed `not->toHaveKey($key, $value)` failing when the key holds another value: it passes, as in Pest
+- Fixed an unknown method on an expectation of a value that is no object failing instead of throwing Pest's `BadMethodCallException`
+- Changed `createStub()` to make a stub as PHPUnit does, with no `expects()` and no `with()`, and a mock to refuse a second `with()` for one method with PHPUnit's `MethodParametersAlreadyConfiguredForAnotherMatcherException`
+- Fixed `createStubForIntersectionOfInterfaces()` making a mock
+- Changed a `table()` case's name and a property's counterexample to write a value passed to a `#[\SensitiveParameter]` as PHP's trace writes it, `Object(SensitiveParameterValue)`
+- Fixed a coverage score being rounded up, so 99.996% passed `--min=100`: it is floored at two places as PHPUnit prints it, and the floor is compared as displayed (from laravel-module-test)
+- Added the missed lines to each row of the coverage text report, as runs: `12..18, 30` (from laravel-module-test)
+- Added `--coverage-target <path>`, which reports and judges `--min` on the files under a path alone (from laravel-module-test)
+
 ## v1.1.8 — 2026-10-24
 
 - Fixed `->env()` replacing a variable the environment already defines: it is kept unless `force: true`, and `$_SERVER` is never written, as PHPUnit's `<env>` does; `migrate-config` carries `force="true"` over

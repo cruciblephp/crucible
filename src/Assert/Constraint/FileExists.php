@@ -14,6 +14,7 @@ use Override;
 
 use function is_file;
 use function is_string;
+use function sprintf;
 
 final class FileExists extends Constraint
 {
@@ -25,6 +26,12 @@ final class FileExists extends Constraint
 
     public function toString(): string
     {
-        return 'file exists';
+        return 'exists';
+    }
+
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return sprintf('Failed asserting that file "%s" %s.', is_string($other) ? $other : '', $this->toString());
     }
 }

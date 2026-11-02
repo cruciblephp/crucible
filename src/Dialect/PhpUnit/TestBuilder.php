@@ -407,18 +407,14 @@ final readonly class TestBuilder
                     ));
                 }
 
-                $name = is_string($key) ? $key : (string) $index;
-
-                yield $name => array_values($row);
-
-                $index++;
+                // ✓ PHPUnit 13.4.3 numbers the unnamed rows alone, across
+                // every provider: ['a' => …, …, 5 => …] is "a", #0, #1.
+                yield (is_string($key) ? $key : (string) $index++) => array_values($row);
             }
         }
 
         foreach ($inline as $row) {
-            yield ($row->name ?? (string) $index) => array_values($row->data);
-
-            $index++;
+            yield ($row->name ?? (string) $index++) => array_values($row->data);
         }
 
         foreach ($inlineJson as $row) {
@@ -432,9 +428,7 @@ final readonly class TestBuilder
                 ));
             }
 
-            yield ($row->name ?? (string) $index) => array_values($decoded);
-
-            $index++;
+            yield ($row->name ?? (string) $index++) => array_values($decoded);
         }
     }
 

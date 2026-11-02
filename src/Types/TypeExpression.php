@@ -13,6 +13,7 @@ namespace LucianoPereira\Crucible\Types;
 use LucianoPereira\Crucible\Assert\Exporter;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 
+use function array_filter;
 use function array_is_list;
 use function array_key_exists;
 use function array_keys;
@@ -41,6 +42,7 @@ use function sprintf;
 use function str_contains;
 use function strtolower;
 use function substr;
+use function trait_exists;
 
 /**
  * A PHPStan type string, read at run time (D-131): the one type a
@@ -279,7 +281,7 @@ final readonly class TypeExpression
             'non-empty-array'                   => is_array($value) && $value !== [],
             'non-empty-list'                    => is_array($value) && $value !== [] && array_is_list($value),
             'array-key'                         => is_int($value) || is_string($value),
-            'class-string'                      => is_string($value) && (class_exists($value) || interface_exists($value) || enum_exists($value)),
+            'class-string'                      => is_string($value) && (class_exists($value) || interface_exists($value) || enum_exists($value) || trait_exists($value)),
             'resource'                          => is_resource($value),
             'empty'                             => empty($value),
             default                             => false,
@@ -292,9 +294,21 @@ final readonly class TypeExpression
     {
         $class = $this->children[0] ?? null;
 
-        return is_string($value) && $class?->kind === 'class' && is_a($value, $class->name, true)
+        return is_string($value) && $class instanceof self && $class->admitsClass($value)
             ? null
             : $this->expected($path, $this->describe(), $value);
+    }
+
+    /** Whether the class named $class is of this type: a class, or an intersection or union of them. */
+    private function admitsClass(string $class): bool
+    {
+        return match ($this->kind) {
+            'class'        => is_a($class, $this->name, true),
+            'intersection' => array_filter($this->children, static fn(self $member): bool => !$member->admitsClass($class)) === [],
+            'union'        => array_filter($this->children, static fn(self $member): bool => $member->admitsClass($class)) !== [],
+            'keyword'      => in_array($this->name, ['object', 'mixed'], true) && (class_exists($class) || interface_exists($class) || enum_exists($class)),
+            default        => false,
+        };
     }
 
     private function rangeMismatch(mixed $value, string $path): ?string

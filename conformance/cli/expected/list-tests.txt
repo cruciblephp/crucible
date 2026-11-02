@@ -1,13 +1,14 @@
 argv: --list-tests
 exit: 0
 --- stdout
-crucible 1.1.6 by Luciano Federico Pereira.
+crucible 1.2.0 by Luciano Federico Pereira.
 
 Configuration: <project>/crucible.php
 
+Available tests:
  - CalculatorTest::testAdds
  - CalculatorTest::testMultiplies
- - tests/strings.pest.php::uppercases
- - tests/strings.pest.php::uppercases
+ - tests/strings.pest.php::uppercases"lower"
+ - tests/strings.pest.php::uppercases"mixed"
 --- stderr
 

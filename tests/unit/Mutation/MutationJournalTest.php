@@ -17,12 +17,15 @@ use LucianoPereira\Crucible\Mutation\MutationJournal;
 use LucianoPereira\Crucible\Mutation\MutationOutcome;
 use LucianoPereira\Crucible\Mutation\MutationVerdict;
 
+use function file;
 use function file_put_contents;
 use function getmypid;
 use function is_file;
 use function json_encode;
 use function sys_get_temp_dir;
 use function unlink;
+
+use const FILE_IGNORE_NEW_LINES;
 
 /**
  * The journal that makes a killed mutation run resumable.
@@ -130,6 +133,36 @@ final class MutationJournalTest extends TestCase
      * logical` twice in one measured run — so keying on it would make a
      * resumed run skip a mutant it had never decided.
      */
+    public function testAReportedVerdictCarriesTheMutantOfTheRunThatAskedForIt(): void
+    {
+        $mutant = $this->mutant('<?php $a = 1 - 2;');
+
+        MutationJournal::load($this->path)->append($mutant, MutationVerdict::escaped($mutant, 0.1), 'judge-a');
+
+        self::assertSame('<?php $a = 1 - 2;', MutationJournal::load($this->path)->verdictsFor([$mutant])[0]->mutant->mutatedSource);
+    }
+
+    public function testKeepingOnlyAScopeLeavesOneLinePerMutantOfIt(): void
+    {
+        $kept   = $this->mutant('<?php $a = 1 - 2;');
+        $gone   = $this->mutant('<?php $a = 1 * 2;');
+        $before = MutationJournal::load($this->path);
+
+        $before->append($kept, MutationVerdict::notCovered($kept), 'judge-a');
+        $before->append($gone, MutationVerdict::escaped($gone, 0.1), 'judge-a');
+        $before->append($kept, MutationVerdict::killed($kept, 't.php::a', 0.1), 'judge-b');
+
+        $journal = MutationJournal::load($this->path);
+        $journal->keepOnly([$kept]);
+
+        $lines = file($this->path, FILE_IGNORE_NEW_LINES);
+
+        self::assertIsArray($lines);
+        self::assertCount(1, $lines, 'the superseded verdict and the mutant out of scope are gone');
+        self::assertTrue(MutationJournal::load($this->path)->has($kept, 'judge-b'));
+        self::assertFalse(is_file($this->path . '.partial'));
+    }
+
     public function testTwoMutantsOnOneLineAreTwoEntries(): void
     {
         $first  = $this->mutant('<?php $a = 1 + 2;');

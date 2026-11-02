@@ -110,7 +110,7 @@ final readonly class HtmlReport
             }
 
             $branches = CoverageData::branchCounts($data->branches[$file] ?? []);
-            $percent  = $executable > 0 ? 100 * $covered / $executable : 0.0;
+            $percent  = CoveragePercent::of($covered, $executable);
 
             if (!$this->withoutFileView) {
                 $this->writeFilePage($directory, $relative, $file, $values, $data->branches[$file] ?? []);
@@ -142,7 +142,7 @@ final readonly class HtmlReport
 
         $totals       = $data->totals();
         $branchTotals = $data->branchTotals();
-        $totalPercent = $totals['executable'] > 0 ? 100 * $totals['covered'] / $totals['executable'] : 0.0;
+        $totalPercent = CoveragePercent::of($totals['covered'], $totals['executable']);
 
         $index = sprintf(
             "<!DOCTYPE html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\"><title>Crucible coverage</title><style>%s</style></head>\n<body>\n<h1>%sCrucible coverage <small>(%s)</small></h1>\n<table>\n<tr><th>File</th><th></th><th>Lines</th><th>Covered</th>%s</tr>\n%s<tr class=\"total\"><td>Total</td><td><span class=\"bar\"><span style=\"width:%.0f%%\"></span></span></td><td class=\"num\">%.2f%%</td><td class=\"num\">%d/%d</td>%s</tr>\n</table>\n</body>\n</html>\n",

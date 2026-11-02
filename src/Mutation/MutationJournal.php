@@ -15,18 +15,20 @@ use function dirname;
 use function explode;
 use function fclose;
 use function file_get_contents;
+use function file_put_contents;
 use function fopen;
 use function fwrite;
 use function is_array;
 use function is_dir;
 use function is_file;
 use function is_float;
-use function is_int;
 use function is_string;
 use function json_decode;
 use function json_encode;
 use function md5;
 use function mkdir;
+use function rename;
+use function unlink;
 
 use const JSON_THROW_ON_ERROR;
 
@@ -167,6 +169,36 @@ final class MutationJournal
     }
 
     /**
+     * Rewrite the file to hold the verdicts of $scope alone, once a run has
+     * decided all of them, so what is on disk is the report just printed.
+     * Written beside and renamed over, so a kill mid-write keeps the old file.
+     *
+     * @param list<Mutant> $scope
+     */
+    public function keepOnly(array $scope): void
+    {
+        $wanted = [];
+
+        foreach ($scope as $mutant) {
+            $wanted[self::keyOf($mutant)] = true;
+        }
+
+        $kept = '';
+
+        foreach ($this->entries as $hash => $entry) {
+            if (isset($wanted[$hash])) {
+                $kept .= json_encode($entry, JSON_THROW_ON_ERROR) . "\n";
+            }
+        }
+
+        $partial = $this->path . '.partial';
+
+        if (@file_put_contents($partial, $kept) === false || !@rename($partial, $this->path)) {
+            @unlink($partial);
+        }
+    }
+
+    /**
      * The recorded verdicts for THIS run's mutants, rebuilt for the report.
      *
      * ⚠ Scoped, and the scope is the point. A journal outlives the source
@@ -176,10 +208,8 @@ final class MutationJournal
      * report of 4143 — ✓ measured 2026-09-20, a score over a denominator
      * that included dead mutants.
      *
-     * ⚠ The Mutant carried by each of these has an EMPTY mutatedSource.
-     * It exists to be printed — file, line, mutator — and must never be
-     * handed to an executor. A resumed run skips these mutants precisely
-     * because their verdict is already known.
+     * Each verdict carries the scope's own Mutant, mutated source
+     * included, so a resumed verdict prints its change as a fresh one does.
      *
      * @param list<Mutant> $scope the mutants this run generated
      *
@@ -190,7 +220,7 @@ final class MutationJournal
         $wanted = [];
 
         foreach ($scope as $mutant) {
-            $wanted[self::keyOf($mutant)] = true;
+            $wanted[self::keyOf($mutant)] = $mutant;
         }
 
         $verdicts = [];
@@ -201,21 +231,12 @@ final class MutationJournal
             }
 
             $outcome = MutationOutcome::tryFrom(is_string($entry['outcome'] ?? null) ? $entry['outcome'] : '');
-            $file    = $entry['file'] ?? null;
-            $class   = $entry['class'] ?? null;
-            $line    = $entry['line'] ?? null;
-            $mutator = $entry['mutator'] ?? null;
 
-            if (!$outcome instanceof MutationOutcome
-                || !is_string($file) || $file === ''
-                || !is_string($class) || $class === ''
-                || !is_int($line) || $line < 1
-                || !is_string($mutator) || $mutator === ''
-            ) {
+            if (!$outcome instanceof MutationOutcome) {
                 continue;
             }
 
-            $mutant   = new Mutant($file, $class, $line, $mutator, '');
+            $mutant   = $wanted[$hash];
             $duration = is_float($entry['duration'] ?? null) ? $entry['duration'] : 0.0;
             $killedBy = $entry['killedBy'] ?? null;
             $reason   = $entry['reason'] ?? null;

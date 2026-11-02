@@ -10,10 +10,12 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Tests\Double;
 
+use Error;
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Attributes\CoversClass;
 use LucianoPereira\Crucible\Double\DoubleCreationException;
 use LucianoPereira\Crucible\Double\Generator;
+use LucianoPereira\Crucible\Double\MethodParametersAlreadyConfiguredForAnotherMatcherException;
 use LucianoPereira\Crucible\Double\TestDoubles;
 use LucianoPereira\Crucible\Framework\TestCase;
 use RuntimeException;
@@ -71,14 +73,25 @@ final class DoubleTest extends TestCase
         $this->assertSame('', $transport->name());
     }
 
-    public function testWithMatchersSelectBehaviorPerArguments(): void
+    /** ✓ PHPUnit 13.4.3: with() is an expectation; a stub has none, and a mock takes one per method. */
+    public function testWithIsAnExpectationAndNeverChoosesAReturnValue(): void
     {
-        $mailer = $this->createStub(Mailer::class);
-        $mailer->method('send')->willReturn(false);
-        $mailer->method('send')->with('vip@x.com', $this->stringStartsWithConstraint())->willReturn(true);
+        $mock = $this->createMock(Mailer::class);
+        $mock->method('send')->with('vip@x.com', $this->stringStartsWithConstraint())->willReturn(true);
 
-        $this->assertTrue($mailer->send('vip@x.com', 'urgent: hello'));
-        $this->assertFalse($mailer->send('other@x.com', 'urgent: hello'));
+        try {
+            $mock->method('send')->with('other@x.com', $this->stringStartsWithConstraint())->willReturn(false);
+            $this->fail('a second with() for send() was taken');
+        } catch (MethodParametersAlreadyConfiguredForAnotherMatcherException $refused) {
+            $this->assertStringStartsWith('Parameters for method "send" are already configured for another matcher.', $refused->getMessage());
+        }
+
+        $this->assertTrue($mock->send('vip@x.com', 'urgent: hello'));
+
+        $this->expectException(Error::class);
+        $this->expectExceptionMessage('::with()');
+
+        $this->createStub(Mailer::class)->method('send')->with('vip@x.com');
     }
 
     public function testConsecutiveCallsMapAndThrow(): void
@@ -161,7 +174,7 @@ final class DoubleTest extends TestCase
         $mailer->expects($this->once())->method('send');
 
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage('send() was expected to be called once, but was called 0 time(s).');
+        $this->expectExceptionMessage(Mailer::class . '::send() was expected to be invoked once but was never invoked.');
 
         $doubles->verify();
     }

@@ -42,7 +42,7 @@ final class StringEqualsStringIgnoringWhitespace extends Constraint
 
     public function toString(): string
     {
-        return 'is equal to ' . Exporter::describe($this->expected) . ' ignoring whitespace';
+        return 'is equal to "' . self::normalize($this->expected) . '" ignoring whitespace';
     }
 
     protected function comparison(mixed $other): ?ComparisonFailure

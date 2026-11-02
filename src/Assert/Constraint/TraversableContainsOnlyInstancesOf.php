@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Assert\Constraint;
 
+use LucianoPereira\Crucible\Assert\PhpUnitExporter;
 use Override;
 
 use function is_iterable;
@@ -41,6 +42,12 @@ final class TraversableContainsOnlyInstancesOf extends Constraint
 
     public function toString(): string
     {
-        return 'contains only instances of ' . $this->className;
+        return 'contains only values of type "' . $this->className . '"';
+    }
+
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return 'Failed asserting that ' . PhpUnitExporter::export($other) . ' ' . $this->toString() . '.';
     }
 }

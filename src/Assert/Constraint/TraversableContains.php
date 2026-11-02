@@ -10,9 +10,10 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Assert\Constraint;
 
-use LucianoPereira\Crucible\Assert\Exporter;
+use LucianoPereira\Crucible\Assert\PhpUnitExporter;
 use Override;
 
+use function is_array;
 use function is_iterable;
 
 /**
@@ -46,6 +47,12 @@ final class TraversableContains extends Constraint
 
     public function toString(): string
     {
-        return 'contains ' . Exporter::describe($this->needle);
+        return 'contains ' . PhpUnitExporter::export($this->needle);
+    }
+
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return 'Failed asserting that ' . (is_array($other) ? 'an array' : 'a traversable') . ' ' . $this->toString() . '.';
     }
 }

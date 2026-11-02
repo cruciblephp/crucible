@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Reporting;
 
+use LucianoPereira\Crucible\Dialect\PhpUnit\ClassLocator;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunFinished;
 use LucianoPereira\Crucible\Event\TestFinished;
@@ -18,6 +19,9 @@ use LucianoPereira\Crucible\Version;
 
 use function array_any;
 use function htmlspecialchars;
+use function in_array;
+use function is_file;
+use function preg_replace;
 use function sprintf;
 use function strtolower;
 
@@ -42,22 +46,33 @@ final class TestDoxDocument
         $this->finished[] = $event;
     }
 
-    public function text(RunFinished $event): string
+    /**
+     * ✓ The file PHPUnit 13.4.3 writes for `--testdox-text`, a format a
+     * reader may parse: each class as `Prettified (Namespace\Class)`, the
+     * `Test` suffix dropped from both, ` [x] ` for a test that passed, a risky one
+     * included, and ` [ ] ` for any other, a blank line after each class, and no tally.
+     * A file that declares no class, a Pest file, keeps its path.
+     */
+    public function text(): string
     {
-        $model  = new RunModel($this->finished);
-        $output = '';
+        $model   = new RunModel($this->finished);
+        $locator = new ClassLocator();
+        $output  = '';
 
         foreach ($model->sections as $file => $finished) {
-            $output .= sprintf("%s (%s)\n", PrettyName::ofFile($file), $file);
+            $class = is_file($file) ? $locator->classIn($file) : null;
+            $named = $class === null ? $file : (string) preg_replace('/Test$/', '', $class);
+
+            $output .= sprintf("%s (%s)\n", PrettyName::ofFile($file), $named);
 
             foreach ($finished as $test) {
-                $output .= sprintf(" %s %s\n", $this->mark($test), PrettyName::ofTest($test->test));
+                $output .= sprintf(' [%s] %s' . "\n", in_array($test->outcome, [Outcome::Passed, Outcome::Risky], true) && !$test->blocked ? 'x' : ' ', PrettyName::ofTest($test->test));
             }
 
             $output .= "\n";
         }
 
-        return $output . $this->summary($event);
+        return $output;
     }
 
     public function html(RunFinished $event): string

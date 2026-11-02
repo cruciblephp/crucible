@@ -14,6 +14,7 @@ use Override;
 
 use function is_readable;
 use function is_string;
+use function sprintf;
 
 final class IsReadable extends Constraint
 {
@@ -26,5 +27,11 @@ final class IsReadable extends Constraint
     public function toString(): string
     {
         return 'is readable';
+    }
+
+    #[Override]
+    protected function failureDescription(mixed $other): string
+    {
+        return sprintf('Failed asserting that "%s" %s.', is_string($other) ? $other : '', $this->toString());
     }
 }

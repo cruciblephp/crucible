@@ -16,6 +16,7 @@ use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Assert\Constraint\Constraint;
 use LucianoPereira\Crucible\Assert\Constraint\IsEqual;
 use LucianoPereira\Crucible\Assert\Constraint\IsTrue;
+use ReflectionMethod;
 use Throwable;
 
 use function array_last;
@@ -46,18 +47,28 @@ final class MethodConfigurator
 
     private int $invocations = 0;
 
+    /** The first argument mismatch reported, reported again at verification. */
+    private ?string $mismatch = null;
+
     /**
-     * @param ?list<non-empty-string> $configurable           methods the double's
-     *                                                        specification doubled; null = all
-     * @param bool                    $prefixArgumentMatching with() constraints match as a
-     *                                                        positional prefix, not exact arity
-     *                                                        (off = Mockery's oracle-pinned exact
-     *                                                        match; see DoubleSpecification)
+     * @param ?list<non-empty-string>                                    $configurable           methods the double's
+     *                                                                                           specification doubled; null = all
+     * @param bool                                                       $prefixArgumentMatching with() constraints match as a
+     *                                                                                           positional prefix, not exact arity
+     *                                                                                           (off = Mockery's oracle-pinned exact
+     *                                                                                           match; see DoubleSpecification)
+     * @param ?Closure(non-empty-string, ?list<mixed>): string           $invocation             the PHPUnit grammar's call text,
+     *                                                                                           `Class::method()` without arguments;
+     *                                                                                           given, failures read as PHPUnit's
+     * @param ?Closure(self): void                                       $beforeWith             the PHPUnit grammar's refusals of a
+     *                                                                                           with(), asked before it is taken
      */
     public function __construct(
         private ?InvocationCount $count = null,
         private readonly ?array $configurable = null,
         private readonly bool $prefixArgumentMatching = false,
+        private readonly ?Closure $invocation = null,
+        private readonly ?Closure $beforeWith = null,
     ) {}
 
     /**
@@ -105,6 +116,10 @@ final class MethodConfigurator
      */
     public function with(mixed ...$arguments): self
     {
+        if ($this->beforeWith instanceof Closure) {
+            ($this->beforeWith)($this);
+        }
+
         $this->argumentMatchers    = array_values($arguments);
         $this->argumentListMatcher = null;
 
@@ -229,6 +244,12 @@ final class MethodConfigurator
         return $this->count instanceof InvocationCount;
     }
 
+    /** Whether a with() constrains the arguments one by one. */
+    public function hasArgumentMatchers(): bool
+    {
+        return $this->argumentMatchers !== null;
+    }
+
     /** Whether a willReturn*()/will()/willThrowException() was configured. */
     public function hasBehavior(): bool
     {
@@ -296,25 +317,86 @@ final class MethodConfigurator
     }
 
     /**
-     * @param bool $failFast the PHPUnit-spec posture: an exceeded maximum
-     *                       fails at call time. The Mockery grammar passes
-     *                       false — every count violation settles at close
-     *                       (oracle-pinned, spec/mockery-api.md §5).
+     * The PHPUnit grammar's failure for a call this configuration's with()
+     * rejects, or null when it has no with() or accepts the call.
+     * ✓ PHPUnit 13.4.3: the first rejected parameter is named, `$name` or
+     * its position past the declared ones, with the constraint's own failure.
+     *
+     * @param non-empty-string $method
+     * @param list<mixed>      $arguments with their defaults
+     */
+    public function mismatch(string $method, array $arguments, ?ReflectionMethod $reflection): ?string
+    {
+        $matchers = $this->argumentMatchers;
+
+        if ($this->method !== $method || $matchers === null || !$this->invocation instanceof Closure) {
+            return null;
+        }
+
+        $call = ($this->invocation)($method, $arguments);
+
+        if (count($matchers) > count($arguments)) {
+            return $this->mismatch ??= sprintf("Expectation for %s failed.\nParameter count for invocation %s is too low.", ($this->invocation)($method, null), $call);
+        }
+
+        foreach ($matchers as $index => $matcher) {
+            $constraint = $matcher instanceof Constraint ? $matcher : new IsEqual($matcher);
+
+            try {
+                $constraint->evaluate($arguments[$index]);
+            } catch (AssertionFailedError $failure) {
+                return $this->mismatch ??= sprintf(
+                    "Expectation for %s failed.\nParameter %s for invocation %s does not match expected value.\n%s",
+                    ($this->invocation)($method, null),
+                    PhpUnitInvocation::parameter($reflection, $index),
+                    $call,
+                    $failure->getMessage(),
+                );
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param bool        $failFast  the PHPUnit-spec posture: an exceeded maximum
+     *                               fails at call time. The Mockery grammar passes
+     *                               false — every count violation settles at close
+     *                               (oracle-pinned, spec/mockery-api.md §5).
+     * @param list<mixed> $arguments the call's, for the PHPUnit grammar's message
      *
      * @throws AssertionFailedError when the call exceeds the expected maximum
      */
-    public function registerInvocation(bool $failFast = true): void
+    public function registerInvocation(bool $failFast = true, array $arguments = []): void
     {
         $this->invocations++;
         $this->count?->recordInvocation();
 
-        if ($failFast && $this->count instanceof \LucianoPereira\Crucible\Double\InvocationCount && $this->count->exceededBy($this->invocations)) {
+        $count = $this->count;
+
+        if (!$failFast || !$count instanceof InvocationCount || !$count->exceededBy($this->invocations)) {
+            return;
+        }
+
+        if (!$this->invocation instanceof Closure) {
             throw new AssertionFailedError(sprintf(
                 '%s() was not expected to be called more than %s.',
                 $this->method ?? '{method}',
-                $this->count->description,
+                $count->description,
             ));
         }
+
+        // ✓ PHPUnit 13.4.3 fails at the call only for an exact count;
+        // at most is judged when the test ends.
+        if ($count->min !== $count->max || $this->method === null) {
+            return;
+        }
+
+        $call = ($this->invocation)($this->method, $arguments);
+
+        throw new AssertionFailedError($count->max === 0
+            ? sprintf('%s was not expected to be called, actually called %s.', $call, PhpUnitInvocation::times($this->invocations))
+            : sprintf('%s was not expected to be called more than %s, actually called %s.', $call, $count->expected, PhpUnitInvocation::times($this->invocations)));
     }
 
     /** @return ?non-empty-string */
@@ -337,15 +419,30 @@ final class MethodConfigurator
      */
     public function verify(): void
     {
-        if (!$this->count instanceof \LucianoPereira\Crucible\Double\InvocationCount) {
+        $count = $this->count;
+
+        if (!$count instanceof InvocationCount) {
             return;
         }
 
-        if (!$this->count->satisfiedBy($this->invocations)) {
+        if ($this->mismatch !== null) {
+            throw new AssertionFailedError($this->mismatch);
+        }
+
+        if (!$count->satisfiedBy($this->invocations)) {
+            if ($this->invocation instanceof Closure && $this->method !== null) {
+                throw new AssertionFailedError(sprintf(
+                    '%s was expected to be invoked %s but was %s.',
+                    ($this->invocation)($this->method, null),
+                    $count->expected,
+                    PhpUnitInvocation::invoked($this->invocations),
+                ));
+            }
+
             throw new AssertionFailedError(sprintf(
                 '%s() was expected to be called %s, but was called %d time(s).',
                 $this->method ?? '{method}',
-                $this->count->description,
+                $count->description,
                 $this->invocations,
             ));
         }

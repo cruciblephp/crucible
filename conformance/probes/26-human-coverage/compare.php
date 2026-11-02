@@ -106,8 +106,19 @@ if ($ours !== $theirs) {
     $failures[] = 'the text report and the incumbent disagree about the same code';
 }
 
-// The HTML says it too, to whatever precision it rounds to.
-$rate = $ours[1] === 0 ? 0.0 : 100 * $ours[0] / $ours[1];
+// The figure is floored at two places, never rounded up, as the incumbent
+// truncates: its text report and ours print the same number, and the HTML
+// states it too.
+$rate = $ours[1] === 0 ? 0.0 : \floor(\round(100 * $ours[0] / $ours[1] * 100, 6)) / 100;
+
+foreach (['crucible' => $scratch . '/crucible.txt', 'oracle' => $scratch . '/oracle.txt'] as $engine => $file) {
+    $pattern = $engine === 'crucible' ? '/Total:\s+([\d.]+)%/' : '/Lines:\s+([\d.]+)%/';
+
+    if (\preg_match($pattern, (string) \file_get_contents($file), $printed) !== 1 || $printed[1] !== \sprintf('%.2f', $rate)) {
+        $failures[] = \sprintf('the %s text report does not print %.2f%%', $engine, $rate);
+    }
+}
+
 $html = \is_file($scratch . '/html/index.html') ? (string) \file_get_contents($scratch . '/html/index.html') : '';
 
 if ($html === '') {

@@ -318,7 +318,7 @@ final class CoverageTest extends TestCase
 
         $report = (new TextReport())->render($decoded, '/p', 'scripted');
 
-        self::assertStringContainsString('Paths: 66.67% (2 of 3)', $report);
+        self::assertStringContainsString('Paths: 66.66% (2 of 3)', $report);
     }
 
     public function testTheTextReportOmitsPathsWhenNoneWereCollected(): void
@@ -454,7 +454,7 @@ final class CoverageTest extends TestCase
         }
     }
 
-    public function testTheLineMapKeepsEveryReportedLineAndReadsAnOlderMapWithout(): void
+    public function testTheLineMapKeepsEveryReportedLineAndReadsAVersionOneMapAsEmpty(): void
     {
         $map  = TestLineMap::fromData(new CoverageData(['/p/src/A.php' => [9 => -1, 3 => 1, 7 => -2]]), '/p');
         $file = sys_get_temp_dir() . '/crucible-covlines-' . uniqid() . '.json';
@@ -469,7 +469,7 @@ final class CoverageTest extends TestCase
             file_put_contents($file, '{"version": 1, "tests": {"t.php::a": {"src/A.php": [3]}}}');
 
             self::assertSame([], TestLineMap::load($file)->executable);
-            self::assertSame(['t.php::a'], TestLineMap::load($file)->testsCovering('src/A.php', 3));
+            self::assertSame([], TestLineMap::load($file)->tests, 'a map without hashes cannot say which files moved');
         } finally {
             if (is_file($file)) {
                 unlink($file);
@@ -527,7 +527,7 @@ final class CoverageTest extends TestCase
 
         $report = (new TextReport())->render($data, '/p', 'xdebug');
 
-        self::assertStringContainsString('src/A.php  (1/2)  branches 50.00% (1/2)', $report);
+        self::assertStringContainsString('src/A.php  (1/2)  2  branches 50.00% (1/2)', $report);
         self::assertStringContainsString('Branches: 50.00% (1 of 2)', $report);
     }
 

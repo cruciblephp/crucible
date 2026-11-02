@@ -80,4 +80,22 @@ final class CoveringTestsTest extends TestCase
     {
         self::assertSame([], $this->covering(22, executable: []));
     }
+
+    public function testAMatchArmTakesTheTestsOfEveryLineOfItsMatch(): void
+    {
+        $file = 'tests/unit/Mutation/Fixtures/MatchArms.php';
+        $both = 'tests/ProcessorTest.php::testColumn#unconstrained';
+        $one  = 'tests/ProcessorTest.php::testColumn#scale only';
+        $int  = 'tests/ProcessorTest.php::testColumn#integer';
+        $map  = new TestLineMap(
+            [$both => [$file => [21, 22, 25]], $one => [$file => [21, 23, 25]], $int => [$file => [21, 23, 24, 25]], self::HANDLE => [$file => [30]]],
+            [$file => [21, 22, 23, 24, 25, 30]],
+        );
+        $tests = new CoveringTests(MutationIndex::build($map, [$both => 0.1, $one => 0.2, $int => 0.3, self::HANDLE => 0.4]), $map);
+        $of    = static fn(int $line): array => array_column($tests->of(__DIR__ . '/Fixtures/MatchArms.php', $file, $line), 'id');
+
+        self::assertSame([$both, $one, $int], $of(22), 'an arm line reported only for the call that matched it');
+        self::assertSame([$both, $one, $int], $of(23));
+        self::assertSame([self::HANDLE], $of(30), 'a line after the match keeps its own tests');
+    }
 }

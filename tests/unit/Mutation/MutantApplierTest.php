@@ -88,6 +88,17 @@ final class MutantApplierTest extends TestCase
         self::assertSame(MutationOutcome::Errored, $verdict->outcome);
     }
 
+    public function testAMutantThatCannotCompileIsErroredWithPhpsMessage(): void
+    {
+        $verdict = (new MutantApplier())->run(
+            $this->mutant('return self::MEMORY; } public const int MEMORY = 4 / 1024 * 1024; public static function pad(): int { return 0;'),
+            $this->weakTest(...),
+        );
+
+        self::assertSame(MutationOutcome::Errored, $verdict->outcome);
+        self::assertStringStartsWith('Cannot use float as value for class constant', (string) $verdict->reason);
+    }
+
     public function testAMutantThatHangsIsTimedOut(): void
     {
         $verdict = (new MutantApplier())->run($this->mutant('usleep(3_000_000); return 2;'), $this->weakTest(...), 0.3);

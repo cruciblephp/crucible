@@ -11,6 +11,8 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Double;
 
 use Closure;
+use Error;
+use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use ReflectionMethod;
 use ReflectionType;
 
@@ -43,6 +45,9 @@ final class DoubleState
      * @var array<non-empty-string, ?ReflectionType>
      */
     private array $returnTypes = [];
+
+    /** @var array<non-empty-string, ?ReflectionMethod> */
+    private array $reflections = [];
 
     /**
      * The default-return thunk a configurator calls only when it carries
@@ -89,6 +94,7 @@ final class DoubleState
         private readonly DispatchStrategy $strategy = DispatchStrategy::LatestWins,
         private readonly bool $mergeConfigurations = false,
         private readonly bool $prefixArgumentMatching = false,
+        private readonly bool $stub = false,
     ) {}
 
     /**
@@ -123,7 +129,7 @@ final class DoubleState
      */
     public function configureMethod(string $method): MethodConfigurator
     {
-        $configurator = (new MethodConfigurator(null, $this->configurable, $this->prefixArgumentMatching))->method($method);
+        $configurator = (new MethodConfigurator(null, $this->configurable, $this->prefixArgumentMatching, $this->invocationText(), $this->withGuard()))->method($method);
 
         $this->configurators[] = $configurator;
 
@@ -132,7 +138,12 @@ final class DoubleState
 
     public function expectInvocation(InvocationCount $count): MethodConfigurator
     {
-        $configurator = new MethodConfigurator($count, $this->configurable, $this->prefixArgumentMatching);
+        // ✓ PHPUnit 13.4.3: a stub has no expects(), PHP's own error.
+        if ($this->stub) {
+            throw new Error(sprintf('Call to undefined method %s::expects()', $this->double::class));
+        }
+
+        $configurator = new MethodConfigurator($count, $this->configurable, $this->prefixArgumentMatching, $this->invocationText(), $this->withGuard());
 
         $this->configurators[] = $configurator;
 
@@ -173,6 +184,16 @@ final class DoubleState
             return $this->dispatchFirstDeclared($double, $method, $arguments);
         }
 
+        // ✓ PHPUnit 13.4.3 compares an omitted optional argument as its
+        // default, and fails the call a with() rejects, at the call.
+        $given = $arguments;
+
+        if ($this->prefixArgumentMatching) {
+            $arguments = PhpUnitInvocation::withDefaults($this->reflectionOf($method), $arguments);
+
+            $this->rejectMismatch($method, $arguments);
+        }
+
         // Latest configuration wins, so the walk is newest-first.
         //
         // Without merging — the default — only the newest match is ever
@@ -188,11 +209,11 @@ final class DoubleState
                     continue;
                 }
 
-                $configurator->registerInvocation();
+                $configurator->registerInvocation(arguments: $arguments);
 
                 return $configurator->invoke(
                     $double,
-                    $arguments,
+                    $given,
                     $this->fallbackFor($method),
                 );
             }
@@ -224,20 +245,109 @@ final class DoubleState
         // carries a behavior — not from an emptier configurator that
         // would otherwise shadow it.
         foreach ($matching as $matched) {
-            $matched->registerInvocation();
+            $matched->registerInvocation(arguments: $arguments);
         }
 
         foreach ($matching as $configurator) {
             if ($configurator->hasBehavior()) {
                 return $configurator->invoke(
                     $double,
-                    $arguments,
+                    $given,
                     $this->fallbackFor($method),
                 );
             }
         }
 
         return $this->defaultReturn($double, $method);
+    }
+
+    /**
+     * A with() that rejects the call fails it, unless another with() of
+     * the method accepts it: PHPUnit refuses a second with() for one
+     * method, so a suite valid there has at most one to consult. A double
+     * made outside the PHPUnit API, neither mock nor stub, keeps a with()
+     * outside an expectation as a selector.
+     *
+     * @param non-empty-string $method
+     * @param list<mixed>      $arguments with their defaults
+     *
+     * @throws AssertionFailedError
+     */
+    private function rejectMismatch(string $method, array $arguments): void
+    {
+        $failure = null;
+
+        for ($index = count($this->configurators) - 1; $index >= 0; $index--) {
+            $configurator = $this->configurators[$index];
+
+            if ($configurator->methodName() !== $method || !$configurator->hasArgumentMatchers()
+                || (!$this->advisesExpectations && !$configurator->isExpectation())
+            ) {
+                continue;
+            }
+
+            if ($configurator->appliesTo($method, $arguments)) {
+                return;
+            }
+
+            $failure ??= $configurator->mismatch($method, $arguments, $this->reflectionOf($method));
+        }
+
+        if ($failure !== null) {
+            throw new AssertionFailedError($failure);
+        }
+    }
+
+    /**
+     * The PHPUnit grammar's refusals of a with(), measured on 13.4.3: a
+     * stub has no with() at all, and a mock takes one per method.
+     *
+     * @return ?Closure(MethodConfigurator): void
+     */
+    private function withGuard(): ?Closure
+    {
+        if (!$this->prefixArgumentMatching) {
+            return null;
+        }
+
+        return function (MethodConfigurator $configuring): void {
+            if ($this->stub) {
+                throw new Error(sprintf('Call to undefined method %s::with()', MethodConfigurator::class));
+            }
+
+            $method = $configuring->methodName();
+
+            foreach ($this->configurators as $configurator) {
+                if ($configurator !== $configuring && $method !== null && $configurator->methodName() === $method && $configurator->hasArgumentMatchers()) {
+                    throw MethodParametersAlreadyConfiguredForAnotherMatcherException::for($method);
+                }
+            }
+        };
+    }
+
+    /**
+     * The PHPUnit grammar's call text for this double's configurators.
+     *
+     * @return ?Closure(non-empty-string, ?list<mixed>): string
+     */
+    private function invocationText(): ?Closure
+    {
+        if (!$this->prefixArgumentMatching) {
+            return null;
+        }
+
+        return $this->describeCall(...);
+    }
+
+    /**
+     * @param non-empty-string $method
+     * @param ?list<mixed>     $arguments
+     */
+    private function describeCall(string $method, ?array $arguments): string
+    {
+        return $arguments === null
+            ? sprintf('%s::%s()', $this->targets[0], $method)
+            : PhpUnitInvocation::describe($this->targets[0], $this->reflectionOf($method), $method, $arguments);
     }
 
     /**
@@ -370,11 +480,17 @@ final class DoubleState
      */
     private function reflectionOf(string $method): ?ReflectionMethod
     {
+        if (array_key_exists($method, $this->reflections)) {
+            return $this->reflections[$method];
+        }
+
         foreach ($this->targets as $target) {
             if (method_exists($target, $method)) {
-                return new ReflectionMethod($target, $method);
+                return $this->reflections[$method] = new ReflectionMethod($target, $method);
             }
         }
+
+        $this->reflections[$method] = null;
 
         // Mockery-surface doubles accept methods no target declares
         // (anonymous mocks, allowMockingNonExistentMethods) — untyped,

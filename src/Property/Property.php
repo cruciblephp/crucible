@@ -13,6 +13,7 @@ namespace LucianoPereira\Crucible\Property;
 use LucianoPereira\Crucible\Assert\Assert;
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Assert\Exporter;
+use LucianoPereira\Crucible\Assert\SensitiveArguments;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 use LucianoPereira\Crucible\Framework\IncompleteTestError;
 use LucianoPereira\Crucible\Framework\SkippedTestError;
@@ -133,7 +134,7 @@ final class Property
             if ($failure instanceof Throwable) {
                 [$choices, $arguments, $failure, $steps] = $this->shrink($property, $source->choices(), $arguments, $failure);
 
-                $this->fail('by the failure database', $steps, $arguments, $failure, $context['key'] ?? null, $choices);
+                $this->fail('by the failure database', $steps, $property, $arguments, $failure, $context['key'] ?? null, $choices);
             }
         }
 
@@ -171,6 +172,7 @@ final class Property
             $this->fail(
                 sprintf('at case %d of %d (seed %d)', $case, $this->cases, $seed),
                 $steps,
+                $property,
                 $arguments,
                 $failure,
                 $context['key'] ?? null,
@@ -186,17 +188,19 @@ final class Property
 
     /**
      * @param non-empty-string  $origin
+     * @param callable          $property  the property whose parameters say which values are sensitive
      * @param list<mixed>       $arguments
      * @param ?non-empty-string $key       the failure-database key, when a runner context is open
      * @param list<int>         $choices
      */
-    private function fail(string $origin, int $steps, array $arguments, Throwable $failure, ?string $key, array $choices, ?int $seed = null): never
+    private function fail(string $origin, int $steps, callable $property, array $arguments, Throwable $failure, ?string $key, array $choices, ?int $seed = null): never
     {
+        // A value the property takes as #[\SensitiveParameter] is not printed (D-167).
         $message = sprintf(
             "Property falsified %s, %d shrink steps.\nCounterexample: %s\n%s\n\n%s",
             $origin,
             $steps,
-            implode(', ', array_map(self::compact(...), $arguments)),
+            implode(', ', SensitiveArguments::render($property, $arguments, self::compact(...))),
             $seed !== null ? sprintf('Replay with ->seed(%d).', $seed) : 'It replays on every run until fixed.',
             $failure->getMessage(),
         );

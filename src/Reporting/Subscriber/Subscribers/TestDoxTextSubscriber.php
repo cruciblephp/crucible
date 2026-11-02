@@ -54,7 +54,7 @@ final class TestDoxTextSubscriber extends FileBackedSubscriber
         }
 
         if ($event instanceof RunFinished) {
-            fwrite($this->stream, $this->document->text($event));
+            fwrite($this->stream, $this->document->text());
         }
     }
 }

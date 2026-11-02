@@ -40,6 +40,7 @@ use LucianoPereira\Crucible\Assert\Constraint\IsWritable;
 use LucianoPereira\Crucible\Assert\Constraint\JsonMatches;
 use LucianoPereira\Crucible\Assert\Constraint\LessThan;
 use LucianoPereira\Crucible\Assert\Constraint\LogicalNot;
+use LucianoPereira\Crucible\Assert\Constraint\LogicalOr;
 use LucianoPereira\Crucible\Assert\Constraint\MatchesRegularExpression;
 use LucianoPereira\Crucible\Assert\Constraint\MatchesShape;
 use LucianoPereira\Crucible\Assert\Constraint\ObjectEquals;
@@ -274,6 +275,8 @@ abstract class Assert
      */
     public static function assertCount(int $expectedCount, Countable|iterable $haystack, string $message = ''): void
     {
+        GeneratorNotSupportedException::refuse($haystack, 'haystack');
+
         self::assertThat($haystack, new HasCount($expectedCount), $message);
     }
 
@@ -282,6 +285,8 @@ abstract class Assert
      */
     public static function assertNotCount(int $expectedCount, Countable|iterable $haystack, string $message = ''): void
     {
+        GeneratorNotSupportedException::refuse($haystack, 'haystack');
+
         self::assertThat($haystack, new LogicalNot(new HasCount($expectedCount)), $message);
     }
 
@@ -312,7 +317,7 @@ abstract class Assert
 
     public static function assertGreaterThanOrEqual(mixed $expected, mixed $actual, string $message = ''): void
     {
-        self::assertThat($actual, new LogicalNot(new LessThan($expected)), $message);
+        self::assertThat($actual, new LogicalOr(new IsEqual($expected), new GreaterThan($expected)), $message);
     }
 
     public static function assertLessThan(mixed $expected, mixed $actual, string $message = ''): void
@@ -322,7 +327,7 @@ abstract class Assert
 
     public static function assertLessThanOrEqual(mixed $expected, mixed $actual, string $message = ''): void
     {
-        self::assertThat($actual, new LogicalNot(new GreaterThan($expected)), $message);
+        self::assertThat($actual, new LogicalOr(new IsEqual($expected), new LessThan($expected)), $message);
     }
 
     // --- Iterables ----------------------------------------------------------
@@ -491,6 +496,8 @@ abstract class Assert
      */
     public static function assertInstanceOf(string $expected, mixed $actual, string $message = ''): void
     {
+        UnknownClassOrInterfaceException::refuse($expected);
+
         self::assertThat($actual, new IsInstanceOf($expected), $message);
     }
 
@@ -499,6 +506,8 @@ abstract class Assert
      */
     public static function assertNotInstanceOf(string $expected, mixed $actual, string $message = ''): void
     {
+        UnknownClassOrInterfaceException::refuse($expected);
+
         self::assertThat($actual, new LogicalNot(new IsInstanceOf($expected)), $message);
     }
 
@@ -900,8 +909,8 @@ abstract class Assert
     public static function assertStringContainsStringIgnoringLineEndings(string $needle, string $haystack, string $message = ''): void
     {
         self::assertThat(
-            StringEqualsStringIgnoringLineEndings::normalize($haystack),
-            new StringContains(StringEqualsStringIgnoringLineEndings::normalize($needle)),
+            $haystack,
+            new StringContains(StringEqualsStringIgnoringLineEndings::normalize($needle), ignoreLineEndings: true),
             $message,
         );
     }
