@@ -21,6 +21,7 @@ use LucianoPereira\Crucible\Types\Observed\ValueTypes;
 use stdClass;
 
 use function array_fill;
+use function trait_exists;
 
 #[CoversClass(ValueTypes::class)]
 #[CoversClass(NameContext::class)]
@@ -53,6 +54,9 @@ final class TypeReadingTest extends TestCase
     #[DataProvider('values')]
     public function testAValueIsTheNarrowestTypeThatNamesIt(mixed $value, string $type): void
     {
+        // Only a loaded type is named, and nothing else in this file loads the trait.
+        trait_exists(BrewsCoffee::class);
+
         self::assertSame($type, ValueTypes::of($value));
     }
 

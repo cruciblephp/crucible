@@ -18,6 +18,7 @@ use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Tests\Types\Observed\Fixtures\Catalogue;
 use LucianoPereira\Crucible\Types\Observed\DocTypes;
 use LucianoPereira\Crucible\Types\Observed\IncludeRewriter;
+use LucianoPereira\Crucible\Types\Observed\ObservedRun;
 use LucianoPereira\Crucible\Types\Observed\ObservedTypesCheck;
 use LucianoPereira\Crucible\Types\Observed\Observer;
 use LucianoPereira\Crucible\Types\Observed\ProbeRewriter;
@@ -50,10 +51,12 @@ final class ObservedTypesTest extends TestCase
 
     protected function setUp(): void
     {
+        ObservedRun::preload();
+
         if (!class_exists(Catalogue::class, false)) {
             $rewriter = new ProbeRewriter();
 
-            IncludeRewriter::register(static fn(string $path): ?string => $path === self::FIXTURE ? $rewriter->rewrite((string) file_get_contents($path)) : null);
+            IncludeRewriter::register(static fn(string $path): ?string => WorkingDirectory::portable($path) === WorkingDirectory::portable(self::FIXTURE) ? $rewriter->rewrite((string) file_get_contents($path)) : null);
 
             try {
                 require self::FIXTURE;
@@ -78,7 +81,7 @@ final class ObservedTypesTest extends TestCase
 
     public function testTheRewrittenClassIsStillDeclaredInItsOwnFile(): void
     {
-        self::assertSame(self::FIXTURE, (new ReflectionClass(Catalogue::class))->getFileName());
+        self::assertSame(WorkingDirectory::native(self::FIXTURE), (new ReflectionClass(Catalogue::class))->getFileName());
     }
 
     public function testAReturnTheDocblockRefusesIsFoundWithTheValue(): void

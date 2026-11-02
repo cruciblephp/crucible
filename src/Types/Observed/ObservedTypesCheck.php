@@ -24,9 +24,6 @@ use function json_encode;
 use function ksort;
 use function mkdir;
 use function sprintf;
-use function str_starts_with;
-use function strlen;
-use function substr;
 
 use const JSON_PRETTY_PRINT;
 use const JSON_THROW_ON_ERROR;
@@ -63,7 +60,7 @@ final readonly class ObservedTypesCheck implements Check
         ksort($functions);
 
         foreach ($functions as $key => $function) {
-            $file = $this->relative($function->file, $workingDirectory);
+            $file = $workingDirectory->relative($function->file);
 
             $written[$key] = ['file' => $file, 'line' => $function->line, 'calls' => $function->calls, 'types' => $function->types];
 
@@ -100,12 +97,5 @@ final readonly class ObservedTypesCheck implements Check
         if (@file_put_contents($this->cacheDirectory . '/' . self::FILE, $json . "\n") !== false) {
             CacheManifest::record($this->cacheDirectory, self::FILE, self::VERSION);
         }
-    }
-
-    private function relative(string $file, WorkingDirectory $workingDirectory): string
-    {
-        $prefix = $workingDirectory->path . '/';
-
-        return str_starts_with($file, $prefix) ? substr($file, strlen($prefix)) : $file;
     }
 }
