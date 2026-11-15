@@ -64,15 +64,32 @@ final class FailureLocation
         $test  = self::normalise($test);
         $base  = rtrim(self::normalise($root ?? ''), '/');
 
-        if (!str_starts_with($frame, '/')) {
+        if (!self::isAbsolute($frame)) {
             $frame = $base . '/' . $frame;
         }
 
-        if (!str_starts_with($test, '/')) {
+        if (!self::isAbsolute($test)) {
             $test = $base . '/' . $test;
         }
 
         return $frame === $test;
+    }
+
+    /**
+     * A path is absolute on POSIX when it starts with `/`, and on
+     * Windows when it is a drive-letter path such as `D:/project`.
+     * `normalise()` has already turned backslashes into slashes.
+     */
+    private static function isAbsolute(string $path): bool
+    {
+        if (str_starts_with($path, '/')) {
+            return true;
+        }
+
+        return strlen($path) >= 3
+            && $path[1] === ':'
+            && $path[2] === '/'
+            && (($path[0] >= 'a' && $path[0] <= 'z') || ($path[0] >= 'A' && $path[0] <= 'Z'));
     }
 
     /**

@@ -38,6 +38,19 @@ final class FailureLocationTest extends TestCase
         );
     }
 
+    public function testAWindowsDrivePathIsAbsoluteAndNamesTheTestFile(): void
+    {
+        $failure = new Failure('Failed asserting that 120 is identical to 121.', trace: [
+            new Frame('D:\a\crucible\crucible\src\Assert\Constraint\Constraint.php', 90),
+            new Frame('D:\a\crucible\crucible\tests\unit\CartTotalTest.php', 13),
+        ]);
+
+        $this->assertSame(
+            'tests/unit/CartTotalTest.php:13',
+            FailureLocation::of($failure, new TestId('tests/unit/CartTotalTest.php', 'testTotalIncludesTax'), Outcome::Failed, 'D:\a\crucible\crucible'),
+        );
+    }
+
     public function testAnErrorNamesTheLineItWasThrownAtEvenOutsideTheTest(): void
     {
         $failure = new Failure('cart is empty', trace: [
