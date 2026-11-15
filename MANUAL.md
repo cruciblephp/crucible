@@ -490,6 +490,26 @@ crucible --coverage --coverage-target modules/Auth --min=100
 coverage caches still record everything the run collected, so impact selection and `mutate` see
 the whole picture.
 
+A target can carry a name, and a name can carry its own floor. With `Name=path`, `--min` still
+falls back for every named target, so a strong module is held to 100 while the rest climb to 50:
+
+```bash
+crucible --coverage-target Auth=modules/Auth --coverage-target Billing=modules/Billing \
+         --coverage-min Auth:100 --min=50
+```
+
+`--coverage-min` (alias `--mins`) is repeatable, takes `Name:pct` or `Name1,Name2:pct`, and
+accepts `@file` for one floor per line; blank lines and `#` comments are ignored. The floor on
+the target in `crucible.php` wins over the option, and the option wins over `--min`:
+
+```php
+->coverageTarget('Auth', 'modules/Auth', min: 100)
+```
+
+A floor written on a path, an unknown target, an empty name or an empty percentage is refused
+before anything runs: a floor that silently applies to nothing is worse than no floor. Every
+target is judged on its own slice, so a passing pooled total cannot hide a module under its floor.
+
 pcov 1.0.12, the version the distributions ship, works on every supported PHP from 1.1.5 on.
 If a worker process is killed during a coverage run, its tests say which signal killed it and
 which driver was loaded, so a crashing extension doesn't look like a crashing test.

@@ -335,7 +335,8 @@ what is written for machines, not what is shown to you.
 | `--coverage-text-summary` | Text report: totals only, no per-file rows |
 | `--coverage-text-uncovered` | Text report: keep the files with no covered line |
 | `--coverage-filter <dir>` | Add `dir` to the coverage scope, alongside `->source()` |
-| `--coverage-target <path>` | Report and judge `--min` on the files under `path` alone; repeatable |
+| `--coverage-target <path>` | Report and judge `--min` on the files under `path` alone; repeatable. `Name=path` gives the target a name |
+| `--coverage-min <spec>` | A named target's own floor: `Name:pct`, `Name1,Name2:pct`, or `@file`; repeatable, alias `--mins` |
 | `--disable-coverage-targeting` | Every test contributes all it executed, not only its declared targets |
 | `--disable-coverage-ignore` | Accepted: there is no coverage-ignore metadata to disable |
 | `--coverage-crap4j <file>` | Crap4J XML: complexity against coverage, per method |

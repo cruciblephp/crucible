@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Configuration;
 
 use LucianoPereira\Crucible\Browser\BrowserConfiguration;
+use LucianoPereira\Crucible\Coverage\CoverageTarget;
 use LucianoPereira\Crucible\Extension\CommandGate;
 use LucianoPereira\Crucible\Extension\Extension;
 use LucianoPereira\Crucible\Impact\ImpactRule;
@@ -46,6 +47,7 @@ final readonly class Configuration
      * @param ?non-empty-string      $retriggerHotFile where `--watch` publishes its retrigger endpoint (D-083); null = the endpoint is off
      * @param int                    $retriggerPort    0 = an ephemeral port
      * @param bool                   $beStrictAboutOutputDuringTests a test printing output it did not expect settles risky (D-155)
+     * @param list<CoverageTarget>   $coverageTargets named coverage slices; a target's own `min` wins over --coverage-min, which wins over --min
      */
     public function __construct(
         public array $testSuites,
@@ -101,5 +103,6 @@ final readonly class Configuration
         public ?string $retriggerHotFile = null,
         public int $retriggerPort = 0,
         public bool $beStrictAboutOutputDuringTests = false,
+        public array $coverageTargets = [],
     ) {}
 }

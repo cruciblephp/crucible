@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-10-26 (D-001..D-168, 1.2.0). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-15 (D-001..D-168, 1.3.0). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -394,6 +394,14 @@ against Crucible's own class only._
 | `createStub()` makes a stub with no `expects()` or `with()`, and a mock refuses a second `with()` per method (D-166) | `Double\TestDoubles::stub()`, `Double\DoubleState` |
 | A `#[\SensitiveParameter]` value stays out of `table()` case names and property counterexamples (D-167) | `Assert\SensitiveArguments` |
 | Coverage floored as PHPUnit prints it, missed lines as runs, `--coverage-target` (D-168) | `Coverage\CoveragePercent`, `Coverage\CoverageData::narrowedTo()`, `Coverage\TextReport` |
+
+## 1.3.0
+
+| Shipped | Records |
+|---|---|
+| A problem names the file and line worth opening: an assertion names the test file's line, an error the line it was thrown at, in the console, TestDox, Markdown and PDF reports | `Reporting\FailureLocation`, `Reporting\Document\ProblemEntry`, `Reporting\ConsoleReporter` |
+| Named coverage targets, in `crucible.php` or as `--coverage-target Name=path`, each judged on its own slice | `Coverage\CoverageTarget`, `Coverage\CoverageTargetSet`, `Configuration\Builder::coverageTarget()` |
+| `--coverage-min` (alias `--mins`): `Name:pct`, `Name1,Name2:pct` or `@file`, with the target's own floor winning over the option and `--min` | `Coverage\CoverageTargetSet`, `CLI\PostRunReport::coverageTargetFloors()` |
 
 ## Design inputs honored
 

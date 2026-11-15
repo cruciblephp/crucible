@@ -24,5 +24,6 @@ final readonly class ProblemEntry
         public string $outcome,
         public ?string $detail = null,
         public bool $quarantined = false,
+        public ?string $location = null,
     ) {}
 }

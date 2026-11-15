@@ -93,10 +93,10 @@ final readonly class CliOptions
         '--include-path', '--atleast-version',
         '--columns', '--diff-context', '--generate-baseline', '--use-baseline',
         '--log-events-text', '--log-events-verbose', '--log-teamcity',
-        '--key', '--out', '--view', '--min',
+        '--key', '--out', '--view', '--min', '--coverage-min',
     ];
 
-    private const array REPEATABLE = ['--testsuite', '--group', '--exclude-group', '--related', '--report', '--subscriber', '--extension', '--exclude-testsuite', '--test-suffix', '--covers', '--uses', '--requires-ext', '--run-test-id', '--coverage-filter', '--coverage-target'];
+    private const array REPEATABLE = ['--testsuite', '--group', '--exclude-group', '--related', '--report', '--subscriber', '--extension', '--exclude-testsuite', '--test-suffix', '--covers', '--uses', '--requires-ext', '--run-test-id', '--coverage-filter', '--coverage-target', '--coverage-min'];
 
     /**
      * Spellings the spec uses for something Crucible already spells its
@@ -148,6 +148,7 @@ final readonly class CliOptions
         '--requires-php-extension'                                 => '--requires-ext',
         '--log-events-verbose-text'                                => '--log-events-verbose',
         '--require-coverage-contribution'                          => '--require-coverage',
+        '--mins'                                                   => '--coverage-min',
 
         // Crucible's own, shortened before 1.0 fixes it.
         '--update-deprecations-baseline' => '--update-baseline',
@@ -188,7 +189,8 @@ final readonly class CliOptions
      * @param ?int<0, max>            $diffContext      the spec's --diff-context: unchanged lines kept around each change
      * @param ?int                    $repeat           the spec's --repeat: run every selected test this many times
      * @param list<non-empty-string>  $coverageFilter   the spec's --coverage-filter: directories coverage is restricted to
-     * @param list<non-empty-string>  $coverageTargets  --coverage-target: the paths the coverage report and its floor judge alone
+     * @param list<non-empty-string>  $coverageTargets  --coverage-target: the paths, or Name=path targets, the coverage report and its floors judge
+     * @param list<non-empty-string>  $coverageTargetFloors --coverage-min: Name:pct, Name1,Name2:pct, or @file
      * @param ?string                 $coverageText     the spec's --coverage-text; '' = the terminal, a path = that file
      * @param ?float                  $minCoverage      the spec's --min: the run fails below this line-coverage percentage
      * @param bool                    $reproducible     Crucible-native: normalise what describes the RUN, so two runs of the same code write identical bytes
@@ -369,6 +371,7 @@ final readonly class CliOptions
         public array $paths = [],
         public bool $observeTypes = false,
         public array $coverageTargets = [],
+        public array $coverageTargetFloors = [],
     ) {}
 
 
@@ -392,7 +395,8 @@ final readonly class CliOptions
             || $this->coverageText !== null
             // A floor is a request to measure: you cannot ask for one and
             // not want the measurement it is a floor on.
-            || $this->minCoverage !== null;
+            || $this->minCoverage !== null
+            || $this->coverageTargetFloors !== [];
     }
 
     /**
@@ -925,6 +929,7 @@ final readonly class CliOptions
             paths: $paths,
             observeTypes: isset($flags['--observe-types']),
             coverageTargets: $noCoverage ? [] : ($lists['--coverage-target'] ?? []),
+            coverageTargetFloors: $noCoverage ? [] : ($lists['--coverage-min'] ?? []),
         );
     }
 }

@@ -119,6 +119,10 @@ final readonly class MarkdownRenderer
                 $entry->outcome,
             );
 
+            if ($entry->location !== null) {
+                $out .= '`' . $entry->location . "`\n\n";
+            }
+
             if ($entry->detail !== null) {
                 $out .= "```\n" . $entry->detail . "\n```\n\n";
             }

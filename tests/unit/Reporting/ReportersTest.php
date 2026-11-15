@@ -15,6 +15,7 @@ use LucianoPereira\Crucible\Attributes\CoversClass;
 use LucianoPereira\Crucible\Clock\FrozenClock;
 use LucianoPereira\Crucible\Event\Emitter;
 use LucianoPereira\Crucible\Event\Failure;
+use LucianoPereira\Crucible\Event\Frame;
 use LucianoPereira\Crucible\Event\Listener;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunFinished;
@@ -43,6 +44,7 @@ use LucianoPereira\Crucible\Version;
 
 use function file_get_contents;
 use function fopen;
+use function getcwd;
 use function preg_match;
 use function preg_match_all;
 use function rewind;
@@ -322,6 +324,81 @@ final class ReportersTest extends TestCase
         $this->assertStringContainsString('not ready yet', $output);
         $this->assertStringContainsString('1) tests/unit/MathTest.php::testNotReady', $output);
         $this->assertStringNotContainsString('2)', $output);
+    }
+
+    public function testConsoleNamesTheFileAndLineOfEachProblem(): void
+    {
+        $stream = fopen('php://memory', 'w+');
+
+        if ($stream === false) {
+            self::fail('Cannot open the in-memory stream.');
+        }
+
+        $emitter = new Emitter(new FrozenClock(new DateTimeImmutable('2026-07-14T12:00:00+00:00')));
+        $emitter->subscribe(new ConsoleReporter($stream));
+
+        $root    = (string) getcwd();
+        $failing = new TestId('tests/unit/CartTotalTest.php', 'testTotalIncludesTax');
+        $error   = new TestId('tests/unit/CartTest.php', 'testEmptyCartThrows');
+
+        $emitter->emit(new RunStarted());
+
+        // An assertion is built inside the assertion library; the useful
+        // line is the one the test file itself names.
+        $emitter->emit(new TestFinished($failing, Outcome::Failed, 0.010, new Failure(
+            'Failed asserting that 120 is identical to 121.',
+            trace: [
+                new Frame($root . '/src/Assert/Constraint/Constraint.php', 90),
+                new Frame($root . '/tests/unit/CartTotalTest.php', 13),
+            ],
+        )));
+
+        // An exception names where it was thrown, even in the source.
+        $emitter->emit(new TestFinished($error, Outcome::Errored, 0.010, new Failure(
+            'cart is empty',
+            trace: [
+                new Frame($root . '/src/Cart.php', 42),
+                new Frame($root . '/tests/unit/CartTest.php', 10),
+            ],
+        )));
+
+        $emitter->emit(new RunFinished(new RunSummary(failed: 1, errored: 1), 0.020));
+
+        rewind($stream);
+        $output = (string) stream_get_contents($stream);
+
+        $this->assertStringContainsString("   at tests/unit/CartTotalTest.php:13\n", $output);
+        $this->assertStringContainsString("   at src/Cart.php:42\n", $output);
+    }
+
+    public function testTestDoxNamesTheFileAndLineOfEachProblem(): void
+    {
+        $stream = fopen('php://memory', 'w+');
+
+        if ($stream === false) {
+            self::fail('Cannot open the in-memory stream.');
+        }
+
+        $emitter = new Emitter(new FrozenClock(new DateTimeImmutable('2026-07-14T12:00:00+00:00')));
+        $emitter->subscribe(new TestDoxReporter($stream));
+
+        $root    = (string) getcwd();
+        $failing = new TestId('tests/unit/CartTotalTest.php', 'testTotalIncludesTax');
+
+        $emitter->emit(new RunStarted());
+        $emitter->emit(new TestFinished($failing, Outcome::Failed, 0.010, new Failure(
+            'Failed asserting that 120 is identical to 121.',
+            trace: [
+                new Frame($root . '/src/Assert/Constraint/Constraint.php', 90),
+                new Frame($root . '/tests/unit/CartTotalTest.php', 13),
+            ],
+        )));
+        $emitter->emit(new RunFinished(new RunSummary(failed: 1), 0.020));
+
+        rewind($stream);
+        $output = (string) stream_get_contents($stream);
+
+        $this->assertStringContainsString("   at tests/unit/CartTotalTest.php:13\n", $output);
     }
 
     public function testConsoleColorsOutputOnlyWhenEnabled(): void

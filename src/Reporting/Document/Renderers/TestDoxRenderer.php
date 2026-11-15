@@ -55,6 +55,10 @@ final readonly class TestDoxRenderer
         foreach ($list->entries as $index => $entry) {
             $out .= sprintf("%d) %s [%s]\n", $index + 1, $entry->testName, $entry->outcome);
 
+            if ($entry->location !== null) {
+                $out .= '   at ' . $entry->location . "\n";
+            }
+
             if ($entry->detail !== null) {
                 $out .= $entry->detail . "\n";
             }

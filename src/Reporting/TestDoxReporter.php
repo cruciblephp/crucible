@@ -99,6 +99,8 @@ final class TestDoxReporter implements ProgressViewContract
                     $problem->test->toString(),
                     $problem->outcome->value,
                     $problem->failure->message ?? $problem->reason,
+                    false,
+                    $problem->failure instanceof \LucianoPereira\Crucible\Event\Failure ? FailureLocation::of($problem->failure, $problem->test, $problem->outcome) : null,
                 ),
                 $problems,
             ))]);

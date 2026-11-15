@@ -441,7 +441,8 @@ final class Application
               --coverage-text[=<file>]  Write the text coverage report to <file>, or the terminal when bare
               --coverage-crap4j <file>  Write the Crap4J XML report (complexity against coverage) to <file>
               --coverage-filter <dir>   Add <dir> to the coverage scope, alongside whatever ->source() declares
-              --coverage-target <path>  Report and judge --min on the files under <path> alone
+              --coverage-target <path>  Report and judge --min on the files under <path> alone; Name=path names it
+              --coverage-min <spec>     A named target's floor: Name:pct, Name1,Name2:pct, or @file; alias --mins
               --coverage-text-summary  Text coverage report: totals only, no per-file rows
               --coverage-text-uncovered  Text coverage report: keep the files with no covered line
               --coverage-xml <dir>      Write the XML coverage report into <dir>

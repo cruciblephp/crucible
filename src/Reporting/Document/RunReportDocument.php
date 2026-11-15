@@ -23,6 +23,7 @@ use LucianoPereira\Crucible\Reporting\Document\Blocks\ProportionBar;
 use LucianoPereira\Crucible\Reporting\Document\Blocks\RankedList;
 use LucianoPereira\Crucible\Reporting\Document\Inline\Strong;
 use LucianoPereira\Crucible\Reporting\Document\Inline\Text;
+use LucianoPereira\Crucible\Reporting\FailureLocation;
 use LucianoPereira\Crucible\Reporting\PrettyName;
 use LucianoPereira\Crucible\Reporting\RunModel;
 use LucianoPereira\Crucible\Version;
@@ -154,6 +155,7 @@ final class RunReportDocument
                     $problem->outcome->value,
                     $problem->failure->message ?? $problem->reason,
                     $problem->quarantined,
+                    $problem->failure instanceof \LucianoPereira\Crucible\Event\Failure ? FailureLocation::of($problem->failure, $problem->test, $problem->outcome) : null,
                 ),
                 $entries,
             ), $tone);

@@ -69,6 +69,26 @@ final class BuilderTest extends TestCase
         $this->assertSame(['CRUCIBLE_TESTING' => true], $configuration->php->constants);
     }
 
+    public function testCoverageTargetsCarryTheirOwnFloor(): void
+    {
+        $configuration = Crucible::configure()
+            ->coverageTarget('Auth', 'modules/Auth', 100.0)
+            ->coverageTarget('Billing', 'modules/Billing')
+            ->build();
+
+        self::assertCount(2, $configuration->coverageTargets);
+        self::assertSame('Auth', $configuration->coverageTargets[0]->name);
+        self::assertSame(100.0, $configuration->coverageTargets[0]->minimum);
+        self::assertNull($configuration->coverageTargets[1]->minimum);
+    }
+
+    public function testACoverageTargetRefusesAPathAsItsName(): void
+    {
+        $this->expectException(ConfigurationException::class);
+
+        Crucible::configure()->coverageTarget('modules/Auth', 'modules/Auth');
+    }
+
     public function testStrictEnablesEveryFailOnFlag(): void
     {
         $configuration = Crucible::configure()->strict()->build();

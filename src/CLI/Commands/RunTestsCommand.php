@@ -44,6 +44,7 @@ use LucianoPereira\Crucible\Console\Style\Style as ConsoleStyle;
 use LucianoPereira\Crucible\Console\Terminal\Capabilities;
 use LucianoPereira\Crucible\Coverage\CoverageCollector;
 use LucianoPereira\Crucible\Coverage\CoverageMap;
+use LucianoPereira\Crucible\Coverage\CoverageTargetSet;
 use LucianoPereira\Crucible\Coverage\DriverFactory;
 use LucianoPereira\Crucible\Dialect\Pest\Expectation;
 use LucianoPereira\Crucible\Dialect\Pest\PestScopes;
@@ -195,6 +196,19 @@ final class RunTestsCommand
         }
 
         $configuration = $loaded->configuration;
+
+        $coverageTargets = CoverageTargetSet::resolve(
+            $configuration->coverageTargets,
+            $options->coverageTargets,
+            $options->coverageTargetFloors,
+            $workingDirectory,
+        );
+
+        if (is_string($coverageTargets)) {
+            print $coverageTargets . PHP_EOL;
+
+            return 1;
+        }
 
         try {
             $note = $this->applyCompatibilityPolicy($configuration);
@@ -1196,16 +1210,29 @@ final class RunTestsCommand
             }
         }
 
-        $coverageFloorBreach = null;
+        $coverageFloorBreaches = [];
 
         if ($collector instanceof CoverageCollector) {
-            $coverageFloorBreach = $postRun->coverageFloor($postRun->reportCoverage(
+            $reported = $postRun->reportCoverage(
                 $collector,
                 $options,
                 $workingDirectory,
                 $cacheDirectory,
                 $this->sizedRecords($testRecords->records(), $groups),
-            ), $options->minCoverage);
+                $coverageTargets,
+            );
+
+            $coverageFloorBreaches = $postRun->coverageTargetFloors($reported, $coverageTargets, $options->minCoverage);
+
+            // Named targets answer one by one; the pooled total is still
+            // what a run with no names (or a bare path) is judged on.
+            if ($coverageTargets->judgesPooledTotal()) {
+                $pooled = $postRun->coverageFloor($reported, $options->minCoverage);
+
+                if ($pooled !== null) {
+                    $coverageFloorBreaches[] = $pooled;
+                }
+            }
         }
 
         if ($options->updateDeprecationsBaseline) {
@@ -1235,8 +1262,8 @@ final class RunTestsCommand
 
         $breaches = $postRun->thresholdBreaches($configuration, $issueLog);
 
-        if ($coverageFloorBreach !== null) {
-            $breaches[] = $coverageFloorBreach;
+        foreach ($coverageFloorBreaches as $breach) {
+            $breaches[] = $breach;
         }
 
         foreach ($breaches as $breach) {

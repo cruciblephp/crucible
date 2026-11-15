@@ -561,6 +561,15 @@ final class CliOptionsTest extends TestCase
         $this->assertNull($this->parse([])->minCoverage);
     }
 
+    public function testPerTargetFloorsAreRepeatableAndHaveAnAlias(): void
+    {
+        $options = $this->parse(['--coverage-target', 'Auth=modules/Auth', '--coverage-min', 'Auth:100', '--mins', 'Billing:50']);
+
+        $this->assertSame(['Auth=modules/Auth'], $options->coverageTargets);
+        $this->assertSame(['Auth:100', 'Billing:50'], $options->coverageTargetFloors);
+        $this->assertTrue($options->wantsCoverage(), 'a floor is a measurement ask');
+    }
+
     public function testTheCoverageFloorCollectsCoverageOnItsOwn(): void
     {
         // Asking for a floor is asking for the measurement it floors.

@@ -162,6 +162,14 @@ final class ConsoleReporter implements ProgressViewContract
                 $problem->quarantined ? ' ' . $this->style->yellow('[quarantined]') : '',
             ));
 
+            if ($problem->failure !== null) {
+                $location = FailureLocation::of($problem->failure, $problem->test, $problem->outcome);
+
+                if ($location !== null) {
+                    fwrite($this->stream, '   at ' . $location . "\n");
+                }
+            }
+
             if ($problem->reason !== null) {
                 fwrite($this->stream, $problem->reason . "\n");
             }

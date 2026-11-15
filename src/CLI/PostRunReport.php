@@ -21,6 +21,7 @@ use LucianoPereira\Crucible\Coverage\CoverageCollector;
 use LucianoPereira\Crucible\Coverage\CoverageData;
 use LucianoPereira\Crucible\Coverage\CoverageMap;
 use LucianoPereira\Crucible\Coverage\CoveragePercent;
+use LucianoPereira\Crucible\Coverage\CoverageTargetSet;
 use LucianoPereira\Crucible\Coverage\Crap4jWriter;
 use LucianoPereira\Crucible\Coverage\GitInformation;
 use LucianoPereira\Crucible\Coverage\HtmlReport;
@@ -233,7 +234,7 @@ final readonly class PostRunReport
      *
      * @return CoverageData the merged collection, so the caller can judge it against a floor
      */
-    public function reportCoverage(CoverageCollector $collector, CliOptions $options, WorkingDirectory $workingDirectory, string $cacheDirectory, array $tests = []): CoverageData
+    public function reportCoverage(CoverageCollector $collector, CliOptions $options, WorkingDirectory $workingDirectory, string $cacheDirectory, array $tests = [], ?CoverageTargetSet $coverageTargets = null): CoverageData
     {
         $data  = $collector->data();
         $cache = $workingDirectory->absolute($cacheDirectory);
@@ -255,7 +256,12 @@ final readonly class PostRunReport
         // The target narrows what is reported and judged; the caches below
         // keep what the run collected, since impact and mutation read them.
         $collected = $data;
-        $data      = $options->coverageTargets === [] ? $collected : $collected->narrowedTo($this->targets($options->coverageTargets, $workingDirectory));
+
+        if ($coverageTargets instanceof \LucianoPereira\Crucible\Coverage\CoverageTargetSet) {
+            $data = $coverageTargets->isEmpty() ? $collected : $collected->narrowedTo($coverageTargets->paths());
+        } else {
+            $data = $options->coverageTargets === [] ? $collected : $collected->narrowedTo($this->targets($options->coverageTargets, $workingDirectory));
+        }
 
         $textReport = new TextReport($options->onlySummaryForCoverageText, $options->showUncoveredForCoverageText);
 
@@ -401,11 +407,13 @@ final readonly class PostRunReport
      *
      * @return ?non-empty-string
      */
-    public function coverageFloor(CoverageData $data, ?float $minimum): ?string
+    public function coverageFloor(CoverageData $data, ?float $minimum, ?string $label = null): ?string
     {
         if ($minimum === null) {
             return null;
         }
+
+        $subject = $label === null ? 'Coverage' : sprintf('Coverage target "%s"', $label);
 
         // A floor of zero demands nothing, so nothing can fail it. The
         // empty-scope rule below is about an ask that CANNOT be met;
@@ -417,7 +425,7 @@ final readonly class PostRunReport
         $totals = $data->totals();
 
         if ($totals['executable'] === 0) {
-            return 'Coverage floor cannot be judged: the coverage scope contains no executable lines.';
+            return $subject . ' floor cannot be judged: the coverage scope contains no executable lines.';
         }
 
         // Both sides as the report shows them, so the verdict never argues
@@ -430,11 +438,46 @@ final readonly class PostRunReport
         }
 
         return sprintf(
-            'Coverage below the required minimum: %.2f%% of %d executable lines covered, at least %.2f%% required.',
+            '%s below the required minimum: %.2f%% of %d executable lines covered, at least %.2f%% required.',
+            $subject,
             $percent,
             $totals['executable'],
             $floor,
         );
+    }
+
+    /**
+     * One verdict per named target: the target is judged on its own
+     * slice of the collected data, so a passing pooled total cannot hide
+     * a module under its floor. The minimum is the target's own, then
+     * `--coverage-min`, then `--min`; nothing runs when all three are
+     * absent.
+     *
+     * @return list<non-empty-string>
+     */
+    public function coverageTargetFloors(CoverageData $data, CoverageTargetSet $targets, ?float $minimum): array
+    {
+        $breaches = [];
+
+        foreach ($targets->targets() as $target) {
+            if ($target->name === null) {
+                continue;
+            }
+
+            $floor = $target->minimum ?? $minimum;
+
+            if ($floor === null) {
+                continue;
+            }
+
+            $breach = $this->coverageFloor($data->narrowedTo([$target->path]), $floor, $target->name);
+
+            if ($breach !== null) {
+                $breaches[] = $breach;
+            }
+        }
+
+        return $breaches;
     }
 
     /**

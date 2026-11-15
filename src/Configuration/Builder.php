@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\Configuration;
 
 use LucianoPereira\Crucible\Browser\BrowserConfiguration;
 use LucianoPereira\Crucible\Browser\BrowserEngine;
+use LucianoPereira\Crucible\Coverage\CoverageTarget;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
 use LucianoPereira\Crucible\Extension\CommandGate;
 use LucianoPereira\Crucible\Extension\Extension;
@@ -36,6 +37,7 @@ use function array_is_list;
 use function array_values;
 use function is_string;
 use function sprintf;
+use function str_contains;
 
 /**
  * Fluent builder returned by Crucible::configure() inside a project's
@@ -124,6 +126,9 @@ final class Builder
 
     /** @var list<ImpactRule> */
     private array $impactRules = [];
+
+    /** @var list<CoverageTarget> */
+    private array $coverageTargets = [];
 
     /** @var array<string, array{class: class-string, params: array<string, mixed>}> */
     private array $reportFormats;
@@ -575,6 +580,31 @@ final class Builder
     }
 
     /**
+     * Crucible-native: a named coverage target, the directory or file a
+     * report and a floor can judge alone. `--coverage-target Name=path`
+     * is the command-line spelling; `--coverage-min Name:pct` and
+     * `--min` are its fallback floors.
+     */
+    public function coverageTarget(string $name, string $path, ?float $min = null): self
+    {
+        if ($name === '' || str_contains($name, '/') || str_contains($name, '\\')) {
+            throw new ConfigurationException(sprintf('A coverage target needs a name, not a path, got "%s".', $name));
+        }
+
+        if ($path === '') {
+            throw new ConfigurationException(sprintf('Coverage target "%s" needs a path.', $name));
+        }
+
+        if ($min !== null && ($min < 0.0 || $min > 100.0)) {
+            throw new ConfigurationException(sprintf('Coverage target "%s" expects a floor between 0 and 100, got %s.', $name, $min));
+        }
+
+        $this->coverageTargets[] = new CoverageTarget($name, $path, $min);
+
+        return $this;
+    }
+
+    /**
      * Crucible-native: per-scope deprecation budgets, the typed form of
      * the Symfony bridge's max[self|direct|indirect] grammar. The run
      * exits non-zero when a scope exceeds its budget; null means no
@@ -961,6 +991,7 @@ final class Builder
             retriggerHotFile: $this->retriggerHotFile,
             retriggerPort: $this->retriggerPort,
             beStrictAboutOutputDuringTests: $this->beStrictAboutOutputDuringTests,
+            coverageTargets: $this->coverageTargets,
         );
     }
 }

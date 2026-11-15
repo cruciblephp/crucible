@@ -383,6 +383,12 @@ final class PdfRenderer
                 $this->pdf->text(PdfPrimitives::MARGIN + 20.0, $this->pdf->y + 3.0, PdfPrimitives::HELVETICA, 8.0, $this->pdf->encode('[quarantined]'), self::AMBER);
             }
 
+            if ($entry->location !== null) {
+                $this->pdf->ensure(9.0);
+                $this->pdf->text(PdfPrimitives::MARGIN + 20.0, $this->pdf->y - 8.0, PdfPrimitives::COURIER, 8.0, $this->pdf->encode('at ' . $entry->location), self::GRAY);
+                $this->pdf->y -= 10.0;
+            }
+
             if ($entry->detail !== null) {
                 foreach ($this->pdf->wrap($entry->detail, 7.5, $columns - 24.0) as $row) {
                     $this->pdf->ensure(7.5 * 1.4);

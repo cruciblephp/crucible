@@ -1,4 +1,4 @@
-.TH CRUCIBLE 1 2026-10-26 "Crucible 1.2.0" "User Commands"
+.TH CRUCIBLE 1 2026-11-15 "Crucible 1.3.0" "User Commands"
 .SH NAME
 crucible \- an independent, XML-free test framework for PHP
 .SH SYNOPSIS
@@ -65,7 +65,12 @@ Report and judge
 .B \-\-min
 on the files under
 .I path
-alone; repeatable.
+alone; repeatable. Write
+.I Name=path
+to name the target.
+.TP
+.BI \-\-coverage\-min " spec"
+A named target's own floor: Name:pct, Name1,Name2:pct, or @file; repeatable, alias \-\-mins.
 .TP
 .BI \-\-parallel " N"
 Run test classes in N worker processes.
