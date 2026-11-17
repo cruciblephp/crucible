@@ -67,15 +67,7 @@ final class ChangedFilesTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['kept.php', 'modified.php', 'doomed.php', 'fresh.php'] as $file) {
-            @unlink($this->repository . '/' . $file);
-        }
-
-        $this->remove($this->repository . '/.git');
-
-        if (is_dir($this->repository)) {
-            rmdir($this->repository);
-        }
+        $this->remove($this->repository);
     }
 
     /**
@@ -102,6 +94,31 @@ final class ChangedFilesTest extends TestCase
         if (proc_close($process) !== 0) {
             self::fail('git ' . $command . ' failed: ' . $error);
         }
+    }
+
+    /** The commit a gitlink points at. */
+    private function head(): string
+    {
+        $process = proc_open(
+            ['git', '-C', $this->repository, 'rev-parse', 'HEAD'],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+
+        if (!is_resource($process)) {
+            self::fail('git rev-parse could not be started.');
+        }
+
+        $sha = trim((string) stream_get_contents($pipes[1]));
+        stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        if (proc_close($process) !== 0 || $sha === '') {
+            self::fail('git rev-parse HEAD failed.');
+        }
+
+        return $sha;
     }
 
     /** Git leaves its objects read-only, which Windows will not unlink until told otherwise. */
@@ -154,6 +171,88 @@ final class ChangedFilesTest extends TestCase
 
         self::assertSame([], $changed->files);
         self::assertSame([], $changed->deleted);
+    }
+
+    /**
+     * A rename is a deletion plus an addition: `--no-renames` keeps the
+     * old path in the change set, so tests depending on it are selected
+     * rather than silently left behind.
+     */
+    public function testARenameReportsBothTheDeletedAndTheAddedPath(): void
+    {
+        $this->git('mv modified.php renamed.php');
+
+        $changed = ChangedFiles::fromGit(new WorkingDirectory($this->repository), 'HEAD');
+
+        if (is_string($changed)) {
+            self::fail('Unexpected git error: ' . $changed);
+        }
+
+        self::assertContains(WorkingDirectory::native($this->repository . '/renamed.php'), $changed->files);
+        self::assertSame(['modified.php'], $changed->deleted);
+    }
+
+    /** Spaces and non-ASCII both survive git's NUL-delimited answer. */
+    public function testAwkwardFilenamesKeepTheirExactBytes(): void
+    {
+        $names = ['sp ace.php', 'unï€ode.php'];
+
+        foreach ($names as $name) {
+            file_put_contents($this->repository . '/' . $name, '<?php // new');
+        }
+
+        $changed = ChangedFiles::fromGit(new WorkingDirectory($this->repository), 'HEAD');
+
+        if (is_string($changed)) {
+            self::fail('Unexpected git error: ' . $changed);
+        }
+
+        foreach ($names as $name) {
+            self::assertContains(WorkingDirectory::native($this->repository . '/' . $name), $changed->files);
+        }
+    }
+
+    /**
+     * ls-files answers relative to the current directory, so a run from
+     * a nested one must still see untracked files above it and must not
+     * join a child-relative path onto the repository root.
+     */
+    public function testUntrackedFilesAreFoundFromANestedDirectory(): void
+    {
+        mkdir($this->repository . '/nested/deeper', 0o777, true);
+        file_put_contents($this->repository . '/nested/local.php', '<?php // new');
+        file_put_contents($this->repository . '/nested/deeper/inside.php', '<?php // new');
+        file_put_contents($this->repository . '/above.php', '<?php // new');
+
+        $changed = ChangedFiles::fromGit(new WorkingDirectory($this->repository . '/nested/deeper'), 'HEAD');
+
+        if (is_string($changed)) {
+            self::fail('Unexpected git error: ' . $changed);
+        }
+
+        foreach (['above.php', 'nested/local.php', 'nested/deeper/inside.php'] as $name) {
+            self::assertContains(WorkingDirectory::native($this->repository . '/' . $name), $changed->files);
+        }
+    }
+
+    /**
+     * A gitlink (submodule) is a directory in the working tree, not a
+     * regular file: dropping it would hide an important dependency
+     * change from impact selection.
+     */
+    public function testAGitlinkChangeSurvivesTheExistingEntryFilter(): void
+    {
+        mkdir($this->repository . '/modules', 0o777, true);
+        mkdir($this->repository . '/modules/package');
+        $this->git('update-index --add --cacheinfo 160000,' . $this->head() . ',modules/package');
+
+        $changed = ChangedFiles::fromGit(new WorkingDirectory($this->repository), 'HEAD');
+
+        if (is_string($changed)) {
+            self::fail('Unexpected git error: ' . $changed);
+        }
+
+        self::assertContains(WorkingDirectory::native($this->repository . '/modules/package'), $changed->files);
     }
 
     public function testAnUnknownReferenceIsAnError(): void

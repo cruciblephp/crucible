@@ -12,10 +12,14 @@ namespace LucianoPereira\Crucible\Impact;
 
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 
+use function array_key_last;
 use function array_keys;
+use function array_pop;
+use function count;
 use function explode;
 use function fclose;
-use function is_file;
+use function file_exists;
+use function is_link;
 use function is_resource;
 use function proc_close;
 use function proc_open;
@@ -31,7 +35,7 @@ use function trim;
 final readonly class ChangedFiles
 {
     /**
-     * @param list<non-empty-string> $files   absolute paths of changed files that exist
+     * @param list<non-empty-string> $files   absolute paths of changed entries that exist
      * @param list<non-empty-string> $deleted repo-relative names of deleted files
      */
     public function __construct(
@@ -44,13 +48,21 @@ final readonly class ChangedFiles
      * differences, staged and unstaged modifications, plus untracked
      * files (a brand-new test must be selected, not invisible).
      *
+     * Every query runs from the repository root, because git answers
+     * `ls-files` relative to the current directory: from a nested one,
+     * an untracked file above it would be listed under a path joined to
+     * the wrong parent — or not listed at all. `-z` keeps filenames
+     * byte-exact (spaces, quotes, newlines, non-ASCII), and
+     * `--no-renames` turns a rename into the deletion and addition it
+     * really is, so both halves reach the selection.
+     *
      * @param non-empty-string $reference
      *
      * @return self|non-empty-string an error message when git cannot answer
      */
     public static function fromGit(WorkingDirectory $workingDirectory, string $reference): self|string
     {
-        [$code, $output, $error] = self::git(['rev-parse', '--show-toplevel'], $workingDirectory);
+        [$code, $output, $error] = self::git(['rev-parse', '--show-toplevel'], $workingDirectory->path);
 
         if ($code !== 0) {
             $message = trim($error);
@@ -64,7 +76,10 @@ final readonly class ChangedFiles
             return 'git did not report a repository root.';
         }
 
-        [$code, $output, $error] = self::git(['diff', '--name-only', '--diff-filter=d', $reference], $workingDirectory);
+        [$code, $output, $error] = self::git(
+            ['diff', '--name-status', '-z', '--no-renames', $reference, '--'],
+            $top,
+        );
 
         if ($code !== 0) {
             $message = trim($error);
@@ -72,16 +87,42 @@ final readonly class ChangedFiles
             return $message !== '' ? $message : 'git diff against "' . $reference . '" failed.';
         }
 
-        $changed = self::lines($output);
+        $changed = [];
+        /** @var array<non-empty-string, true> $deleted */
+        $deleted = [];
+        $fields  = self::fields($output);
 
-        [$code, $output] = self::git(['diff', '--name-only', '--diff-filter=D', $reference], $workingDirectory);
+        // -z pairs each status with its path, in that order.
+        for ($index = 0; $index + 1 < count($fields); $index += 2) {
+            $status = $fields[$index];
+            $name   = $fields[$index + 1];
 
-        $deleted = $code === 0 ? self::lines($output) : [];
+            if ($name === '') {
+                continue;
+            }
 
-        [$code, $output] = self::git(['ls-files', '--others', '--exclude-standard'], $workingDirectory);
+            if ($status === 'D') {
+                $deleted[$name] = true;
 
-        if ($code === 0) {
-            $changed = [...$changed, ...self::lines($output)];
+                continue;
+            }
+
+            $changed[] = $name;
+        }
+
+        [$code, $output, $error] = self::git(
+            ['ls-files', '--others', '--exclude-standard', '--full-name', '-z'],
+            $top,
+        );
+
+        if ($code !== 0) {
+            $message = trim($error);
+
+            return $message !== '' ? $message : 'git ls-files could not list untracked files.';
+        }
+
+        foreach (self::fields($output) as $name) {
+            $changed[] = $name;
         }
 
         /** @var array<non-empty-string, true> $files */
@@ -91,30 +132,34 @@ final readonly class ChangedFiles
             // git answers with '/' on every OS; the graph keys on the OS's own.
             $absolute = WorkingDirectory::native($top . '/' . $name);
 
-            if (is_file($absolute)) {
+            // file_exists() covers directories, which is what a gitlink
+            // (submodule) change is. A symlink is an entry even when its
+            // target is gone.
+            if (file_exists($absolute) || is_link($absolute)) {
                 $files[$absolute] = true;
             }
         }
 
-        return new self(array_keys($files), $deleted);
+        return new self(array_keys($files), array_keys($deleted));
     }
 
     /**
-     * @return list<non-empty-string>
+     * The NUL-separated fields of a `-z` answer, verbatim: no trimming,
+     * no newline splitting — a filename may contain either.
+     *
+     * @return list<string>
      */
-    private static function lines(string $output): array
+    private static function fields(string $output): array
     {
-        $lines = [];
+        $fields = explode("\0", $output);
 
-        foreach (explode("\n", $output) as $line) {
-            $line = trim($line);
-
-            if ($line !== '') {
-                $lines[] = $line;
-            }
+        // Every record is NUL-terminated, so the split ends with one
+        // empty field; an empty name is never a real record.
+        if ($fields !== [] && $fields[array_key_last($fields)] === '') {
+            array_pop($fields);
         }
 
-        return $lines;
+        return $fields;
     }
 
     /**
@@ -122,13 +167,13 @@ final readonly class ChangedFiles
      *
      * @return array{int, string, string} exit code, stdout, stderr
      */
-    private static function git(array $arguments, WorkingDirectory $workingDirectory): array
+    private static function git(array $arguments, string $directory): array
     {
         $process = proc_open(
             ['git', ...$arguments],
             [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
-            $workingDirectory->path,
+            $directory,
         );
 
         if (!is_resource($process)) {
