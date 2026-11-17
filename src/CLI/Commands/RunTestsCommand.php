@@ -965,7 +965,9 @@ final class RunTestsCommand
             && !$options->noWip
             && $options->testsuite === null
             && $options->changed === null
+            && !$options->dirty
             && $options->related === []
+            && $options->testSuffixes === []
             && $options->shard === null
             && $options->excludeFilter === null
             && $options->excludeTestsuite === []
