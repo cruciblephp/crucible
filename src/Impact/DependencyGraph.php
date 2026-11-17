@@ -208,11 +208,20 @@ final class DependencyGraph
     }
 
     /**
+     * The suite configuration a Pest-family test file's discovery loads
+     * from its own directory upwards: `Pest.php` scopes and shared
+     * `Datasets/*.php` (D-033).
+     *
+     * Public because selection also needs it at the root of a group's
+     * closure, where no index entry can answer for it — a `*Test.php`
+     * file written in Pest has the same ancestors as an explicit
+     * `.pest.php` one.
+     *
      * @param non-empty-string $file
      *
-     * @return list<string> absolute paths
+     * @return list<non-empty-string> absolute paths
      */
-    private function suiteConfigurationAbove(string $file): array
+    public function suiteConfigurationAbove(string $file): array
     {
         $found     = [];
         $directory = dirname($file);
@@ -228,7 +237,9 @@ final class DependencyGraph
             $datasets = glob($directory . DIRECTORY_SEPARATOR . 'Datasets' . DIRECTORY_SEPARATOR . '*.php');
 
             foreach ($datasets === false ? [] : $datasets as $dataset) {
-                $found[] = $dataset;
+                if ($dataset !== '') {
+                    $found[] = $dataset;
+                }
             }
 
             if ($directory === $root) {

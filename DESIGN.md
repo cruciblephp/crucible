@@ -1348,7 +1348,11 @@ intersects the change set. Watch mode is slice 2 and builds on this.
   rules).
 - **Pest-family edge**: `*.pest.php`/`*.crucible.php` files depend on every ancestor
   `Pest.php` and `Datasets/*.php` (D-033 loads them per directory) — a shared-dataset
-  edit re-runs the files beneath it.
+  edit re-runs the files beneath it. Discovery also routes a `*Test.php` written in Pest
+  to the same frontend, so selection adds those configuration files at the ROOT of the
+  group's closure too, using the same top-level-vocabulary sniff (D-008). Root injection
+  is deliberate: the dependency index may replay the test file's unchanged bytes, but a
+  configuration file added or edited above it must still select the test.
 - **The change set** (`ChangedFiles::fromGit`): `git diff --name-status -z --no-renames
   <ref>` (working tree vs ref — committed, staged, and unstaged in one question) plus
   untracked files from `ls-files --others --exclude-standard --full-name -z` (a brand-new

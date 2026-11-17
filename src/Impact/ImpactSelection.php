@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Impact;
 
+use Closure;
 use LucianoPereira\Crucible\Attributes\Group;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Test\TestGroup;
@@ -22,6 +23,7 @@ use function basename;
 use function count;
 use function implode;
 use function in_array;
+use function is_file;
 use function realpath;
 use function rtrim;
 use function sprintf;
@@ -77,6 +79,9 @@ final readonly class ImpactSelection
      * @param list<ImpactRule>       $rules            declared path → groups rules (D-083); additive only
      * @param list<non-empty-string> $claimedPaths     absolute directories another tier answers for
      *                                                 (the configured Vitest suites, D-080)
+     * @param ?Closure(string): bool $pestDetector     whether a file is written in Pest's top-level
+     *                                                 vocabulary, as discovery decides it; wired by the
+     *                                                 CLI, so the Impact tier does not reach a dialect (D-088)
      */
     public function __construct(
         private DependencyGraph $graph,
@@ -84,6 +89,7 @@ final readonly class ImpactSelection
         private array $environmentFiles = [],
         private array $rules = [],
         private array $claimedPaths = [],
+        private ?Closure $pestDetector = null,
     ) {}
 
     /**
@@ -194,7 +200,7 @@ final readonly class ImpactSelection
 
             $hits = $targets === []
                 ? []
-                : array_intersect_key($this->graph->closureOf($this->fileOf($group)), $targets);
+                : array_intersect_key($this->closureOf($group), $targets);
 
             if ($hits !== []) {
                 $reached += $hits;
@@ -247,6 +253,48 @@ final readonly class ImpactSelection
         );
 
         return ImpactResult::tiered($definite, $possible, $notes);
+    }
+
+    /**
+     * The group's dependency closure plus the suite configuration its
+     * discovery loads before the file runs: every ancestor `Pest.php`
+     * and `Datasets/*.php` (D-033).
+     *
+     * These edges are injected at the root rather than stored in the
+     * graph, because the dependency index may replay an answer for the
+     * test file's unchanged bytes while the configuration above it
+     * changed — a file that did not exist when the answer was cached is
+     * exactly the case that must still select the test.
+     *
+     * @return array<string, true>
+     */
+    private function closureOf(TestGroup $group): array
+    {
+        $file    = $this->fileOf($group);
+        $closure = $this->graph->closureOf($file);
+
+        if (!$this->isPestFile($file)) {
+            return $closure;
+        }
+
+        foreach ($this->graph->suiteConfigurationAbove($file) as $configuration) {
+            $closure[$configuration] = true;
+            $closure += $this->graph->closureOf($configuration);
+        }
+
+        return $closure;
+    }
+
+    /**
+     * Whether discovery would route this file to the Pest frontend: the
+     * two explicit suffixes, or the same top-level-vocabulary sniff the
+     * discoverer uses for every other `*Test.php` (never the name).
+     */
+    private function isPestFile(string $file): bool
+    {
+        return str_ends_with($file, '.pest.php')
+            || str_ends_with($file, '.crucible.php')
+            || ($this->pestDetector !== null && is_file($file) && ($this->pestDetector)($file));
     }
 
     /**
