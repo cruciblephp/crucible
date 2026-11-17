@@ -14,7 +14,9 @@ use Composer\InstalledVersions;
 use LucianoPereira\Crucible\Assert\Assert;
 use LucianoPereira\Crucible\Assert\AssertionFailedError;
 use LucianoPereira\Crucible\Assert\Constraint\Constraint;
+use LucianoPereira\Crucible\Assert\Constraint\LogicalAnd;
 use LucianoPereira\Crucible\Assert\Constraint\LogicalNot;
+use LucianoPereira\Crucible\Assert\Constraint\LogicalOr;
 use LucianoPereira\Crucible\Assert\GeneratorNotSupportedException;
 use LucianoPereira\Crucible\Assert\UnknownClassOrInterfaceException;
 use LucianoPereira\Crucible\Dialect\Pest\RealPhpUnitBootstrap;
@@ -141,10 +143,13 @@ final class PhpUnitCompatibility
             // the hook surface (matches/toString/failureDescription)
             // is signature-compatible by design.
             'PHPUnit\Framework\Constraint\Constraint' => Constraint::class,
-            // The one concrete constraint frameworks build by the
+            // The concrete constraints frameworks build by the
             // incumbent's name: Laravel's assertDatabaseMissing() wraps
-            // its HasInDatabase in it.
+            // its HasInDatabase in LogicalNot, and Symfony's BrowserKit
+            // and DomCrawler traits compose with LogicalAnd and LogicalOr.
             'PHPUnit\Framework\Constraint\LogicalNot' => LogicalNot::class,
+            'PHPUnit\Framework\Constraint\LogicalAnd' => LogicalAnd::class,
+            'PHPUnit\Framework\Constraint\LogicalOr'  => LogicalOr::class,
             // The double surface (D-046): mocks and stubs are one
             // concept in Crucible, so both spec interfaces alias the
             // Mocked marker and both builders alias the one builder.
