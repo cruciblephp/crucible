@@ -729,10 +729,19 @@ needed no second protocol.
   cache thus accumulates worker durations too, with persistence owned by the supervisor
   alone (workers read the cache for ordering, never write it).
 - **Crash accountability** (the nextest lesson): each unit carries the test ids the
-  supervisor expects back; a worker reaching EOF without its handshake has crashed, and
-  every expected-but-unfinished test is reported errored with the stderr tail as reason.
-  A lost worker can never mean silently lost tests — probed by a fixture whose isolated
-  test calls `exit()`: the crash is contained, the run continues, exit code 2.
+  supervisor expects back, counted per occurrence so `--repeat` repetitions are part of
+  the account; a worker reaching EOF without its handshake has crashed, and every
+  expected-but-unfinished test is reported errored with the stderr tail as reason.
+  A handshake is not enough on its own: a worker that says `run:finish` after dropping a
+  test in rediscovery, losing a terminal event to raw stdout, or emitting an id the
+  parent did not plan is held to the same account. Results for unplanned ids or beyond
+  their occurrence count are drained before they reach the totals or the stream. Missing
+  occurrences are reported errored and keep `complete` absent even though the synthetic
+  errors fill the tally. The one acknowledged shortfall is a stop-on cancellation, and
+  only when the worker's `run:finish` total matches the results that actually arrived and
+  its `run:start` shows it had discovered the whole unit. A lost worker can never mean
+  silently lost tests — probed by a fixture whose isolated test calls `exit()`: the crash
+  is contained, the run continues, exit code 2.
 - **Queue scheduling is LPT** (Graham 1969): units sorted by cached-duration cost,
   costliest first, next unit to the first free slot; stable sort keeps unknown-cost units
   in scheduled order. `--parallel N` routes *all* groups through the pool (one unit per

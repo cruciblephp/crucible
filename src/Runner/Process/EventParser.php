@@ -69,7 +69,7 @@ final readonly class EventParser
     }
 
     /**
-     * Whether the line is a worker's run:finish — the completion
+     * Whether the line is a worker's run:finish - the completion
      * handshake: a worker that reached EOF without one crashed.
      */
     public function isRunFinished(string $line): bool
@@ -77,6 +77,55 @@ final readonly class EventParser
         $decoded = json_decode($line, true);
 
         return is_array($decoded) && ($decoded['event'] ?? null) === EventName::RunFinished->value;
+    }
+
+    /**
+     * How many tests the worker's run:finish claims it finished. The
+     * handshake is the worker's own account of its results: when it
+     * matches what arrived, a shortfall against the supervisor's unit
+     * is an acknowledged stop, not a lost event.
+     */
+    public function reportedTotal(string $line): ?int
+    {
+        $decoded = json_decode($line, true);
+
+        if (!is_array($decoded) || ($decoded['event'] ?? null) !== EventName::RunFinished->value) {
+            return null;
+        }
+
+        $counts = $decoded['counts'] ?? null;
+
+        if (!is_array($counts)) {
+            return null;
+        }
+
+        $total = 0;
+
+        foreach ($counts as $count) {
+            if (!is_int($count)) {
+                return null;
+            }
+
+            $total += $count;
+        }
+
+        return $total;
+    }
+
+    /**
+     * How many tests the worker's run:start says it planned. Null for
+     * any other line, so a worker that rediscovered fewer tests than
+     * its manifest named can be told apart from one that stopped early.
+     */
+    public function plannedTotal(string $line): ?int
+    {
+        $decoded = json_decode($line, true);
+
+        if (!is_array($decoded) || ($decoded['event'] ?? null) !== EventName::RunStarted->value) {
+            return null;
+        }
+
+        return is_int($decoded['tests'] ?? null) ? $decoded['tests'] : null;
     }
 
     /**

@@ -1216,6 +1216,7 @@ final class RunTestsCommand
                 dependencyValues: $dependencyValues,
                 paths: $options->paths,
                 noExtensions: $options->noExtensions,
+                stopOnConfigured: $runnerOptions->stopsOnAnyOutcome(),
             ))->run($groups, $afterTests);
         } else {
             $summary = $runner->run($groups, $afterTests);

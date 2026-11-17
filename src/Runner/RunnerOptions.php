@@ -63,6 +63,24 @@ final readonly class RunnerOptions
     ) {}
 
     /**
+     * Whether any stop-on switch can halt a run after a test. A worker
+     * that stops early and account for every result it emitted was
+     * cancelled on purpose, not lost (D-022).
+     */
+    public function stopsOnAnyOutcome(): bool
+    {
+        return $this->stopOnDefect
+            || $this->stopOnError
+            || $this->stopOnFailure
+            || $this->stopOnRisky
+            || $this->stopOnSkipped
+            || $this->stopOnIncomplete
+            || $this->stopOnDeprecation
+            || $this->stopOnNotice
+            || $this->stopOnWarning;
+    }
+
+    /**
      * @param ?bool                  $stopOnDefect        CLI override; null falls back to the configuration
      * @param ?bool                  $stopOnError         CLI override; null falls back to the configuration
      * @param ?bool                  $stopOnFailure       CLI override; null falls back to the configuration
