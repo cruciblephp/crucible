@@ -36,6 +36,7 @@ use LucianoPereira\Crucible\Test\TestId;
 
 use function array_map;
 use function array_shift;
+use function array_sum;
 use function array_values;
 use function bin2hex;
 use function count;
@@ -90,6 +91,14 @@ final class Supervisor
     private array $issueCounts = ['deprecations' => 0, 'notices' => 0, 'warnings' => 0];
 
     /**
+     * Whether every unit accounted for exactly the results it was given
+     * (D-071). A missing result reported as a synthetic error fills the
+     * tally, but the omission still means the run did not visit
+     * everything its plan named — so `complete` stays absent.
+     */
+    private bool $accounted = true;
+
+    /**
      * @param non-empty-string  $crucibleBinary
      * @param non-empty-string  $configurationPath
      * @param ?int<0, max>      $retries           the run's resolved retry budget (G4), carried into every manifest
@@ -100,6 +109,7 @@ final class Supervisor
      * @param bool              $processIsolation  the spec's --process-isolation: every test gets its own worker, as if it carried #[RunInSeparateProcess]
      * @param DependencyValues  $dependencyValues  shared with the in-process runner, so a prerequisite that ran here reaches a dependent that runs in a worker
      * @param list<non-empty-string> $paths        the run's test paths (D-152), carried into every manifest so a worker discovers what the parent did
+     * @param bool              $stopOnConfigured  a stop-on option is active, so a worker's early halt is an acknowledged cancellation
      */
     public function __construct(
         private readonly Emitter $emitter,
@@ -126,6 +136,7 @@ final class Supervisor
         private readonly bool $processIsolation = false,
         private readonly DependencyValues $dependencyValues = new DependencyValues(),
         private readonly array $paths = [],
+        private readonly bool $stopOnConfigured = false,
     ) {}
 
     /**
@@ -242,7 +253,7 @@ final class Supervisor
         // workers report their tests as errored, so the tally only falls
         // short of the plan when something halted the run. Computed on
         // the PHP plan before external results (Vitest) fold in.
-        $complete = $this->fullSuite && $summary->total() === $planned;
+        $complete = $this->fullSuite && $this->accounted && $summary->total() === $planned;
 
         if ($delta instanceof RunSummary) {
             $summary = $summary->plus($delta);
@@ -411,8 +422,17 @@ final class Supervisor
         /** @var array<int, WorkerProcess> $active */
         $active = [];
 
-        /** @var array<int, array<string, true>> $finished finished test ids per worker */
+        /** @var array<int, array<string, int>> $finished finished test occurrences per worker */
         $finished = [];
+
+        /** @var array<int, array<string, int>> $expectedCounts the unit's id occurrences per worker */
+        $expectedCounts = [];
+
+        /** @var array<int, ?int> $plannedCounts what each worker says it discovered */
+        $plannedCounts = [];
+
+        /** @var array<int, ?int> $reportedTotals what each worker says it finished */
+        $reportedTotals = [];
 
         $slots = max($this->parallel, 1);
 
@@ -534,11 +554,24 @@ final class Supervisor
                     continue;
                 }
 
-                $active[spl_object_id($worker)]     = $worker;
-                $finished[spl_object_id($worker)]   = [];
-                $slotOf[spl_object_id($worker)]     = $slot;
-                $artifactOf[spl_object_id($worker)] = $artifact;
-                $isolatedOf[spl_object_id($worker)] = $planned->isolated;
+                $key = spl_object_id($worker);
+
+                /** @var array<string, int> $wanted */
+                $wanted = [];
+
+                foreach ($planned->expected as $expected) {
+                    $id          = $expected->toString();
+                    $wanted[$id] = ($wanted[$id] ?? 0) + 1;
+                }
+
+                $active[$key]            = $worker;
+                $finished[$key]          = [];
+                $expectedCounts[$key]    = $wanted;
+                $plannedCounts[$key]     = null;
+                $reportedTotals[$key]    = null;
+                $slotOf[$key]            = $slot;
+                $artifactOf[$key]        = $artifact;
+                $isolatedOf[$key]        = $planned->isolated;
             }
 
             if ($active === []) {
@@ -551,6 +584,15 @@ final class Supervisor
                 foreach ($worker->readLines() as $line) {
                     if ($this->parser->isRunFinished($line)) {
                         $worker->markFinished();
+                        $reportedTotals[$key] = $this->parser->reportedTotal($line);
+
+                        continue;
+                    }
+
+                    $plannedTotal = $this->parser->plannedTotal($line);
+
+                    if ($plannedTotal !== null) {
+                        $plannedCounts[$key] = $plannedTotal;
 
                         continue;
                     }
@@ -574,10 +616,35 @@ final class Supervisor
                         $this->forwardStderr($worker->takeStderr());
                     }
 
+                    if ($event instanceof TestFinished) {
+                        $id     = $event->test->toString();
+                        $seen   = $finished[$key][$id] ?? 0;
+                        $wanted = $expectedCounts[$key][$id] ?? 0;
+
+                        // A result the unit did not ask for — a provider
+                        // row the parent and worker disagree on, a
+                        // duplicated event, or a repetition the plan
+                        // never contained — must not reach the totals
+                        // or the stream: it would make the run look more
+                        // finished than its plan, and its id would fail
+                        // to match the plan's accounting either way.
+                        if ($seen >= $wanted) {
+                            $this->accounted = false;
+
+                            fwrite(STDERR, sprintf(
+                                'Worker reported a result for %s that its unit did not expect; ignored.' . PHP_EOL,
+                                $id,
+                            ));
+
+                            continue;
+                        }
+
+                        $finished[$key][$id] = $seen + 1;
+                    }
+
                     $this->emitter->emit($event);
 
                     if ($event instanceof TestFinished) {
-                        $finished[$key][$event->test->toString()] = true;
                         $this->tally($event->outcome);
 
                         if ($event->blocked) {
@@ -602,14 +669,41 @@ final class Supervisor
                     $this->forwardStderr($worker->takeStderr());
                 }
 
+                $missing = $this->missing($expectedCounts[$key], $finished[$key]);
+
                 if (!$worker->hasFinished()) {
-                    $this->reportLost(
-                        $worker->expected,
+                    $this->accounted = false;
+
+                    $this->reportMissing(
+                        $expectedCounts[$key],
                         $finished[$key],
                         'The worker process running this test exited unexpectedly.'
                             . $this->signalNote($worker->signal())
                             . ($worker->stderrTail() !== '' ? ' Worker stderr: ' . $worker->stderrTail() : ''),
                     );
+                } elseif ($missing !== []) {
+                    // The handshake said the worker finished. Either it
+                    // ran fewer tests than the plan named (rediscovery
+                    // dropped them), its stdout lost terminal events, or
+                    // a stop-on halted it after the last result it
+                    // emitted. Only the last is acknowledged, and only
+                    // when the worker's own account matches what arrived
+                    // AND it had planned the whole unit.
+                    $acknowledgedStop = $this->stopOnConfigured
+                        && $reportedTotals[$key] !== null
+                        && $reportedTotals[$key] === array_sum($finished[$key])
+                        && $plannedCounts[$key] === array_sum($expectedCounts[$key]);
+
+                    if (!$acknowledgedStop) {
+                        $this->accounted = false;
+
+                        $this->reportMissing(
+                            $expectedCounts[$key],
+                            $finished[$key],
+                            'The worker finished without reporting this test.'
+                                . ($worker->stderrTail() !== '' ? ' Worker stderr: ' . $worker->stderrTail() : ''),
+                        );
+                    }
                 }
 
                 $freeSlots[] = $slotOf[$key];
@@ -622,7 +716,16 @@ final class Supervisor
                     $available = [...$available, ...$this->readValues($artifact)];
                 }
 
-                unset($active[$key], $finished[$key], $slotOf[$key], $artifactOf[$key], $isolatedOf[$key]);
+                unset(
+                    $active[$key],
+                    $finished[$key],
+                    $expectedCounts[$key],
+                    $plannedCounts[$key],
+                    $reportedTotals[$key],
+                    $slotOf[$key],
+                    $artifactOf[$key],
+                    $isolatedOf[$key],
+                );
             }
         }
     }
@@ -745,24 +848,54 @@ final class Supervisor
     }
 
     /**
-     * Every expected test the dead worker never finished is errored —
-     * visibly, on the stream, with the crash diagnostics. A lost
-     * worker must never mean silently lost tests.
+     * The id occurrences a unit was given but never reported, as a set.
      *
-     * @param list<TestId>        $expected
-     * @param array<string, true> $finished
-     * @param non-empty-string    $reason
+     * @param array<string, int> $expected
+     * @param array<string, int> $finished
+     *
+     * @return array<string, int>
      */
-    private function reportLost(array $expected, array $finished, string $reason): void
+    private function missing(array $expected, array $finished): array
     {
-        foreach ($expected as $id) {
-            if (isset($finished[$id->toString()])) {
-                continue;
-            }
+        $missing = [];
 
-            $this->emitter->emit(new TestStarted($id));
-            $this->emitter->emit(new TestFinished($id, Outcome::Errored, 0.0, reason: $reason));
-            $this->tally(Outcome::Errored);
+        foreach ($expected as $id => $wanted) {
+            $shortfall = $wanted - ($finished[$id] ?? 0);
+
+            if ($shortfall > 0) {
+                $missing[$id] = $shortfall;
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
+     * Every expected occurrence the worker never finished is errored —
+     * visibly, on the stream, with the worker diagnostics. A lost
+     * worker, a dropped event, or a result the worker never produced
+     * must never mean silently lost tests.
+     *
+     * @param array<string, int> $expected
+     * @param array<string, int> $finished
+     * @param non-empty-string   $reason
+     */
+    private function reportMissing(array $expected, array $finished, string $reason): void
+    {
+        foreach ($expected as $id => $wanted) {
+            $seen = $finished[$id] ?? 0;
+
+            for ($occurrence = $seen; $occurrence < $wanted; $occurrence++) {
+                $test = TestId::fromString($id);
+
+                if (!$test instanceof TestId) {
+                    continue;
+                }
+
+                $this->emitter->emit(new TestStarted($test));
+                $this->emitter->emit(new TestFinished($test, Outcome::Errored, 0.0, reason: $reason));
+                $this->tally(Outcome::Errored);
+            }
         }
     }
 

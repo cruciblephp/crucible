@@ -1194,6 +1194,7 @@ final class RunTestsCommand
                 processIsolation: $options->processIsolation,
                 dependencyValues: $dependencyValues,
                 paths: $options->paths,
+                stopOnConfigured: $runnerOptions->stopsOnAnyOutcome(),
             ))->run($groups, $afterTests);
         } else {
             $summary = $runner->run($groups, $afterTests);
