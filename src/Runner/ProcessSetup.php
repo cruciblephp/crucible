@@ -29,7 +29,6 @@ use function is_file;
 use function putenv;
 use function set_include_path;
 use function sprintf;
-use function str_starts_with;
 
 use const PATH_SEPARATOR;
 use const PHP_EOL;
@@ -108,9 +107,11 @@ final class ProcessSetup
         $bootstrap = $overrides->bootstrap ?? $configuration->bootstrap;
 
         if ($bootstrap !== null) {
-            if (!str_starts_with($bootstrap, '/')) {
-                $bootstrap = $workingDirectory->path . '/' . $bootstrap;
-            }
+            // The shared resolver knows a Windows drive path and a UNC
+            // share are absolute too; a leading-slash test silently
+            // prepended the project root to `C:\…` and the bootstrap
+            // was never loaded.
+            $bootstrap = $workingDirectory->absolute($bootstrap);
 
             if (is_file($bootstrap)) {
                 require_once $bootstrap;
