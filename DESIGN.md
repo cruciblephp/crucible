@@ -3053,8 +3053,8 @@ ResultCacheWriter single-writer discipline).
 - **The primitive**: `run:finish` gains a default-omitted `complete: true`,
   true only when BOTH halves hold. The CLI half — no option narrowed the
   plan below the configured suite (`--filter`, `--group`/`--exclude-group`,
-  `--testsuite`, `--todos`/`--assignee`/`--issue`, `--changed`/`--related`,
-  `--shard`, `--flakes`) — travels as `RunnerOptions::fullSuite` (a
+  `--testsuite`, `--todos`/`--assignee`/`--issue`, `--changed`/`--dirty`/`--related`,
+  `--test-suffix`, `--shard`, `--flakes`) — travels as `RunnerOptions::fullSuite` (a
   Supervisor constructor bool in parallel mode). The runner half — every
   planned test finished — is `summary->total() === planned`, which catches
   stop-on halts and crashes without new bookkeeping: lost workers already
