@@ -47,6 +47,7 @@ use LucianoPereira\Crucible\Coverage\CoverageMap;
 use LucianoPereira\Crucible\Coverage\CoverageTargetSet;
 use LucianoPereira\Crucible\Coverage\DriverFactory;
 use LucianoPereira\Crucible\Dialect\Pest\Expectation;
+use LucianoPereira\Crucible\Dialect\Pest\PestFileSniffer;
 use LucianoPereira\Crucible\Dialect\Pest\PestScopes;
 use LucianoPereira\Crucible\Event\Emitter;
 use LucianoPereira\Crucible\Event\EventTextWriter;
@@ -797,6 +798,7 @@ final class RunTestsCommand
                 $environment,
                 $configuration->impactRules,
                 $claimedPaths,
+                (new PestFileSniffer())->hasTopLevelCalls(...),
             ))->select($groups, new ChangedFiles($files, $changed->deleted));
 
             // Written after the selection, so a run that resolved
