@@ -31,6 +31,7 @@ use function scandir;
 use function sys_get_temp_dir;
 use function uniqid;
 use function unlink;
+use function var_export;
 
 /**
  * A bootstrap loads from the path the configuration names, whether that
