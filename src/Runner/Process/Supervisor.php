@@ -133,8 +133,15 @@ final class Supervisor
     /**
      * Workers do not inherit the parent's -d flags, so whichever
      * driver the parent is running with is re-created on the child
-     * command line (D-041). A driver the child's php.ini already
-     * loads produces a harmless already-loaded notice.
+     * command line (D-041) — by its bare name, the one form every
+     * platform resolves against its own extension_dir: `pcov.so`
+     * exists nowhere on Windows, and `php -d extension=pcov.so`
+     * answers "Unable to load dynamic library" while the bare `pcov`
+     * finds php_pcov.dll. Measured with the same mechanism class the
+     * drivers load through: `-d extension=mbstring` and `-d
+     * zend_extension=opcache` both resolve here, their `.so` forms do
+     * not. A driver the child's php.ini already loads produces a
+     * harmless already-loaded notice.
      *
      * Without coverage the child gets the opposite instruction: an
      * xdebug hooking every call inflates every duration the worker
@@ -156,11 +163,11 @@ final class Supervisor
         // could collect lines but never branches, so the supervisor
         // recreates the driver its own detection chose.
         if (extension_loaded('pcov') && !$this->coverageBranch) {
-            return ['-d', 'extension=pcov.so', '-d', 'pcov.enabled=1'];
+            return ['-d', 'extension=pcov', '-d', 'pcov.enabled=1'];
         }
 
         if (extension_loaded('xdebug')) {
-            return ['-d', 'zend_extension=xdebug.so', '-d', 'xdebug.mode=coverage'];
+            return ['-d', 'zend_extension=xdebug', '-d', 'xdebug.mode=coverage'];
         }
 
         return [];
