@@ -67,6 +67,7 @@ use LucianoPereira\Crucible\Impact\ChangedFiles;
 use LucianoPereira\Crucible\Impact\DependencyGraph;
 use LucianoPereira\Crucible\Impact\DependencyIndex;
 use LucianoPereira\Crucible\Impact\ImpactFingerprint;
+use LucianoPereira\Crucible\Impact\ImpactResult;
 use LucianoPereira\Crucible\Impact\ImpactSelection;
 use LucianoPereira\Crucible\Impact\VitestImpact;
 use LucianoPereira\Crucible\Isolation\GlobalStateExport;
@@ -740,16 +741,38 @@ final class RunTestsCommand
                 $files[] = $absolute;
             }
 
+            // Both paths are compared against `realpath()`'d change-set
+            // entries, so they are resolved the same way: an explicit
+            // `--configuration` is returned exactly as typed and can be
+            // relative, and a bootstrap may be relative too (F-21). A
+            // path that cannot be resolved keeps its absolute form and
+            // widens below: it defines what runs even when its identity
+            // is not what was expected.
             $environment = [$loaded->path];
 
             $configuredBootstrap = $options->bootstrap ?? $configuration->bootstrap;
 
             if ($configuredBootstrap !== null) {
-                $bootstrap = realpath($workingDirectory->absolute($configuredBootstrap));
+                $environment[] = $configuredBootstrap;
+            }
 
-                if ($bootstrap !== false) {
-                    $environment[] = $bootstrap;
+            /** @var list<non-empty-string> $environmentFiles */
+            $environmentFiles = [];
+            /** @var list<non-empty-string> $unresolved */
+            $unresolved = [];
+
+            foreach ($environment as $path) {
+                $absolute = $workingDirectory->absolute($path);
+                $real     = realpath($absolute);
+
+                if ($real === false) {
+                    $unresolved[]       = $path;
+                    $environmentFiles[] = WorkingDirectory::native($absolute);
+
+                    continue;
                 }
+
+                $environmentFiles[] = WorkingDirectory::native($real);
             }
 
             // Coverage-observed edges (D-041), when a coverage run has
@@ -816,14 +839,16 @@ final class RunTestsCommand
                 ),
             );
 
-            $impact = (new ImpactSelection(
-                $graph,
-                $workingDirectory->path,
-                $environment,
-                $configuration->impactRules,
-                $claimedPaths,
-                (new PestFileSniffer())->hasTopLevelCalls(...),
-            ))->select($groups, new ChangedFiles($files, $changed->deleted));
+            $impact = $unresolved === []
+                ? (new ImpactSelection(
+                    $graph,
+                    $workingDirectory->path,
+                    $environmentFiles,
+                    $configuration->impactRules,
+                    $claimedPaths,
+                    (new PestFileSniffer())->hasTopLevelCalls(...),
+                ))->select($groups, new ChangedFiles($files, $changed->deleted))
+                : ImpactResult::everything(sprintf('Impact: %s cannot be resolved', $unresolved[0]));
 
             // Written after the selection, so a run that resolved
             // nothing new writes nothing.

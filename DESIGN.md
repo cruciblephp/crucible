@@ -1376,7 +1376,12 @@ intersects the change set. Watch mode is slice 2 and builds on this.
   shape (Jest's `--findRelatedTests`).
 - **Widening rules** (when in doubt, run everything, and say why): any deletion; any
   change to composer.json/composer.lock, the loaded configuration file, or the
-  bootstrap. Non-PHP changes are **named, not silently dropped** ("N non-PHP change(s)
+  bootstrap. The two environment paths are resolved exactly as the change set is —
+  against the working directory, symlink-resolved, in native separators — because
+  `--configuration` returns an explicit path exactly as typed (a relative one never
+  matched a canonical change-set path), and a path that cannot be resolved (a broken
+  bootstrap symlink) widens with a note rather than vanishing from the comparison
+  (F-21). Non-PHP changes are **named, not silently dropped** ("N non-PHP change(s)
   are outside the dependency graph") and select nothing — the Vitest/Jest reading;
   data-file dependencies are what `--related` is for.
 - **Wiring**: selection runs right after discovery, before the name/group filters and
@@ -1384,7 +1389,11 @@ intersects the change set. Watch mode is slice 2 and builds on this.
   given changes." and **exit 0** (distinct from "No tests found", exit 1 — an empty
   impact set is a success, not a misconfiguration). CLI: `--changed` follows the
   `--colors` optional-value pattern (bare or `=`, never consumes the next argument);
-  `--related` is repeatable.
+  `--related` is repeatable. ✓ `EnvironmentPathImpactTest`: an edit to the
+  auto-discovered configuration, a relative or absolute `--configuration`, or a
+  configured/relative/absolute bootstrap runs both tests; a configuration nobody loaded
+  selects nothing; a broken bootstrap symlink widens (POSIX). Verified on Windows and
+  Linux.
 - **Deferred with reasons**: per-test covered-files maps (pcov) as the second edge
   source — RESEARCH.md scoped the merge design, but coverage is its own phase; the
   graph's `dependenciesOf` is the seam it plugs into. Disk-caching the scan
