@@ -87,7 +87,7 @@ final readonly class WorkerManifest
         return json_encode([
             'configuration' => $this->configuration,
             'units'         => array_map(
-                static fn(WorkUnit $unit): array => ['file' => $unit->file, 'tests' => $unit->tests],
+                static fn(WorkUnit $unit): array => ['file' => $unit->file, 'tests' => $unit->tests, 'preload' => $unit->preload],
                 $this->units,
             ),
             'order'              => $this->order->value,
@@ -214,7 +214,15 @@ final readonly class WorkerManifest
                 }
             }
 
-            $units[] = new WorkUnit($unit['file'], $tests);
+            $preload = [];
+
+            foreach (is_array($unit['preload'] ?? null) ? $unit['preload'] : [] as $file) {
+                if (is_string($file) && $file !== '') {
+                    $preload[] = $file;
+                }
+            }
+
+            $units[] = new WorkUnit($unit['file'], $tests, 0.0, $preload);
         }
 
         $testToken       = $decoded['testToken'] ?? null;

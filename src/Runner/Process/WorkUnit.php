@@ -23,10 +23,12 @@ final readonly class WorkUnit
      * @param non-empty-string        $file          project-relative path, as in TestId
      * @param ?list<non-empty-string> $tests         declared names within the file; null runs all
      * @param float                   $estimatedCost cached duration for LPT ordering; 0.0 when unknown
+     * @param list<non-empty-string>  $preload       other discovered files whose declared symbols this file's code uses — the worker requires them before discovery, never runs them
      */
     public function __construct(
         public string $file,
         public ?array $tests = null,
         public float $estimatedCost = 0.0,
+        public array $preload = [],
     ) {}
 }

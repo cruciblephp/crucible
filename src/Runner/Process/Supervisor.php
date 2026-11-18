@@ -100,6 +100,7 @@ final class Supervisor
      * @param bool              $processIsolation  the spec's --process-isolation: every test gets its own worker, as if it carried #[RunInSeparateProcess]
      * @param DependencyValues  $dependencyValues  shared with the in-process runner, so a prerequisite that ran here reaches a dependent that runs in a worker
      * @param list<non-empty-string> $paths        the run's test paths (D-152), carried into every manifest so a worker discovers what the parent did
+     * @param array<string, list<non-empty-string>> $preloads each discovered file => the other discovered files whose declared symbols its code uses, carried into every unit's manifest so a worker satisfies a cross-file coupling the sequential process satisfies by loading everything
      */
     public function __construct(
         private readonly Emitter $emitter,
@@ -126,6 +127,7 @@ final class Supervisor
         private readonly bool $processIsolation = false,
         private readonly DependencyValues $dependencyValues = new DependencyValues(),
         private readonly array $paths = [],
+        private readonly array $preloads = [],
     ) {}
 
     /**
@@ -294,7 +296,7 @@ final class Supervisor
             }
 
             if ($wholeClass) {
-                $units[] = $this->unitFor($file, $group->tests, isolated: true);
+                $units[] = $this->unitFor($file, $group->tests, isolated: true, preload: $this->preloads[$file] ?? []);
 
                 continue;
             }
@@ -328,7 +330,7 @@ final class Supervisor
                     }
                 }
 
-                $units[] = $this->unitFor($file, $rows, isolated: true);
+                $units[] = $this->unitFor($file, $rows, isolated: true, preload: $this->preloads[$file] ?? []);
             }
 
             if ($remaining === []) {
@@ -336,7 +338,7 @@ final class Supervisor
             }
 
             if ($this->parallel > 1) {
-                $units[] = $this->unitFor($file, $remaining);
+                $units[] = $this->unitFor($file, $remaining, preload: $this->preloads[$file] ?? []);
 
                 continue;
             }
@@ -357,8 +359,9 @@ final class Supervisor
      * @param non-empty-string     $file
      * @param list<TestDefinition> $tests
      * @param bool                 $isolated the tests asked for their own process (see {@see attributeStderr()})
+     * @param list<non-empty-string> $preload the other discovered files this file's code couples to, required by its worker before discovery
      */
-    private function unitFor(string $file, array $tests, bool $isolated = false): PlannedUnit
+    private function unitFor(string $file, array $tests, bool $isolated = false, array $preload = []): PlannedUnit
     {
         $cost     = 0.0;
         $ids      = [];
@@ -396,7 +399,7 @@ final class Supervisor
             }
         }
 
-        return new PlannedUnit(new WorkUnit($file, $ids, $cost), $expected, $dependsOn, [], $preserve, $isolated);
+        return new PlannedUnit(new WorkUnit($file, $ids, $cost, $preload), $expected, $dependsOn, [], $preserve, $isolated);
     }
 
     /**
