@@ -186,6 +186,14 @@ abstract class Assert
 
     // --- Identity & equality --------------------------------------------
 
+    /**
+     * @template ExpectedType
+     *
+     * @param ExpectedType $expected
+     *
+     * @phpstan-assert =ExpectedType $actual
+     * @psalm-assert ExpectedType $actual
+     */
     public static function assertSame(mixed $expected, mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsIdentical($expected), $message);
@@ -228,31 +236,55 @@ abstract class Assert
 
     // --- Booleans & null --------------------------------------------------
 
+    /**
+     * @phpstan-assert true $condition
+     * @psalm-assert true $condition
+     */
     public static function assertTrue(mixed $condition, string $message = ''): void
     {
         self::assertThat($condition, new IsTrue(), $message);
     }
 
+    /**
+     * @phpstan-assert !true $condition
+     * @psalm-assert !true $condition
+     */
     public static function assertNotTrue(mixed $condition, string $message = ''): void
     {
         self::assertThat($condition, new LogicalNot(new IsTrue()), $message);
     }
 
+    /**
+     * @phpstan-assert false $condition
+     * @psalm-assert false $condition
+     */
     public static function assertFalse(mixed $condition, string $message = ''): void
     {
         self::assertThat($condition, new IsFalse(), $message);
     }
 
+    /**
+     * @phpstan-assert !false $condition
+     * @psalm-assert !false $condition
+     */
     public static function assertNotFalse(mixed $condition, string $message = ''): void
     {
         self::assertThat($condition, new LogicalNot(new IsFalse()), $message);
     }
 
+    /**
+     * @phpstan-assert null $actual
+     * @psalm-assert null $actual
+     */
     public static function assertNull(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsNull(), $message);
     }
 
+    /**
+     * @phpstan-assert !null $actual
+     * @psalm-assert !null $actual
+     */
     public static function assertNotNull(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsNull()), $message);
@@ -365,8 +397,13 @@ abstract class Assert
     }
 
     /**
-     * @param class-string    $className
-     * @param iterable<mixed> $haystack
+     * @template T
+     *
+     * @param class-string<T> $className
+     * @param iterable<mixed>  $haystack
+     *
+     * @phpstan-assert iterable<T> $haystack
+     * @psalm-assert iterable<T> $haystack
      */
     public static function assertContainsOnlyInstancesOf(string $className, iterable $haystack, string $message = ''): void
     {
@@ -398,6 +435,10 @@ abstract class Assert
         self::assertThat($array, new LogicalNot(new ArrayHasKey($key)), $message);
     }
 
+    /**
+     * @phpstan-assert list<mixed> $array
+     * @psalm-assert list<mixed> $array
+     */
     public static function assertIsList(mixed $array, string $message = ''): void
     {
         self::assertThat($array, new IsList(), $message);
@@ -492,7 +533,12 @@ abstract class Assert
     // --- Objects & types --------------------------------------------------------
 
     /**
-     * @param class-string $expected
+     * @template ExpectedType of object
+     *
+     * @param class-string<ExpectedType> $expected
+     *
+     * @phpstan-assert =ExpectedType $actual
+     * @psalm-assert ExpectedType $actual
      */
     public static function assertInstanceOf(string $expected, mixed $actual, string $message = ''): void
     {
@@ -502,7 +548,12 @@ abstract class Assert
     }
 
     /**
-     * @param class-string $expected
+     * @template ExpectedType of object
+     *
+     * @param class-string<ExpectedType> $expected
+     *
+     * @phpstan-assert !ExpectedType $actual
+     * @psalm-assert !ExpectedType $actual
      */
     public static function assertNotInstanceOf(string $expected, mixed $actual, string $message = ''): void
     {
@@ -551,121 +602,220 @@ abstract class Assert
 
     // --- assertIs*() type family ------------------------------------------------------
 
+    /**
+     * @phpstan-assert array<mixed> $actual
+     * @psalm-assert array<mixed> $actual
+     */
     public static function assertIsArray(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::Array), $message);
     }
 
+    /**
+     * @phpstan-assert !array<mixed> $actual
+     * @psalm-assert !array<mixed> $actual
+     */
     public static function assertIsNotArray(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::Array)), $message);
     }
 
+    /**
+     * @phpstan-assert bool $actual
+     * @psalm-assert bool $actual
+     */
     public static function assertIsBool(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::Bool), $message);
     }
 
+    /**
+     * @phpstan-assert !bool $actual
+     * @psalm-assert !bool $actual
+     */
     public static function assertIsNotBool(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::Bool)), $message);
     }
 
+    /**
+     * @phpstan-assert callable $actual
+     * @psalm-assert callable $actual
+     */
     public static function assertIsCallable(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::Callable), $message);
     }
 
+    /**
+     * @phpstan-assert !callable $actual
+     * @psalm-assert !callable $actual
+     */
     public static function assertIsNotCallable(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::Callable)), $message);
     }
 
+    /**
+     * A closed resource is a resource; the incumbent narrows to the
+     * supertype too, and no portable tag says "closed".
+     *
+     * @phpstan-assert resource $actual
+     * @psalm-assert resource $actual
+     */
     public static function assertIsClosedResource(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::ClosedResource), $message);
     }
 
+    /**
+     * @phpstan-assert !resource $actual
+     * @psalm-assert !resource $actual
+     */
     public static function assertIsNotClosedResource(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::ClosedResource)), $message);
     }
 
+    /**
+     * @phpstan-assert float $actual
+     * @psalm-assert float $actual
+     */
     public static function assertIsFloat(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::Float), $message);
     }
 
+    /**
+     * @phpstan-assert !float $actual
+     * @psalm-assert !float $actual
+     */
     public static function assertIsNotFloat(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::Float)), $message);
     }
 
+    /**
+     * @phpstan-assert int $actual
+     * @psalm-assert int $actual
+     */
     public static function assertIsInt(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::Int), $message);
     }
 
+    /**
+     * @phpstan-assert !int $actual
+     * @psalm-assert !int $actual
+     */
     public static function assertIsNotInt(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::Int)), $message);
     }
 
+    /**
+     * @phpstan-assert iterable<mixed> $actual
+     * @psalm-assert iterable<mixed> $actual
+     */
     public static function assertIsIterable(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::Iterable), $message);
     }
 
+    /**
+     * @phpstan-assert !iterable<mixed> $actual
+     * @psalm-assert !iterable<mixed> $actual
+     */
     public static function assertIsNotIterable(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::Iterable)), $message);
     }
 
+    /**
+     * @phpstan-assert numeric $actual
+     * @psalm-assert numeric $actual
+     */
     public static function assertIsNumeric(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::Numeric), $message);
     }
 
+    /**
+     * @phpstan-assert !numeric $actual
+     * @psalm-assert !numeric $actual
+     */
     public static function assertIsNotNumeric(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::Numeric)), $message);
     }
 
+    /**
+     * @phpstan-assert object $actual
+     * @psalm-assert object $actual
+     */
     public static function assertIsObject(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::Object), $message);
     }
 
+    /**
+     * @phpstan-assert !object $actual
+     * @psalm-assert !object $actual
+     */
     public static function assertIsNotObject(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::Object)), $message);
     }
 
+    /**
+     * @phpstan-assert resource $actual
+     * @psalm-assert resource $actual
+     */
     public static function assertIsResource(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::Resource), $message);
     }
 
+    /**
+     * @phpstan-assert !resource $actual
+     * @psalm-assert !resource $actual
+     */
     public static function assertIsNotResource(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::Resource)), $message);
     }
 
+    /**
+     * @phpstan-assert scalar $actual
+     * @psalm-assert scalar $actual
+     */
     public static function assertIsScalar(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::Scalar), $message);
     }
 
+    /**
+     * @phpstan-assert !scalar $actual
+     * @psalm-assert !scalar $actual
+     */
     public static function assertIsNotScalar(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::Scalar)), $message);
     }
 
+    /**
+     * @phpstan-assert string $actual
+     * @psalm-assert string $actual
+     */
     public static function assertIsString(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new IsType(ValueType::String), $message);
     }
 
+    /**
+     * @phpstan-assert !string $actual
+     * @psalm-assert !string $actual
+     */
     public static function assertIsNotString(mixed $actual, string $message = ''): void
     {
         self::assertThat($actual, new LogicalNot(new IsType(ValueType::String)), $message);
@@ -674,6 +824,9 @@ abstract class Assert
     // --- assertContainsOnly*() family ------------------------------------------------
 
     /**
+     * @phpstan-assert iterable<array<mixed>> $haystack
+     * @psalm-assert iterable<array<mixed>> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyArray(iterable $haystack, string $message = ''): void
@@ -682,6 +835,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<bool> $haystack
+     * @psalm-assert iterable<bool> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyBool(iterable $haystack, string $message = ''): void
@@ -690,6 +846,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<callable> $haystack
+     * @psalm-assert iterable<callable> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyCallable(iterable $haystack, string $message = ''): void
@@ -698,6 +857,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<float> $haystack
+     * @psalm-assert iterable<float> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyFloat(iterable $haystack, string $message = ''): void
@@ -706,6 +868,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<int> $haystack
+     * @psalm-assert iterable<int> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyInt(iterable $haystack, string $message = ''): void
@@ -714,6 +879,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<iterable<mixed>> $haystack
+     * @psalm-assert iterable<iterable<mixed>> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyIterable(iterable $haystack, string $message = ''): void
@@ -722,6 +890,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<null> $haystack
+     * @psalm-assert iterable<null> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyNull(iterable $haystack, string $message = ''): void
@@ -730,6 +901,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<numeric> $haystack
+     * @psalm-assert iterable<numeric> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyNumeric(iterable $haystack, string $message = ''): void
@@ -738,6 +912,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<object> $haystack
+     * @psalm-assert iterable<object> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyObject(iterable $haystack, string $message = ''): void
@@ -746,6 +923,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<resource> $haystack
+     * @psalm-assert iterable<resource> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyResource(iterable $haystack, string $message = ''): void
@@ -754,6 +934,12 @@ abstract class Assert
     }
 
     /**
+     * A closed resource is a resource; the incumbent narrows to the
+     * supertype too, and no portable tag says "closed".
+     *
+     * @phpstan-assert iterable<resource> $haystack
+     * @psalm-assert iterable<resource> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyClosedResource(iterable $haystack, string $message = ''): void
@@ -762,6 +948,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<scalar> $haystack
+     * @psalm-assert iterable<scalar> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyScalar(iterable $haystack, string $message = ''): void
@@ -770,6 +959,9 @@ abstract class Assert
     }
 
     /**
+     * @phpstan-assert iterable<string> $haystack
+     * @psalm-assert iterable<string> $haystack
+     *
      * @param iterable<mixed> $haystack
      */
     public static function assertContainsOnlyString(iterable $haystack, string $message = ''): void
