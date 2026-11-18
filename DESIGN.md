@@ -7117,40 +7117,17 @@ published one.
 
 ### D-171: the issue window brackets the handler stack, and a test that disturbs it is risky
 
-`IssueCollector::drain()` popped exactly one frame. A test that pushed its own handler and
-never removed it had that handler popped instead — the collector's stayed live past its
-window, and every error between windows landed in the next test's drain, attributed to a
-test that never ran it. A test that restored too far removed the bootstrap's handler just
-as silently. Measured against the incumbent (PHPUnit 12.5.44, black box): a leaked handler
-is reported as a risky verdict — "Test code or tested code did not remove its own error
-handlers" — and the leaked frame does not survive to the next window; a test that removed
-handlers other than its own is reported the same way — "Test code or tested code removed
-error handlers other than its own" — while a wrecked stack keeps what remains of it below
-the breach.
+`IssueCollector::install()` saves the callables on the error-handler stack before opening
+the capture window. Drain discards frames above its capture closure and reports
+"Test code or tested code did not remove its own error handlers". If the capture closure
+is missing, drain discards the stack left by the test and restores the saved callables in
+order. This removes replacement handlers and restores any bootstrap handlers that the
+test popped. The runner reports "Test code or tested code removed error handlers other
+than its own". Both cases use the existing risky outcome and respect `--fail-on-risky`.
 
-The drain now walks the stack: every frame above its own handler is removed, its own is
-removed, and when the window's code has removed ours, everything the walk had to lift only
-to notice — the floor `install()` replaced included, when the breach took it too — is put
-back deepest first, so the bootstrap's handler survives even a test that removed ours and
-the floor beneath it. The walk reads the top through a push-and-pop probe, so a look never
-moves the stack. The verdict rides the runner's existing risky outcome with the incumbent's
-exact wording, where `--fail-on-risky` already knows what to do with it: measured before this
-change, a leaky test and a stack-wrecking test both ended "OK, Risky: 0", silently.
-
-Two defects survived the first drain, both found after it. First, the walk stopped at any
-callable identical to the floor's — and a window's code can reinstall the bootstrap's own
-callable above the collector, where the stop left the collector installed under the copy:
-measured, three frames remained where the bootstrap's alone should, and every later error
-landed in a window that never ran it. The walk now stops at one identity only, its own
-closure, which the window's code never holds a reference to; the copy is dropped as the
-leftover it is, with the left-handlers verdict. Second, what a walk puts back, PHP puts back
-with the default mask — `set_error_handler` never reports the mask it replaced, so a
-restored frame registered for `E_USER_WARNING` answers `E_USER_NOTICE` too. This is PHP's
-floor, not a choice: the incumbent's own enumeration (`activeErrorHandlers`,
-TestCase.php:1751) pops and reinstalls every handler on the stack with the default mask on
-every single test, so no mask-preserving bar exists to match. The restored SET is the
-window's own — pinned in the tests alongside the verdicts — and the mask on a restored
-frame carries the incumbent's own limitation with the citation.
+PHP exposes each callable but gives no way to read its registered error levels. Saving
+the stack requires popping and reinstalling the callables with PHP's default mask, as
+PHPUnit 12.5.44 does in `activeErrorHandlers()`.
 
 ---
 

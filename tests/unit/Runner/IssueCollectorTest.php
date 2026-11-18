@@ -211,7 +211,30 @@ final class IssueCollectorTest extends TestCase
         restore_error_handler();
     }
 
-    public function testADrainPutsBackWhatAWreckedStackStillHas(): void
+    public function testADrainDiscardsAReplacementHandler(): void
+    {
+        $seen      = [];
+        $bootstrap = $this->outer($seen);
+        set_error_handler($bootstrap);
+
+        try {
+            $collector = $this->collector();
+            $collector->install();
+            restore_error_handler();
+            set_error_handler(static fn(): bool => true);
+
+            $collector->drain();
+
+            self::assertSame($bootstrap, $this->top());
+            self::assertSame(IssueCollector::HANDLERS_REMOVED, $collector->hygiene());
+            trigger_error('after drain', E_USER_NOTICE);
+            self::assertSame(['after drain'], $seen);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    public function testADrainRestoresTheStackAfterADeeperRemoval(): void
     {
         // The breach-below-the-floor case cannot be asserted in this
         // process: the suite hosting this test brackets it with its own
@@ -262,8 +285,17 @@ final class IssueCollectorTest extends TestCase
             \$top   = set_error_handler(\$probe);
             restore_error_handler();
 
+            if (\$top !== \$floor) {
+                fwrite(STDOUT, 'FAIL: the removed floor was not restored.');
+                exit(1);
+            }
+
+            restore_error_handler();
+            \$top = set_error_handler(\$probe);
+            restore_error_handler();
+
             if (\$top !== \$deeper) {
-                fwrite(STDOUT, 'FAIL: the deeper frame was not kept. Saw: ' . implode(' | ', \$seen));
+                fwrite(STDOUT, 'FAIL: the deeper frame was not kept.');
                 exit(1);
             }
 
@@ -272,7 +304,7 @@ final class IssueCollectorTest extends TestCase
                 exit(1);
             }
 
-            fwrite(STDOUT, 'OK: deeper frame kept, verdict reported');
+            fwrite(STDOUT, 'OK: both frames restored, verdict reported');
             exit(0);
             PHP);
 
@@ -440,10 +472,8 @@ final class IssueCollectorTest extends TestCase
             \$collector = new IssueCollector([], new WorkingDirectory('{$repoRoot}'));
             \$collector->install();
 
-            // The window removes its own handler and the floor beneath
-            // it, exposing the masked frame - the walk must put back
-            // what it had to lift to notice, exactly as the window
-            // found it.
+            // Remove both the collector and the floor. The snapshot
+            // restores the floor and the masked frame beneath it.
             restore_error_handler();
             restore_error_handler();
 
@@ -451,6 +481,15 @@ final class IssueCollectorTest extends TestCase
 
             \$probe = static fn (): bool => true;
             \$top   = set_error_handler(\$probe);
+            restore_error_handler();
+
+            if (\$top !== \$floor) {
+                fwrite(STDOUT, 'FAIL: the removed floor was not restored.');
+                exit(1);
+            }
+
+            restore_error_handler();
+            \$top = set_error_handler(\$probe);
             restore_error_handler();
 
             if (\$top !== \$masked) {
