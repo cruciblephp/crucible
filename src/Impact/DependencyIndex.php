@@ -10,13 +10,12 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Impact;
 
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+
 use function array_map;
 use function file_get_contents;
 use function file_put_contents;
-use function glob;
-use function hash;
 use function hash_file;
-use function implode;
 use function is_array;
 use function is_dir;
 use function is_file;
@@ -25,11 +24,11 @@ use function json_decode;
 use function json_encode;
 use function mkdir;
 use function rtrim;
-use function sort;
 use function str_starts_with;
 use function strlen;
 use function substr;
 
+use const DIRECTORY_SEPARATOR;
 use const JSON_THROW_ON_ERROR;
 use const LOCK_EX;
 
@@ -57,15 +56,23 @@ use const LOCK_EX;
  * cold one: no wrong answer, just the feature quietly not working
  * exactly where it was built to work.
  *
+ * Storage is portable; lookup is not. The project root is normalized
+ * to the platform's own separator, and every stored key is re-rooted
+ * against it on load, because the paths a run asks about come from
+ * realpath() and discovery and carry whatever the OS uses — on
+ * Windows a `/`-joined root used to make every comparison fail and
+ * the index degenerate into an empty file.
+ *
  * That is also why the index is keyed `{dir}/{fingerprint}.deps.json`,
  * one file per configuration. A dependency list is *not* a pure function
- * of the file's bytes: it also depends on the autoload map that resolves
- * a class name to a path, and on which `Pest.php` / `Datasets/*.php`
- * sit above the file (D-033). Adding a `Pest.php` changes what a test
- * file depends on without touching that file, so a cache keyed on
- * content alone would answer confidently from stale data. The
- * fingerprint carries that context, so a configuration change lands on
- * a different index rather than silently reusing the old one.
+ * of the file's bytes: it also depends on the autoload resolution that
+ * turns a class name into a path, and on which `Pest.php` /
+ * `Datasets/*.php` sit above the file (D-033). Adding a `Pest.php`
+ * changes what a test file depends on without touching that file, so
+ * a cache keyed on content alone would answer confidently from stale
+ * data. The fingerprint carries that context, so a configuration
+ * change lands on a different index rather than silently reusing the
+ * old one.
  */
 final class DependencyIndex
 {
@@ -87,25 +94,40 @@ final class DependencyIndex
     public function __construct(string $directory, private readonly string $fingerprint, string $projectRoot = '')
     {
         $this->directory = rtrim($directory, '/');
-        $this->root      = $projectRoot === '' ? '' : rtrim($projectRoot, '/') . '/';
+
+        // Native separators throughout, and the OS's own trailing one:
+        // on Windows a root that ends '/' does not prefix-match the
+        // backslash paths the filesystem and realpath() answer with,
+        // which is how the index used to store - and so persist -
+        // nothing at all.
+        $this->root = $projectRoot === ''
+            ? ''
+            : rtrim(WorkingDirectory::native($projectRoot), '/\\') . DIRECTORY_SEPARATOR;
     }
 
     /**
-     * Project-relative when the path is inside the root, unchanged when
-     * it is not. A dependency in a sibling checkout has no relative form
-     * to give, and inventing one with `../..` would key the index on the
-     * layout around the project rather than the project.
+     * Project-relative and portable when the path is inside the root,
+     * unchanged when it is not. A dependency in a sibling checkout has
+     * no relative form to give, and inventing one with `../..` would
+     * key the index on the layout around the project rather than the
+     * project.
      */
     private function relative(string $path): string
     {
-        return $this->root !== '' && str_starts_with($path, $this->root)
-            ? substr($path, strlen($this->root))
+        $native = WorkingDirectory::native($path);
+
+        return $this->root !== '' && str_starts_with($native, $this->root)
+            ? WorkingDirectory::portable(substr($native, strlen($this->root)))
             : $path;
     }
 
     private function absolute(string $path): string
     {
-        return $this->root !== '' && !str_starts_with($path, '/') ? $this->root . $path : $path;
+        if ($this->root === '' || WorkingDirectory::isAbsolute($path)) {
+            return $path;
+        }
+
+        return $this->root . WorkingDirectory::native($path);
     }
 
     public function load(): void
@@ -159,10 +181,16 @@ final class DependencyIndex
      * The stored dependencies for $file when its bytes still hash to what
      * was recorded, otherwise null — added, changed, or never seen.
      *
+     * The file is native-ized before the lookup: the graph asks with
+     * what realpath() answered, and a caller joining paths itself is
+     * accepted too, but the stored keys are always the platform's own
+     * form.
+     *
      * @return ?list<string>
      */
     public function reuse(string $file): ?array
     {
+        $file  = WorkingDirectory::native($file);
         $entry = $this->stored[$file] ?? null;
 
         if ($entry === null) {
@@ -185,6 +213,7 @@ final class DependencyIndex
      */
     public function record(string $file, array $dependencies): void
     {
+        $file = WorkingDirectory::native($file);
         $hash = $this->hash($file);
 
         if ($hash === null) {
@@ -198,9 +227,20 @@ final class DependencyIndex
      * Persist what this run actually touched. Entries for files the run
      * never asked about are dropped rather than carried forward, so a
      * deleted file cannot linger in the index and answer for itself.
+     *
+     * A run that resolved nothing fresh writes nothing at all: the
+     * previous index stays readable. The runs that reach this state are
+     * exactly the ones that chose not to consult it - a deletion or a
+     * manifest change widens to everything without walking a closure -
+     * and flattening the cache they just skipped would turn their next
+     * neighbour cold for no reason.
      */
     public function save(): void
     {
+        if ($this->fresh === []) {
+            return;
+        }
+
         if (!is_dir($this->directory) && !mkdir($this->directory, 0o777, true) && !is_dir($this->directory)) {
             return;
         }
@@ -225,7 +265,7 @@ final class DependencyIndex
             // With no root configured the index makes no portability
             // claim, so there is nothing to protect and entries are kept.
             foreach ($paths as $path) {
-                if ($this->root !== '' && !str_starts_with($path, $this->root)) {
+                if ($this->root !== '' && !str_starts_with(WorkingDirectory::native($path), $this->root)) {
                     continue 2;
                 }
             }
@@ -258,73 +298,5 @@ final class DependencyIndex
     private function path(): string
     {
         return $this->directory . '/' . $this->fingerprint . '.deps.json';
-    }
-
-    /**
-     * The context a dependency answer depends on beyond file content: the
-     * autoload map that turns a class name into a path, and the suite
-     * configuration files whose mere presence adds edges (D-033).
-     *
-     * @param list<string> $suiteConfiguration absolute paths; recorded relative, so the fingerprint is the same on every machine
-     *
-     * @return non-empty-string
-     */
-    public static function fingerprintOf(string $projectRoot, array $suiteConfiguration): string
-    {
-        $parts = [];
-        $root  = rtrim($projectRoot, '/');
-
-        foreach (['composer.lock', 'composer.json'] as $manifest) {
-            $path = $root . '/' . $manifest;
-
-            if (is_file($path)) {
-                $hash = hash_file('xxh128', $path);
-
-                if ($hash !== false) {
-                    $parts[] = $manifest . ':' . $hash;
-                }
-            }
-        }
-
-        // The paths, not their contents: a Pest.php that CHANGES already
-        // invalidates through its own content hash, because it is itself
-        // a graph node. What content hashing cannot see is one appearing
-        // or disappearing above a file that did not change.
-        $prefix = $root . '/';
-
-        foreach ($suiteConfiguration as $path) {
-            $parts[] = 'suite:' . (str_starts_with($path, $prefix) ? substr($path, strlen($prefix)) : $path);
-        }
-
-        return hash('xxh128', implode("\n", $parts));
-    }
-
-    /**
-     * Every suite-configuration file under the project root, sorted — the
-     * set the fingerprint is taken over.
-     *
-     * @return list<string> absolute paths
-     */
-    public static function suiteConfigurationIn(string $projectRoot): array
-    {
-        $root  = rtrim($projectRoot, '/');
-        $found = [];
-
-        $patterns = [
-            '/Pest.php', '/*/Pest.php', '/*/*/Pest.php', '/*/*/*/Pest.php',
-            '/Datasets/*.php', '/*/Datasets/*.php', '/*/*/Datasets/*.php',
-        ];
-
-        foreach ($patterns as $pattern) {
-            $matches = glob($root . $pattern);
-
-            foreach ($matches === false ? [] : $matches as $path) {
-                $found[] = $path;
-            }
-        }
-
-        sort($found);
-
-        return $found;
     }
 }

@@ -7213,6 +7213,46 @@ Before the change that run fails on the very first method.
 
 ---
 
+### D-169: the dependency index's key carries the Composer resolution, and its paths walk natively
+
+A warm index answers for files whose bytes have not changed, so the key has to carry
+everything else the answer depends on. It carried the PSR-4 prefixes only: a class
+remapped in `vendor/composer/autoload_classmap.php` — a regenerated autoloader, recorded
+by neither `composer.json` nor the lockfile, and invisible to the Git change set —
+resolved elsewhere while the key said nothing had happened, and `--dirty` reported a red
+suite as "no tests are affected" with exit 0. Measured against a scratch Git project: warm
+index, remapped classmap, failing `src/New.php`, `--dirty` selects zero and exits 0; delete
+the one `*.deps.json` and the same command fails like the full run. The key now folds in
+the manifests and the registered loaders' resolution data — classmap entries, PSR-4 and
+PSR-0 prefixes with their fallbacks, the authoritative flag — every path relative to the
+project root so two checkouts of one project land on one key, and an entry outside the
+root contributing only its name.
+
+The suite component of that key was always empty for a second reason: production test ids
+are project-relative while the fingerprint walked them against an absolute root, so the
+walk never entered its loop; the pinning test stayed green by building absolute ids, a
+shape discovery never produces. The enumeration now lives once, in
+`SuiteConfiguration::above()`, and the edge rules and the fingerprint share it — the two
+had drifted before, one seeing the configuration files the other was blind to.
+
+On Windows the index never persisted at all: a root joined with `/` does not prefix-match
+the `\` paths realpath answers with, so `save()` dropped every entry and wrote `[]`. The
+root is now normalized to the platform's own separator, lookups happen in native form,
+and only the stored file stays portable — a cache moved between machines still reads, a
+run in its own checkout still hits. `save()` also keeps the previous index when a run
+resolved nothing fresh: the runs that reach that state are the ones that widened without
+walking a closure, and flattening the cache they had just chosen not to use turned their
+next neighbour cold. `--cache-directory` reaches the index, as it already reached every
+other cache consumer. The payload carries a scheme tag, so every index written before
+these rules is orphaned by a different key rather than read.
+
+✓ Reproduced before/after on both sides: six `ImpactFingerprintTest` failures and an empty
+`deps.json` on Windows at `d912050`; both false greens (classmap remap, added `Pest.php`)
+failing under WSL; all green on both platforms after, cold and warm selecting identical
+ids and verdicts.
+
+---
+
 ## Closing the planned record
 
 Every phase scoped at project start — core 0–9 and growth G1–G5 — has landed with its

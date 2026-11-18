@@ -778,14 +778,21 @@ final class RunTestsCommand
             // index every run re-reads and re-scans every source file to
             // find its references. The index replays a file whose bytes
             // have not changed, keyed on a fingerprint of everything
-            // else the answer depends on — the autoload map, and the
+            // else the answer depends on - the composer manifests and
+            // the loader resolution a class name goes through, and the
             // Pest.php/Datasets above a file, which change what it
             // depends on without touching it.
+            //
+            // The cache directory is the run's resolved one: a
+            // --cache-directory run that kept writing the configured
+            // directory would replay from an index it was never told to
+            // warm, and CI setups that point the flag at a wiped
+            // between-jobs path would silently keep the stale one.
             $graph = new DependencyGraph(
                 $workingDirectory->path,
                 observedEdges: $observed,
                 index: new DependencyIndex(
-                    $workingDirectory->path . '/' . $configuration->cacheDirectory,
+                    $workingDirectory->absolute($options->cacheDirectory ?? $configuration->cacheDirectory),
                     ImpactFingerprint::of($workingDirectory->path, $groups),
                     $workingDirectory->path,
                 ),
