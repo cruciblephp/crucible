@@ -313,7 +313,6 @@ final class PestConfigurationImpactTest extends TestCase
             self::fail('No event stream was written. stdout: ' . $stdout . ' stderr: ' . $stderr);
         }
 
-        /** @var list<string> $lines */
         $lines = array_values(array_filter(
             explode("\n", $contents),
             static fn(string $line): bool => $line !== '',
