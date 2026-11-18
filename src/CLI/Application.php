@@ -27,6 +27,7 @@ use LucianoPereira\Crucible\CLI\Commands\WatchCommand;
 use LucianoPereira\Crucible\Console\Components\Splash;
 use LucianoPereira\Crucible\Console\Exceptions\CancelledException;
 use LucianoPereira\Crucible\Console\Exceptions\NonInteractiveException;
+use LucianoPereira\Crucible\Console\Output\CliOutput;
 use LucianoPereira\Crucible\Console\Output\Help;
 use LucianoPereira\Crucible\Console\Runtime\Runtime;
 use LucianoPereira\Crucible\Console\Style\Color;
@@ -62,7 +63,7 @@ final class Application
         $options = CliOptions::fromArgv($argv);
 
         if (is_string($options)) {
-            print $options . PHP_EOL;
+            CliOutput::line($options);
 
             return 1;
         }
@@ -93,7 +94,7 @@ final class Application
         if ($options->checkVersion) {
             $banner?->settle();
 
-            print 'Crucible has no update channel and does not check for new versions.' . PHP_EOL;
+            CliOutput::line('Crucible has no update channel and does not check for new versions.');
 
             return 0;
         }
@@ -113,7 +114,7 @@ final class Application
         // The separator belongs to the banner, so it goes when the banner
         // does — a suppressed banner must not leave its blank line behind.
         if ($wantsBanner) {
-            print PHP_EOL;
+            CliOutput::line();
         }
 
         if ($options->help) {
@@ -125,7 +126,7 @@ final class Application
         $cwd = getcwd();
 
         if ($cwd === false) {
-            print 'Cannot determine the current working directory.' . PHP_EOL;
+            CliOutput::line('Cannot determine the current working directory.');
 
             return 1;
         }
@@ -138,11 +139,11 @@ final class Application
         try {
             return $this->dispatch($options, $argv, $workingDirectory);
         } catch (CancelledException) {
-            print 'Cancelled.' . PHP_EOL;
+            CliOutput::line('Cancelled.');
 
             return 130;
         } catch (NonInteractiveException $e) {
-            print $e->getMessage() . PHP_EOL;
+            CliOutput::line($e->getMessage());
 
             return 1;
         }
@@ -310,7 +311,7 @@ final class Application
         $terminal = Runtime::terminal();
 
         if (!Capabilities::color($terminal)) {
-            printf('crucible %s by %s.' . PHP_EOL, Version::NUMBER, Version::AUTHOR);
+            CliOutput::line(sprintf('crucible %s by %s.', Version::NUMBER, Version::AUTHOR));
 
             return null;
         }
@@ -348,7 +349,7 @@ final class Application
     {
         $terminal = Runtime::terminal();
 
-        print (new Help(min(100, max(60, $terminal->columns())), Capabilities::color($terminal)))->render(<<<'EOT'
+        CliOutput::write((new Help(min(100, max(60, $terminal->columns())), Capabilities::color($terminal)))->render(<<<'EOT'
             Usage:
               crucible [options] [path ...]     Run the suite, or only the test files and directories given
               crucible migrate-config      Convert phpunit.xml(.dist) to a crucible.php and exit
@@ -589,6 +590,6 @@ final class Application
             compatibility with PHPUnit 13 suites. HELP.md documents every
             option in full; RELEASE.md records what shipped.
 
-            EOT);
+            EOT));
     }
 }

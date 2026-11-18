@@ -39,6 +39,7 @@ use LucianoPereira\Crucible\Configuration\Loader;
 use LucianoPereira\Crucible\Configuration\Overrides;
 use LucianoPereira\Crucible\Configuration\TestSuite;
 use LucianoPereira\Crucible\Console\Components\Splash;
+use LucianoPereira\Crucible\Console\Output\CliOutput;
 use LucianoPereira\Crucible\Console\Runtime\Runtime;
 use LucianoPereira\Crucible\Console\Style\Style as ConsoleStyle;
 use LucianoPereira\Crucible\Console\Terminal\Capabilities;
@@ -190,7 +191,7 @@ final class RunTestsCommand
                 ? new LoadedConfiguration(Crucible::configure()->build(), '(none)')
                 : (new Loader())->load($workingDirectory, $options->configuration);
         } catch (Exception $e) {
-            print $e->getMessage() . PHP_EOL;
+            CliOutput::line($e->getMessage());
 
             return 1;
         }
@@ -205,7 +206,7 @@ final class RunTestsCommand
         );
 
         if (is_string($coverageTargets)) {
-            print $coverageTargets . PHP_EOL;
+            CliOutput::line($coverageTargets);
 
             return 1;
         }
@@ -213,13 +214,13 @@ final class RunTestsCommand
         try {
             $note = $this->applyCompatibilityPolicy($configuration);
         } catch (Exception $e) {
-            print $e->getMessage() . PHP_EOL;
+            CliOutput::line($e->getMessage());
 
             return 1;
         }
 
         if ($note !== null) {
-            print $note . PHP_EOL . PHP_EOL;
+            CliOutput::line($note . PHP_EOL);
         }
 
         // The php.ini advisory, opt-in: a machine misconfigured for
@@ -227,7 +228,7 @@ final class RunTestsCommand
         // never a verdict about the code.
         if ($options->warnWhenPhpIsNotConfiguredForDevelopment === true) {
             foreach (PhpConfigurationCheck::warnings() as $warning) {
-                print $warning . PHP_EOL;
+                CliOutput::line($warning);
             }
         }
 
@@ -238,7 +239,7 @@ final class RunTestsCommand
         // Observed in this process alone: a worker's calls never reach it.
         if ($options->observeTypes) {
             if (($options->parallel ?? 1) > 1) {
-                print '--observe-types watches the calls of this process, so it cannot run with --parallel.' . PHP_EOL;
+                CliOutput::line('--observe-types watches the calls of this process, so it cannot run with --parallel.');
 
                 return 2;
             }
@@ -285,7 +286,7 @@ final class RunTestsCommand
             $stream = OutputFile::prepareDirectory($eventStreamTo) ? fopen($eventStreamTo, 'w') : false;
 
             if ($stream === false) {
-                printf('Cannot open %s for the event stream.' . PHP_EOL, $eventStreamTo);
+                CliOutput::line(sprintf('Cannot open %s for the event stream.', $eventStreamTo));
 
                 return 1;
             }
@@ -304,7 +305,7 @@ final class RunTestsCommand
             $stream = fopen($textLogTo, 'w');
 
             if ($stream === false) {
-                printf('Cannot open %s for the event stream.' . PHP_EOL, $textLogTo);
+                CliOutput::line(sprintf('Cannot open %s for the event stream.', $textLogTo));
 
                 return 1;
             }
@@ -327,7 +328,7 @@ final class RunTestsCommand
             [$key, $path] = array_pad(explode(':', $entry, 2), 2, null);
 
             if ($key === null || $path === null || $key === '' || $path === '') {
-                printf('Malformed --subscriber value "%s": expected "key:path".' . PHP_EOL, $entry);
+                CliOutput::line(sprintf('Malformed --subscriber value "%s": expected "key:path".', $entry));
 
                 return 1;
             }
@@ -357,7 +358,7 @@ final class RunTestsCommand
 
             foreach ($selectedSubscribers as $key => $path) {
                 if (!isset($subscribers[$key])) {
-                    printf('Subscriber "%s" is not registered — add it via ->subscriber() in crucible.php.' . PHP_EOL, $key);
+                    CliOutput::line(sprintf('Subscriber "%s" is not registered — add it via ->subscriber() in crucible.php.', $key));
 
                     return 1;
                 }
@@ -372,7 +373,7 @@ final class RunTestsCommand
                     $emitter->subscribe($subscriberRegistry->resolve($key));
                 }
             } catch (Exception $e) {
-                print $e->getMessage() . PHP_EOL;
+                CliOutput::line($e->getMessage());
 
                 return 1;
             }
@@ -389,7 +390,7 @@ final class RunTestsCommand
             [$key, $path] = array_pad(explode(':', $entry, 2), 2, null);
 
             if ($key === null || $path === null || $key === '' || $path === '') {
-                printf('Malformed --report value "%s": expected "key:path".' . PHP_EOL, $entry);
+                CliOutput::line(sprintf('Malformed --report value "%s": expected "key:path".', $entry));
 
                 return 1;
             }
@@ -413,7 +414,7 @@ final class RunTestsCommand
             $already = $selectedReportFormats[$format] ?? null;
 
             if ($already !== null && $already !== $output) {
-                printf('Report format "%s" is asked for twice, at %s and at %s: one path per format.' . PHP_EOL, $format, $already, $output);
+                CliOutput::line(sprintf('Report format "%s" is asked for twice, at %s and at %s: one path per format.', $format, $already, $output));
 
                 return 1;
             }
@@ -428,7 +429,7 @@ final class RunTestsCommand
 
             foreach ($selectedReportFormats as $key => $path) {
                 if (!isset($reportFormats[$key])) {
-                    printf('Report format "%s" is not registered — add it via ->reportFormat() in crucible.php.' . PHP_EOL, $key);
+                    CliOutput::line(sprintf('Report format "%s" is not registered — add it via ->reportFormat() in crucible.php.', $key));
 
                     return 1;
                 }
@@ -443,7 +444,7 @@ final class RunTestsCommand
                     $registry->resolve($key);
                 }
             } catch (Exception $e) {
-                print $e->getMessage() . PHP_EOL;
+                CliOutput::line($e->getMessage());
 
                 return 1;
             }
@@ -451,7 +452,7 @@ final class RunTestsCommand
             try {
                 $reportWriter = new GenericReportWriter($registry, array_keys($selectedReportFormats), $configuration->reportTitle, $options->reproducible);
             } catch (Exception $e) {
-                print $e->getMessage() . PHP_EOL;
+                CliOutput::line($e->getMessage());
 
                 return 1;
             }
@@ -465,7 +466,7 @@ final class RunTestsCommand
             $order = ExecutionOrder::tryFrom($options->orderBy);
 
             if (!$order instanceof ExecutionOrder) {
-                printf('Unknown --order-by value "%s": use default, defects, duration, random, reverse or size.' . PHP_EOL, $options->orderBy);
+                CliOutput::line(sprintf('Unknown --order-by value "%s": use default, defects, duration, random, reverse or size.', $options->orderBy));
 
                 return 1;
             }
@@ -489,16 +490,13 @@ final class RunTestsCommand
         // for one with recording off is asking for nothing to happen —
         // said out loud rather than silently ignored, as in the spec.
         if (!$cacheResult && ($order === ExecutionOrder::DefectsFirst || $order === ExecutionOrder::Duration)) {
-            printf(
-                'Tests cannot be ordered by %s because recording of the test run history is disabled.' . PHP_EOL . PHP_EOL,
-                $order->value,
-            );
+            CliOutput::line(sprintf('Tests cannot be ordered by %s because recording of the test run history is disabled.' . PHP_EOL, $order->value));
         }
 
         if ($order === ExecutionOrder::Random) {
             $seed = $options->randomOrderSeed ?? random_int(0, 2147483647);
 
-            printf('Random seed: %d' . PHP_EOL . PHP_EOL, $seed);
+            CliOutput::line(sprintf('Random seed: %d' . PHP_EOL, $seed));
         }
 
         if ($options->testsuite !== null) {
@@ -510,7 +508,7 @@ final class RunTestsCommand
 
             foreach ($options->testsuite as $requested) {
                 if (!in_array($requested, $known, true)) {
-                    printf('The requested test suite "%s" is not configured.' . PHP_EOL, $requested);
+                    CliOutput::line(sprintf('The requested test suite "%s" is not configured.', $requested));
 
                     return 1;
                 }
@@ -523,7 +521,7 @@ final class RunTestsCommand
             $absolute = $workingDirectory->absolute($path);
 
             if (!is_file($absolute) && !is_dir($absolute)) {
-                printf('Test file "%s" not found' . PHP_EOL, $path);
+                CliOutput::line(sprintf('Test file "%s" not found', $path));
 
                 return 2;
             }
@@ -551,7 +549,7 @@ final class RunTestsCommand
         try {
             $groups = $opened instanceof MapView ? $discover() : $this->discoveryMark()->sweepWhile($discover);
         } catch (Exception $e) {
-            print $e->getMessage() . PHP_EOL;
+            CliOutput::line($e->getMessage());
 
             // 2, not 1: discovery failing means no suite was built, and
             // HELP.md's table reserves 2 for "the run could not proceed
@@ -590,7 +588,7 @@ final class RunTestsCommand
         $viewRegistry  = new ProgressViewRegistry($progressViews);
 
         if (!$viewRegistry->has($selectedView)) {
-            printf('Progress view "%s" is not registered — add it via ->progressView() in crucible.php.' . PHP_EOL, $selectedView);
+            CliOutput::line(sprintf('Progress view "%s" is not registered — add it via ->progressView() in crucible.php.', $selectedView));
 
             return 1;
         }
@@ -619,7 +617,7 @@ final class RunTestsCommand
         // a moment later and left under the report as though it were part
         // of the run's output.
         if (!$options->noOutput && !in_array('configuration', $declared, true)) {
-            printf('Configuration: %s' . PHP_EOL . PHP_EOL, $loaded->path);
+            CliOutput::line(sprintf('Configuration: %s' . PHP_EOL, $loaded->path));
         }
 
         if ($injected !== []) {
@@ -640,7 +638,7 @@ final class RunTestsCommand
                 // second surface over the first and leave it behind.
                 $emitter->subscribe($opened ?? $viewRegistry->resolve($selectedView, $options->stderr ? STDERR : STDOUT));
             } catch (Exception $e) {
-                print $e->getMessage() . PHP_EOL;
+                CliOutput::line($e->getMessage());
 
                 return 1;
             }
@@ -654,7 +652,7 @@ final class RunTestsCommand
             $stream = OutputFile::prepareDirectory($options->logTeamcity) ? fopen($options->logTeamcity, 'w') : false;
 
             if ($stream === false) {
-                printf('Cannot open %s for the TeamCity log.' . PHP_EOL, $options->logTeamcity);
+                CliOutput::line(sprintf('Cannot open %s for the TeamCity log.', $options->logTeamcity));
 
                 return 1;
             }
@@ -662,7 +660,7 @@ final class RunTestsCommand
             try {
                 $emitter->subscribe($viewRegistry->resolve('teamcity', $stream));
             } catch (Exception $e) {
-                print $e->getMessage() . PHP_EOL;
+                CliOutput::line($e->getMessage());
 
                 return 1;
             }
@@ -703,7 +701,7 @@ final class RunTestsCommand
                 : new ChangedFiles();
 
             if (is_string($changed)) {
-                printf('Option %s: %s' . PHP_EOL, $options->dirty && $options->changed === null ? '--dirty' : '--changed', $changed);
+                CliOutput::line(sprintf('Option %s: %s', $options->dirty && $options->changed === null ? '--dirty' : '--changed', $changed));
 
                 return 1;
             }
@@ -714,7 +712,7 @@ final class RunTestsCommand
                 $absolute = realpath($workingDirectory->absolute($related));
 
                 if ($absolute === false) {
-                    printf('Option --related: %s does not exist.' . PHP_EOL, $related);
+                    CliOutput::line(sprintf('Option --related: %s does not exist.', $related));
 
                     return 1;
                 }
@@ -804,7 +802,7 @@ final class RunTestsCommand
             $graph->persist();
 
             foreach ($impact->notes as $impactNote) {
-                print $impactNote . PHP_EOL;
+                CliOutput::line($impactNote);
             }
 
             // The JS tier of the same change set (D-080): narrow the
@@ -820,7 +818,7 @@ final class RunTestsCommand
                 $jsAffected = $vitestSuites !== [];
 
                 foreach ($vitestNotes as $vitestNote) {
-                    print $vitestNote . PHP_EOL;
+                    CliOutput::line($vitestNote);
                 }
             }
 
@@ -831,11 +829,11 @@ final class RunTestsCommand
                 $typeSuites = [];
             }
 
-            print PHP_EOL;
+            CliOutput::line();
 
             if ($impact->groups !== null) {
                 if ($impact->groups === [] && !$jsAffected && $typeSuites === []) {
-                    print 'No tests are affected by the given changes.' . PHP_EOL;
+                    CliOutput::line('No tests are affected by the given changes.');
 
                     return 0;
                 }
@@ -863,7 +861,7 @@ final class RunTestsCommand
         $testIds = $this->idSelection($options, $workingDirectory);
 
         if (is_string($testIds)) {
-            print $testIds . PHP_EOL;
+            CliOutput::line($testIds);
 
             return 1;
         }
@@ -871,7 +869,7 @@ final class RunTestsCommand
         $testFiles = $this->fileSelection($options, $workingDirectory);
 
         if (is_string($testFiles)) {
-            print $testFiles . PHP_EOL;
+            CliOutput::line($testFiles);
 
             return 1;
         }
@@ -903,18 +901,18 @@ final class RunTestsCommand
         }
 
         if ($wipExcluded > 0) {
-            printf(
-                '%d work-in-progress test%s excluded (--no-wip).' . PHP_EOL,
+            CliOutput::line(sprintf(
+                '%d work-in-progress test%s excluded (--no-wip).',
                 $wipExcluded,
                 $wipExcluded === 1 ? '' : 's',
-            );
+            ));
         }
 
         if ($options->shard !== null) {
             $shard = Shard::fromString($options->shard);
 
             if (!$shard instanceof Shard) {
-                printf('Option --shard expects M/N with 1 <= M <= N, got "%s".' . PHP_EOL, $options->shard);
+                CliOutput::line(sprintf('Option --shard expects M/N with 1 <= M <= N, got "%s".', $options->shard));
 
                 return 1;
             }
@@ -930,16 +928,16 @@ final class RunTestsCommand
             // selection — the D-036 distinction ('No tests are
             // affected' exits 0 where 'No tests found' exits 1).
             if ($options->todos || $options->assignee !== null || $options->issue !== null) {
-                print 'No todos match.' . PHP_EOL;
+                CliOutput::line('No todos match.');
 
                 return 0;
             }
 
             $incumbent = $this->incumbentTestClasses($workingDirectory);
 
-            print ($incumbent === 0
+            CliOutput::line($incumbent === 0
                 ? 'No tests found.'
-                : sprintf('No tests found: %d test class%s extend%s PHPUnit\\Framework\\TestCase, which runs only with ->phpunitCompatibility() while phpunit/phpunit is installed.', $incumbent, $incumbent === 1 ? '' : 'es', $incumbent === 1 ? 's' : '')) . PHP_EOL;
+                : sprintf('No tests found: %d test class%s extend%s PHPUnit\\Framework\\TestCase, which runs only with ->phpunitCompatibility() while phpunit/phpunit is installed.', $incumbent, $incumbent === 1 ? '' : 'es', $incumbent === 1 ? 's' : ''));
 
             // Failing on an empty suite is the default, here as in the
             // spec; --do-not-fail-on-empty-test-suite is what a repository
@@ -1043,7 +1041,7 @@ final class RunTestsCommand
                 : BrowserEngine::tryFrom($options->browser);
 
             if ($engine === null) {
-                print sprintf('Unknown --browser "%s" (chrome, firefox, safari).', $options->browser) . PHP_EOL;
+                CliOutput::line(sprintf('Unknown --browser "%s" (chrome, firefox, safari).', $options->browser));
 
                 return 1;
             }
@@ -1071,7 +1069,7 @@ final class RunTestsCommand
             $driver = DriverFactory::detect($options->coverageBranch, $options->pathCoverage);
 
             if (is_string($driver)) {
-                print 'Coverage: ' . $driver . PHP_EOL;
+                CliOutput::line('Coverage: ' . $driver);
 
                 return 1;
             }
@@ -1079,7 +1077,7 @@ final class RunTestsCommand
             $scope = $postRun->coverageScope($configuration, $workingDirectory, $overrides->coverageFilter);
 
             if ($scope === []) {
-                print 'Coverage: configure ->source(include: [...]) — the source scope is the coverage scope.' . PHP_EOL;
+                CliOutput::line('Coverage: configure ->source(include: [...]) — the source scope is the coverage scope.');
 
                 return 1;
             }
@@ -1118,7 +1116,7 @@ final class RunTestsCommand
         $registered = $this->extensionsFromCli($options);
 
         if (is_string($registered)) {
-            print $registered . PHP_EOL;
+            CliOutput::line($registered);
 
             return 1;
         }
@@ -1161,7 +1159,7 @@ final class RunTestsCommand
             $binary = realpath($argv[0] ?? '');
 
             if ($binary === false) {
-                print 'Cannot resolve the crucible binary path for worker processes.' . PHP_EOL;
+                CliOutput::line('Cannot resolve the crucible binary path for worker processes.');
 
                 return 1;
             }
@@ -1407,13 +1405,13 @@ final class RunTestsCommand
         }
 
         if ($left !== []) {
-            printf(
-                '%s %s not run: %s selects PHP tests. Add --testsuite %s to run it too.' . PHP_EOL . PHP_EOL,
+            CliOutput::line(sprintf(
+                '%s %s not run: %s selects PHP tests. Add --testsuite %s to run it too.' . PHP_EOL,
                 $kind,
                 implode(', ', array_map(static fn(string $name): string => '"' . $name . '"', $left)),
                 implode(', ', $phpOnly),
                 $left[0],
-            );
+            ));
         }
 
         return $selected;

@@ -6974,6 +6974,26 @@ record `getenv()`, `$_ENV`, `ini_get()` and `defined()`; `EnvBeforeBootstrapTest
 whose bootstrap writes what it saw, serial and `--parallel 2`, and every process (parent and
 workers) reports `test`, the configured ini value and the configured constant. Both fail 4/4
 against 1.3.1 and pass 4/4 after.
+### D-171: pre-run CLI output does not send HTTP headers
+
+A migrated Symfony application boots a production kernel in some tests; starting a native session
+then throws `Failed to start the session because headers have already been sent by
+"…/src/CLI/Application.php" at line 313`, because the no-colour banner used `printf()`. The
+colour path was safe — `Splash` writes through the terminal — and PHPUnit is safe everywhere
+because its printer writes to the STDOUT stream, which bypasses PHP's output layer (F-01, ticket
+#2 item 1).
+
+Pre-run CLI output now goes through `Console\Output\CliOutput`, which writes to the terminal
+stream (`fwrite`) and adds no newline of its own unless asked. Everything printed before the run
+was converted: the plain banner and its separator in `Application`, configuration and seed
+notices, impact and selection notes, coverage/extension notes, and the errors that stop a run
+before it starts. Reporter output during and after the run is out of scope: no kernel is booted
+then, and PHPUnit's own printer has the same property.
+
+✓ `CliOutputTest` pins write/line through the `FakeTerminal`; `NoHeadersBeforeTestsTest` runs a
+project whose test asserts `headers_sent()` is false. It fails on 1.3.1 naming
+`Application.php:313` and passes after. ✓ A filtered run's stdout is byte-identical before and
+after the change, banner and `Configuration:` line included.
 
 ---
 
