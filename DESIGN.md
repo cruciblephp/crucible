@@ -6959,6 +6959,33 @@ keep what was collected. Per-target floors wait until targets are named things.
 
 ---
 
+### D-170: a worker discovers its own units, not the whole suite
+
+A worker's manifest already names exactly what it owes — one unit, the file and the id
+strings. Discovery ignored that and rebuilt the entire configured suite before filtering
+to the slice: every test file loaded, every data provider executed, every top-level side
+effect repeated, once per worker per unit, with N-1 of the files discarded on the other
+side of the filter. Measured on a three-file suite with `--parallel 3`: five loads of each
+file where two answer the same question (one parent pass plus one worker per unit), and
+300 trivial files took 10.0 s under `--parallel 8` where the sequential run takes 0.23 s.
+
+`TestDiscoverer::discoverUnits()` routes the named files through the same per-file rules
+the full pass uses — the dialect comes out of the file's content, never its name — and a
+source file carrying inline tests builds through the inline frontend, the one route a
+positional path never takes (D-152); a D-152 run never scanned source on the parent's
+side, and its workers do not either. The ids come out identical, which the counters and
+the id-parity checks pin: PHPUnit, Pest-vocabulary `*Test.php`, `.crucible.php`, inline
+carriers, exact dataset rows, `#[Depends]`, `--repeat`, and process isolation all answer
+the sequential plan exactly, at two loads per file instead of one per worker. Cold mutant
+workers ride the same manifest and get the same bounds.
+
+The residual parallel cost is now what it always should have been — process startup per
+unit, ~15 ms a spawn on this machine — and that is the worker-reuse question, measured
+before it is attempted: 300 files under `--parallel 8` drop from 10.0 s to 4.6 s, with
+discovery no longer the term that grows.
+
+---
+
 ## Closing the planned record
 
 Every phase scoped at project start — core 0–9 and growth G1–G5 — has landed with its

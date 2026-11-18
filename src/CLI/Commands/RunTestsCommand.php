@@ -1668,7 +1668,30 @@ final class RunTestsCommand
         $emitter->subscribe(new NdjsonWriter(STDOUT));
 
         try {
-            $groups = $manifest->filter((new TestDiscoverer())->discover($configuration, $workingDirectory, paths: $manifest->paths));
+            // The manifest's units already name what this worker owes,
+            // so discovery routes exactly those files - the same
+            // per-file rules the parent's pass used, the same ids out -
+            // instead of re-reading and re-requiring the entire
+            // configured suite before discarding all but one file of
+            // it. Every data provider executes once for this worker's
+            // own files, not once per file in the project. A manifest
+            // with no units (the run selected nothing) keeps the
+            // parent's own answer: discover what the CLI paths say.
+            $unitFiles = [];
+
+            foreach ($manifest->units as $unit) {
+                $native = WorkingDirectory::native($workingDirectory->absolute($unit->file));
+
+                if (!in_array($native, $unitFiles, true)) {
+                    $unitFiles[] = $native;
+                }
+            }
+
+            $groups = $manifest->filter(
+                $unitFiles !== []
+                    ? (new TestDiscoverer())->discoverUnits($configuration, $workingDirectory, $unitFiles, inlineScan: $manifest->paths === [])
+                    : (new TestDiscoverer())->discover($configuration, $workingDirectory, paths: $manifest->paths),
+            );
         } catch (Exception $e) {
             fwrite(STDERR, $e->getMessage() . PHP_EOL);
 

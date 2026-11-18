@@ -128,6 +128,113 @@ final readonly class TestDiscoverer
     }
 
     /**
+     * Discover only the named files, routed exactly as the full pass
+     * routes them: the per-file rules in {@see groupFrom()} decide the
+     * dialect, never the name alone, and a source file that carries
+     * inline tests builds through the inline frontend the way the
+     * source scan would have found it - the one route a positional
+     * path never takes (D-152).
+     *
+     * The worker path. A unit names one file, and re-discovering the
+     * whole configured suite made every worker load every test file
+     * and execute every data provider before filtering to its slice —
+     * the plan's cost multiplied by the worker count, with the
+     * side effects of N-1 other files along for the ride. Routing the
+     * unit files directly answers identically — same per-file rules,
+     * same ids — while every file no unit names stays unloaded.
+     *
+     * A file that no longer exists produces no group; the accounting
+     * tier reports its missing results rather than discovery guessing.
+     *
+     * @param list<non-empty-string> $files       absolute, native paths, in the caller's order
+     * @param bool                   $inlineScan  whether the run's own pass included the source scan; a
+     *                                          positional-paths run never did (D-152), and neither may its workers
+     *
+     * @return list<\LucianoPereira\Crucible\Test\TestGroup>
+     */
+    public function discoverUnits(Configuration $configuration, WorkingDirectory $workingDirectory, array $files, bool $inlineScan = true): array
+    {
+        $groups = [];
+
+        foreach ($files as $given) {
+            // Native throughout: the full pass meets the filesystem's
+            // own pathnames, and require_once dedupes on the string -
+            // a file reached once as `C:/x` and once as `C:\x` is two
+            // files to it, and the second load redeclares every class
+            // the first one declared.
+            $file = WorkingDirectory::native($given);
+
+            if (!is_file($file)) {
+                continue;
+            }
+
+            $group = $this->groupFrom($file, $workingDirectory);
+
+            if ($group instanceof \LucianoPereira\Crucible\Test\TestGroup && $group->tests !== []) {
+                $groups[] = $group;
+            }
+
+            // A source file with inline markers is the inline scan's
+            // exclusive territory when nothing else claims it: a
+            // positional path never reaches it (D-152), and a suite
+            // that also enumerates it gets both groups, in the order
+            // the full pass produces — suites first, inline after.
+            if ($inlineScan && $this->inlineCarrier($file, $configuration->source, $workingDirectory)) {
+                $inline = $this->inlineBuilder->build($file, $this->relative($file, $workingDirectory));
+
+                if ($inline instanceof \LucianoPereira\Crucible\Test\TestGroup && $inline->tests !== []) {
+                    $groups[] = $inline;
+                }
+            }
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Whether the full pass would find $file through the inline scan:
+     * inside the configured source includes (and outside the
+     * excludes), with the same marker pre-filter the scan applies —
+     * the scan's predicate, per file, in the same precedence.
+     *
+     * @param non-empty-string $file absolute, native
+     */
+    private function inlineCarrier(string $file, Source $source, WorkingDirectory $workingDirectory): bool
+    {
+        $contents = file_get_contents($file);
+
+        if ($contents === false || !InlineBuilder::hasMarkers($contents)) {
+            return false;
+        }
+
+        foreach ($source->excludeFiles as $excluded) {
+            if ($this->absolute($excluded, $workingDirectory) === $file) {
+                return false;
+            }
+        }
+
+        foreach ($source->excludeDirectories as $directory) {
+            if (str_starts_with($file, rtrim($this->absolute($directory, $workingDirectory), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)) {
+                return false;
+            }
+        }
+
+        foreach ($source->includeFiles as $included) {
+            if ($this->absolute($included, $workingDirectory) === $file) {
+                return true;
+            }
+        }
+
+        foreach ($source->includeDirectories as $directory) {
+            if (str_starts_with($file, rtrim($this->absolute($directory, $workingDirectory), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Source files that can declare inline tests: every .php file
      * under the source includes, minus the excludes, that passes the
      * InlineBuilder marker pre-filter — only those get loaded.

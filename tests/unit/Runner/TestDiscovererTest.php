@@ -19,7 +19,10 @@ use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Runner\TestDiscoverer;
 
+use function array_map;
+use function basename;
 use function dirname;
+use function sort;
 
 /**
  * Content-based dialect routing for files that don't carry the
@@ -102,6 +105,103 @@ final class TestDiscovererTest extends TestCase
 
         $both = $discoverer->discover($configuration, $directory, paths: ['tests/_fixtures/dialect-detection/nested-class', 'tests/_fixtures/dialect-detection/no-class']);
         self::assertCount(2, $both);
+    }
+
+    /**
+     * The worker's rebuild: unit files routed directly must produce the
+     * same ids the full pass produced for those files — dataset rows
+     * included. PHPUnit-dialect files survive a second discovery in
+     * one process (classes already declared are recognized, not
+     * re-required); the Pest dialect re-requires its file by design,
+     * so its parity is pinned by the subprocess evidence in
+     * WorkerUnitDiscoveryTest.
+     */
+    public function testUnitFilesRediscoverToTheSameIdsAsTheFullPass(): void
+    {
+        $root      = dirname(__DIR__, 3);
+        $directory = new WorkingDirectory($root);
+
+        $files = [
+            'tests/unit/Metadata/FixtureParent.php',
+            'tests/unit/Metadata/FixtureChild.php',
+        ];
+
+        // The suite names exactly these files, so the full pass and the
+        // unit rebuild see the same set.
+        $configuration = new Configuration([new TestSuite('main', [], $files)], new Source(), new Php());
+
+        $full = (new TestDiscoverer())->discover($configuration, $directory);
+
+        $rediscovered = (new TestDiscoverer())->discoverUnits(
+            $configuration,
+            $directory,
+            array_map(static fn(string $file): string => $directory->absolute($file), $files),
+        );
+
+        self::assertSame($this->idsOf($full), $this->idsOf($rediscovered));
+    }
+
+    public function testAnInlineCarrierBuildsThroughTheInlineFrontend(): void
+    {
+        // The inline scan's exclusive territory: a source file with
+        // markers, reached by name the way a worker's unit reaches it.
+        $root      = dirname(__DIR__, 3);
+        $directory = new WorkingDirectory($root);
+        $file      = 'tests/unit/Dialect/Fixtures/Inline/Temperature.php';
+
+        $inside = new Configuration([new TestSuite('main', ['tests/_fixtures/dialect-detection/no-class'])], new Source(includeDirectories: ['tests/unit/Dialect/Fixtures/Inline']), new Php());
+
+        $groups = (new TestDiscoverer())->discoverUnits($inside, $directory, [$directory->absolute($file)]);
+
+        self::assertNotSame([], $groups, 'A unit file the source scan owns must build through the inline frontend.');
+        self::assertSame('Temperature.php', basename($groups[0]->tests[0]->id->file));
+    }
+
+    public function testAnInlineCarrierOutsideTheSourceIncludesIsNotBuiltInline(): void
+    {
+        // No source includes, no inline scan in the parent's pass: the
+        // same file must not gain a group the parent never made. A
+        // positional-paths run (D-152) is the same case.
+        $root      = dirname(__DIR__, 3);
+        $directory = new WorkingDirectory($root);
+
+        $configuration = new Configuration([new TestSuite('main', ['tests/_fixtures/dialect-detection/no-class'])], new Source(), new Php());
+
+        $groups = (new TestDiscoverer())->discoverUnits($configuration, $directory, [$directory->absolute('tests/unit/Dialect/Fixtures/Inline/Temperature.php')]);
+
+        self::assertSame([], $groups);
+    }
+
+    public function testAFileThatVanishedProducesNoGroup(): void
+    {
+        $root      = dirname(__DIR__, 3);
+        $directory = new WorkingDirectory($root);
+
+        $configuration = new Configuration([new TestSuite('main', ['tests/_fixtures/dialect-detection/no-signal'])], new Source(), new Php());
+
+        $groups = (new TestDiscoverer())->discoverUnits($configuration, $directory, [$directory->absolute('tests/_fixtures/dialect-detection/no-signal/RenamedAwayTest.php')]);
+
+        self::assertSame([], $groups);
+    }
+
+    /**
+     * @param list<\LucianoPereira\Crucible\Test\TestGroup> $groups
+     *
+     * @return list<string>
+     */
+    private function idsOf(array $groups): array
+    {
+        $ids = [];
+
+        foreach ($groups as $group) {
+            foreach ($group->tests as $test) {
+                $ids[] = $test->id->toString();
+            }
+        }
+
+        sort($ids);
+
+        return $ids;
     }
 
     /**
