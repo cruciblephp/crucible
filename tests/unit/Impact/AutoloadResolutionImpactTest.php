@@ -26,6 +26,7 @@ use function is_file;
 use function is_resource;
 use function is_string;
 use function json_decode;
+use function ltrim;
 use function mkdir;
 use function proc_close;
 use function proc_open;
@@ -156,29 +157,35 @@ final class AutoloadResolutionImpactTest extends TestCase
 
     public function testAPsr4ShadowFileInAPriorityDirectoryStillSelectsItsTestFromAWarmIndex(): void
     {
-        // Two directories answer one PSR-4 prefix, and Composer tries
-        // them in the order they were given: a file that APPEARS in
-        // the first shadows the one the warm index recorded in the
-        // second. No tracked byte, no manifest and no classmap moves -
-        // a fingerprint over configuration alone cannot see it, and
-        // the stale answer names the shadowed file, so `--dirty`
-        // selects nothing while the full run is red.
-        $this->psr4Vendor();
         mkdir($this->project . '/lib-new');
+
+        $this->assertShadowFileFromWarmIndex('/lib-new');
+    }
+
+    public function testAPsr4ShadowFileAtTheProjectRootStillSelectsItsTestFromAWarmIndex(): void
+    {
+        $this->assertShadowFileFromWarmIndex('');
+    }
+
+    private function assertShadowFileFromWarmIndex(string $priorityDirectory): void
+    {
+        $this->psr4Vendor($priorityDirectory);
         mkdir($this->project . '/lib-old');
         $this->classSource('lib-old/Greeting.php', 'old');
         $this->greetingTest();
+        file_put_contents($this->project . '/warm.php', "<?php // tracked file with no test dependencies\n");
         $this->commit();
 
+        // Change bytes without changing the directory listing. The only
+        // pathname added between the two dirty runs is the shadow file.
         file_put_contents($this->project . '/warm.php', "<?php // warming the dependency index\n");
         [$exit] = $this->crucible(['--dirty']);
 
         self::assertSame(0, $exit, 'The warming run itself should be green and select nothing.');
-        unlink($this->project . '/warm.php');
 
         // The attack: the shadow file, added inside the priority
         // directory, wins the resolution and fails the test.
-        $this->classSource('lib-new/Greeting.php', 'new');
+        $this->classSource(ltrim($priorityDirectory . '/Greeting.php', '/'), 'new');
 
         [$exit, $stdout, $events] = $this->crucible(['--dirty']);
 
@@ -351,18 +358,18 @@ final class AutoloadResolutionImpactTest extends TestCase
      * tries them in the order given, so a file appearing in the first
      * shadows the one the second already had.
      */
-    private function psr4Vendor(): void
+    private function psr4Vendor(string $priorityDirectory): void
     {
-        file_put_contents($this->project . '/vendor/autoload.php', <<<'PHP'
+        file_put_contents($this->project . '/vendor/autoload.php', <<<PHP
             <?php
 
             declare(strict_types=1);
 
-            $loader = new \Composer\Autoload\ClassLoader();
-            $loader->addPsr4('Scratch\\', [dirname(__DIR__) . '/lib-new', dirname(__DIR__) . '/lib-old']);
-            $loader->register();
+            \$loader = new \Composer\Autoload\ClassLoader();
+            \$loader->addPsr4('Scratch\\\\', [dirname(__DIR__) . '{$priorityDirectory}', dirname(__DIR__) . '/lib-old']);
+            \$loader->register();
 
-            return $loader;
+            return \$loader;
             PHP);
     }
 

@@ -13,6 +13,7 @@ namespace LucianoPereira\Crucible\Impact;
 use Composer\Autoload\ClassLoader;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Test\TestGroup;
+use RecursiveCallbackFilterIterator;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
@@ -135,7 +136,7 @@ final readonly class ImpactFingerprint
         $suite = array_keys($suite);
         sort($suite);
 
-        $parts = ['deps:3'];
+        $parts = ['deps:4'];
 
         foreach (['composer.lock', 'composer.json'] as $manifest) {
             $path = $root . '/' . $manifest;
@@ -297,13 +298,18 @@ final readonly class ImpactFingerprint
      */
     private static function listingPart(string $root, string $prefix, string $directory): ?string
     {
-        $native = WorkingDirectory::native($directory);
+        $native = rtrim(WorkingDirectory::native($directory), DIRECTORY_SEPARATOR);
+        $base   = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
 
-        if ($native === $root || !str_starts_with($native, $root . DIRECTORY_SEPARATOR)) {
+        if ($native === rtrim($root, DIRECTORY_SEPARATOR)) {
+            return $prefix . 'listing:=' . self::listingHash($base);
+        }
+
+        if (!str_starts_with($native, $base)) {
             return null;
         }
 
-        $relative = substr($native, strlen($root . DIRECTORY_SEPARATOR));
+        $relative = substr($native, strlen($base));
 
         if (in_array('vendor', explode(DIRECTORY_SEPARATOR, $relative), true)) {
             return null;
@@ -328,12 +334,16 @@ final readonly class ImpactFingerprint
 
         if (is_dir($directory)) {
             $iterator = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($directory, RecursiveDirectoryIterator::SKIP_DOTS),
+                new RecursiveCallbackFilterIterator(
+                    new RecursiveDirectoryIterator($directory, RecursiveDirectoryIterator::SKIP_DOTS),
+                    static fn(SplFileInfo $entry): bool => !$entry->isDir() || $entry->getFilename() !== 'vendor',
+                ),
             );
+            $offset = strlen(rtrim($directory, DIRECTORY_SEPARATOR)) + 1;
 
             foreach ($iterator as $entry) {
                 if ($entry instanceof SplFileInfo && $entry->isFile() && str_ends_with($entry->getPathname(), '.php')) {
-                    $name = substr($entry->getPathname(), strlen($directory) + 1);
+                    $name = substr($entry->getPathname(), $offset);
 
                     if ($name !== '') {
                         $names[] = WorkingDirectory::portable($name);
@@ -379,7 +389,7 @@ final readonly class ImpactFingerprint
     private static function relative(string $root, string $path): string
     {
         $native = WorkingDirectory::native($path);
-        $prefix = $root . DIRECTORY_SEPARATOR;
+        $prefix = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
 
         if ($native === $root || str_starts_with($native, $prefix)) {
             return WorkingDirectory::portable(substr($native, strlen($prefix)));
