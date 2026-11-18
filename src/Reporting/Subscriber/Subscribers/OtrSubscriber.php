@@ -105,7 +105,7 @@ final class OtrSubscriber extends FileBackedSubscriber
             '<?xml version="1.0" encoding="UTF-8"?>' . PHP_EOL
             . '<e:events xmlns="https://schemas.opentest4j.org/reporting/core/0.2.0"'
             . ' xmlns:e="https://schemas.opentest4j.org/reporting/events/0.2.0"'
-            . ' xmlns:php="https://schema.phpunit.de/otr/php/0.1.0">' . PHP_EOL
+            . ' xmlns:php="https://schema.phpunit.de/otr/php/0.0.1">' . PHP_EOL
             . '  <infrastructure>' . PHP_EOL
             . '    <hostName>%s</hostName>' . PHP_EOL
             . '    <operatingSystem>%s</operatingSystem>' . PHP_EOL
