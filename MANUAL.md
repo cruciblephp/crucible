@@ -95,6 +95,7 @@ Some settings worth knowing early:
 | `->executionOrder(ExecutionOrder::Defects)` | Failures first on every run |
 | `->retries(2, Backoff::Exponential)` | Re-run failures; a pass on retry is **flaky**, not a pass |
 | `->quarantine('tests/Flaky.php::sometimes')` | A known-flaky test whose failure does not affect the exit code |
+| `->aroundEachTest(...)` | Wrap every test in a callable, in the process that runs it (see §14) |
 | `->impactRule('resources/js', ['browser'])` | Files the dependency graph cannot reach (see §8) |
 | `->browser(enabled: true)` | The browser tier (see §10) |
 | `->vitest('resources/js')` | Fold a JavaScript suite into the same run (see §12) |
@@ -786,6 +787,53 @@ anything it changed.
 A real Laravel 13 application runs green through exactly these steps — factories,
 `RefreshDatabase`, Laravel's own constraints, mocks, `--parallel` — with the `composer
 remove` as the only change to the project.
+
+### Doctrine: replacing DAMA DoctrineTestBundle
+
+`dama/doctrine-test-bundle` wraps every test in a rolled-back transaction through PHPUnit event
+subscribers. Crucible's subscribers are reporting plugins — under `--parallel` they live in the
+supervisor, one process away from the connection a transaction would run on — so the bundle cannot
+be dropped in. The configuration-level equivalent is `->aroundEachTest()`, which runs **in the
+process that runs the test**: the parent in a sequential run, each worker in a `--parallel` run,
+because every worker re-loads `crucible.php` and builds the same hook.
+
+The closure brackets the whole per-test lifecycle — `setUp()`, the `#[Before]` hooks, the body, the
+`#[After]` hooks, `tearDown()` — so the cleanup belongs in a `finally`. That is the one detail a
+`#[Before]`/`#[After]` trait could not give you: the after phase is skipped when `setUp()` throws,
+and the next test inherits an open transaction.
+
+```php
+use LucianoPereira\Crucible\Configuration\Crucible;
+use LucianoPereira\Crucible\Test\TestId;
+
+$connection = your_connection_from_the_bootstrap();
+
+return Crucible::configure()
+    ->testSuite('unit', 'tests')
+    ->aroundEachTest(function (TestId $id, callable $test) use ($connection): mixed {
+        $connection->beginTransaction();
+
+        try {
+            return $test();
+        } finally {
+            $connection->rollBack();
+        }
+    });
+```
+
+`$connection` is whatever your bootstrap already builds — the Doctrine `EntityManager`'s wrapped
+connection, a DBAL connection, a PDO instance: the transaction API is the same three calls. Call
+`$test()` once and return what it returned — that value feeds `#[Depends]` injection. A class-based
+extension works the same way when it needs its own dependencies: implement
+`LucianoPereira\Crucible\Extension\AroundEachTest` and register it with `->extension(new ...)` —
+the interface documents the whole contract at its declaration. With several wraps the first call is
+the outermost; a retried test re-opens its bracket per attempt; and `--no-extensions` silences every
+hook for the whole run, workers included.
+
+The bracketed shape above — begin, run, `finally` — is what
+`tests/unit/CLI/AroundEachTestCliTest.php` executes end to end, with the two transaction calls
+replaced by two log writes: serial, `--parallel 2`, and a test whose `setUp()` throws, whose
+bracket still closes.
 
 ---
 

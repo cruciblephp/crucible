@@ -20,6 +20,8 @@ use LucianoPereira\Crucible\Coverage\SourceHashes;
 use LucianoPereira\Crucible\Coverage\TestLineMap;
 use LucianoPereira\Crucible\Dialect\PhpUnit\ClassLocator;
 use LucianoPereira\Crucible\Exceptions\Exception;
+use LucianoPereira\Crucible\Extension\AroundEachTest;
+use LucianoPereira\Crucible\Extension\Extension;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Mutation\ColdMutantExecutor;
 use LucianoPereira\Crucible\Mutation\CoveringTestRunner;
@@ -292,7 +294,16 @@ final class MutationCommand
         $warm = null;
 
         if (MutantApplier::isSupported()) {
-            $covering = new CoveringTestRunner($discovered, $workingDirectory, $cache);
+            // The warm fork brackets each covering test in the configured
+            // around-test extensions (D-172): a project whose runs roll
+            // everything back — DAMA — gets the same bracket for a
+            // mutant's writes, and the cold executor's workers already
+            // have it by re-loading the configuration.
+            $around = array_values(array_filter(
+                $loaded->configuration->extensions,
+                static fn(Extension $extension): bool => $extension instanceof AroundEachTest,
+            ));
+            $covering = new CoveringTestRunner($discovered, $workingDirectory, $cache, $around);
             $warm     = new WarmMutantExecutor(new MutantApplier(), $covering->firstKiller(...));
         }
 

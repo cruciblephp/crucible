@@ -40,6 +40,7 @@ use LucianoPereira\Crucible\Event\RunSummary;
 use LucianoPereira\Crucible\Event\TestFinished;
 use LucianoPereira\Crucible\Event\TestOutputWritten;
 use LucianoPereira\Crucible\Event\TestStarted;
+use LucianoPereira\Crucible\Extension\AroundEachTest;
 use LucianoPereira\Crucible\Framework\IncompleteTestError;
 use LucianoPereira\Crucible\Framework\SkippedTestError;
 use LucianoPereira\Crucible\Isolation\GlobalStateSnapshot;
@@ -57,6 +58,7 @@ use Throwable;
 
 use function array_any;
 use function array_map;
+use function array_reverse;
 use function count;
 use function hrtime;
 use function implode;
@@ -87,6 +89,8 @@ final readonly class TestRunner
         private ?CoverageCollector $coverage = null,
         private SnapshotRepository $snapshots = new SnapshotRepository(),
         private DependencyValues $dependencies = new DependencyValues(),
+        /** @var list<AroundEachTest> registration order — first registered wraps outermost (D-172) */
+        private array $aroundEachTest = [],
     ) {
         $this->statics = new StaticRegistry();
         $this->issues  = new IssueCollector(
@@ -437,7 +441,7 @@ final readonly class TestRunner
         ob_start();
 
         try {
-            $value = ($definition->test)($dependencyValues);
+            $value = $this->lifecycle($definition, $dependencyValues);
         } catch (Throwable $throwable) {
             $thrown = $throwable;
         } finally {
@@ -563,6 +567,29 @@ final readonly class TestRunner
         }
 
         return $this->settleCoverage($definition, $result, $window);
+    }
+
+    /**
+     * One lifecycle execution: the definition's own closure, wrapped by
+     * every around-test extension in registration order — the first
+     * registered ends up outermost, because each wrap takes the
+     * previous callable as the test it brackets. The wrap is around the
+     * whole lifecycle (setUp, hooks, body, tearDown), so an extension's
+     * finally runs even when setUp() throws (D-172) — the one case a
+     * `#[Before]`/`#[After]` pair cannot cover, since Crucible skips the
+     * after phase when setUp() fails, as the incumbent does.
+     *
+     * @param list<mixed> $dependencyValues
+     */
+    private function lifecycle(TestDefinition $definition, array $dependencyValues): mixed
+    {
+        $test = static fn(): mixed => ($definition->test)($dependencyValues);
+
+        foreach (array_reverse($this->aroundEachTest) as $extension) {
+            $test = static fn(): mixed => $extension->around($definition->id, $test);
+        }
+
+        return $test();
     }
 
     /**

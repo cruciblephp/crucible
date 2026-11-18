@@ -17,6 +17,7 @@ use LucianoPereira\Crucible\Event\Envelope;
 use LucianoPereira\Crucible\Event\Listener;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\TestFinished;
+use LucianoPereira\Crucible\Extension\AroundEachTest;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Runner\ResultCache;
 use LucianoPereira\Crucible\Runner\RunnerOptions;
@@ -51,11 +52,13 @@ final class CoveringTestRunner implements Listener
     /**
      * @param list<TestGroup>  $groups           the discovered suite
      * @param ResultCache      $durations        the run's timings that define the fastest-first order (D-021/D-077)
+     * @param list<AroundEachTest> $aroundEachTest the configured around-test extensions (D-172), so a mutant's writes land inside the same rolled-back bracket a normal run would give them
      */
     public function __construct(
         private readonly array $groups,
         private readonly WorkingDirectory $workingDirectory,
         private readonly ResultCache $durations = new ResultCache(),
+        private readonly array $aroundEachTest = [],
     ) {}
 
     /**
@@ -83,7 +86,11 @@ final class CoveringTestRunner implements Listener
 
         // execute(), not run(): no run:start/finish bracket is wanted here,
         // just the test:finish events. stopOnDefect halts at the first kill.
-        (new TestRunner($emitter, new RunnerOptions(stopOnDefect: true, workingDirectory: $this->workingDirectory)))
+        (new TestRunner(
+            $emitter,
+            new RunnerOptions(stopOnDefect: true, workingDirectory: $this->workingDirectory),
+            aroundEachTest: $this->aroundEachTest,
+        ))
             ->execute($groups);
 
         return $this->killer;

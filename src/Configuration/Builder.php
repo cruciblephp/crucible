@@ -10,10 +10,12 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Configuration;
 
+use Closure;
 use LucianoPereira\Crucible\Browser\BrowserConfiguration;
 use LucianoPereira\Crucible\Browser\BrowserEngine;
 use LucianoPereira\Crucible\Coverage\CoverageTarget;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
+use LucianoPereira\Crucible\Extension\AroundEachTestClosure;
 use LucianoPereira\Crucible\Extension\CommandGate;
 use LucianoPereira\Crucible\Extension\Extension;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
@@ -766,6 +768,37 @@ final class Builder
     public function extension(Extension $extension): self
     {
         $this->extensions[] = $extension;
+
+        return $this;
+    }
+
+    /**
+     * Wrap every test in $around, in the process that runs the test
+     * (D-172). The callable brackets the whole per-test lifecycle —
+     * setUp, the #[Before] hooks, the body, the #[After] hooks,
+     * tearDown — so the cleanup belongs in a `finally`: it still runs
+     * when setUp() throws, which a `#[Before]`/`#[After]` pair cannot
+     * promise, because the after phase is skipped when setUp() fails.
+     *
+     *     ->aroundEachTest(function (TestId $id, callable $test): mixed {
+     *         $this->connection->beginTransaction();
+     *
+     *         try {
+     *             return $test();
+     *         } finally {
+     *             $this->connection->rollBack();
+     *         }
+     *     })
+     *
+     * Call `$test()` once and return what it returned — that value
+     * feeds #[Depends] injection. With several wraps, the first call is
+     * the outermost. Registered as an {@see AroundEachTest} extension:
+     * `--no-extensions` silences it, and a `--parallel` worker re-loads
+     * this file, so its tests run wrapped too.
+     */
+    public function aroundEachTest(callable $around): self
+    {
+        $this->extensions[] = new AroundEachTestClosure($around instanceof Closure ? $around : Closure::fromCallable($around));
 
         return $this;
     }
