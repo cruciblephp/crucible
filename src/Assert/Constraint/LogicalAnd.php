@@ -21,6 +21,10 @@ use function implode;
  * is built by Symfony's BrowserKit and DomCrawler assertion traits
  * (`LogicalAnd::fromConstraints(...)`), so the class also exists under
  * that name once compatibility aliases are loaded.
+ *
+ * A project that declared its own shim under the PHPUnit name before
+ * this class existed must delete it: a declaration and an alias of one
+ * class name cannot coexist, and whichever loads second dies.
  */
 final class LogicalAnd extends Constraint
 {

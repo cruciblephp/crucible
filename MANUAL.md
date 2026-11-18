@@ -757,6 +757,18 @@ Step 4 is what turns on the compatibility aliases, so `PHPUnit\Framework\TestCas
 resolving with no PHPUnit in the tree. While both are installed Crucible stands down and leaves
 the namespace alone.
 
+One cleanup to do **before** step 4, which the first real migrations hit: a shim your project
+declared under a `PHPUnit\Framework\*` name. Before Crucible provided the logical constraints
+itself, Symfony's BrowserKit and DomCrawler assertion traits needed a project-local
+`PHPUnit\Framework\Constraint\LogicalAnd` to keep working — and that hand-written class now
+collides with the alias that answers the same name. A declaration and an alias of one class
+name cannot coexist: if your shim loads after the aliases (a `require` in the bootstrap, an
+`autoload.files` entry), PHP dies with a raw `Cannot redeclare class` fatal at bootstrap load,
+which no error handler can intercept; if it was already loaded when Crucible configures, the
+compatibility layer fails fast instead, naming the class. Either order says the same thing:
+the shim is obsolete now, so delete it — the same for any other class declared under a name
+the aliases cover (`LogicalOr`, `LogicalNot`, the doubles, ...).
+
 If step 3 isn't green, run `./vendor/bin/crucible compat-check` before digging in by hand.
 While the incumbent is still installed (it's the oracle being compared against), it runs your
 real suite through both engines and reports every test that passes on the incumbent but fails on
