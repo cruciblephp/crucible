@@ -11,16 +11,26 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Tests\Impact;
 
 use LucianoPereira\Crucible\Attributes\CoversClass;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Impact\DependencyGraph;
 use LucianoPereira\Crucible\Impact\DependencyIndex;
+use LucianoPereira\Crucible\Impact\ImpactFingerprint;
+use LucianoPereira\Crucible\Metadata\MetadataCollection;
+use LucianoPereira\Crucible\Test\TestDefinition;
+use LucianoPereira\Crucible\Test\TestGroup;
+use LucianoPereira\Crucible\Test\TestId;
 
 use function dirname;
+use function file_get_contents;
 use function file_put_contents;
 use function getmypid;
 use function is_dir;
+use function json_decode;
 use function mkdir;
+use function rmdir;
 use function sys_get_temp_dir;
+use function uniqid;
 use function unlink;
 
 /**
@@ -29,6 +39,7 @@ use function unlink;
  * index warm and without it at all.
  */
 #[CoversClass(DependencyIndex::class)]
+#[CoversClass(ImpactFingerprint::class)]
 final class DependencyIndexTest extends TestCase
 {
     /** @var non-empty-string */
@@ -45,16 +56,29 @@ final class DependencyIndexTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['index/.gitkeep'] as $file) {
+        foreach (['index/.gitkeep', 'Subject.php', 'Config.php', 'fingerprint-one.deps.json', 'fingerprint-two.deps.json', 'fixed.deps.json', 'moved.deps.json', 'portable.deps.json', 'inside.deps.json', 'kept.deps.json', 'native.deps.json'] as $file) {
             @unlink($this->scratch . '/' . $file);
         }
+    }
+
+    /**
+     * A one-test project over the repository itself, the shape the CLI
+     * fingerprints: relative ids, groups from discovery.
+     *
+     * @return list<TestGroup>
+     */
+    private function groups(): array
+    {
+        return [new TestGroup('tests/unit/Impact/DependencyIndexTest.php', [
+            new TestDefinition(new TestId('tests/unit/Impact/DependencyIndexTest.php', 'it works'), static fn(): mixed => null, MetadataCollection::from()),
+        ])];
     }
 
     public function testAWarmIndexProducesTheIdenticalClosure(): void
     {
         $root  = dirname(__DIR__, 3);
         $file  = $root . '/src/Impact/ImpactSelection.php';
-        $print = DependencyIndex::fingerprintOf($root, DependencyIndex::suiteConfigurationIn($root));
+        $print = ImpactFingerprint::of($root, $this->groups());
 
         $cold = (new DependencyGraph($root))->closureOf($file);
 
@@ -114,23 +138,27 @@ final class DependencyIndexTest extends TestCase
 
     public function testASuiteConfigurationAppearingChangesTheFingerprint(): void
     {
-        $root = $this->scratch . '/proj';
+        $root = $this->scratch . '/proj-' . uniqid();
 
         if (!is_dir($root . '/tests')) {
             mkdir($root . '/tests', 0o777, true);
         }
 
-        $before = DependencyIndex::fingerprintOf($root, DependencyIndex::suiteConfigurationIn($root));
+        file_put_contents($root . '/tests/Example.pest.php', "<?php\n");
+        $groups = $this->groupsFor($root, 'tests/Example.pest.php');
+
+        $before = ImpactFingerprint::of($root, $groups);
 
         // A Pest.php adds edges to every file beneath it without changing
         // one byte of them (D-033) — the case a content hash cannot see.
         file_put_contents($root . '/tests/Pest.php', "<?php\n");
 
-        $after = DependencyIndex::fingerprintOf($root, DependencyIndex::suiteConfigurationIn($root));
-
-        self::assertNotSame($before, $after);
+        self::assertNotSame($before, ImpactFingerprint::of($root, $groups));
 
         @unlink($root . '/tests/Pest.php');
+        @unlink($root . '/tests/Example.pest.php');
+        @rmdir($root . '/tests');
+        @rmdir($root);
     }
 
     public function testAnIndexSurvivesTheCheckoutMovingToAnotherPath(): void
@@ -159,7 +187,7 @@ final class DependencyIndexTest extends TestCase
         $read->load();
 
         self::assertSame(
-            [$there . '/src/Other.php'],
+            [WorkingDirectory::native($there . '/src/Other.php')],
             $read->reuse($there . '/src/Thing.php'),
             'The index must key on project-relative paths, or a restored cache matches nothing.',
         );
@@ -176,11 +204,12 @@ final class DependencyIndexTest extends TestCase
             }
 
             file_put_contents($root . '/tests/Pest.php', "<?php\n");
+            file_put_contents($root . '/tests/Example.pest.php', "<?php\n");
         }
 
         self::assertSame(
-            DependencyIndex::fingerprintOf($here, DependencyIndex::suiteConfigurationIn($here)),
-            DependencyIndex::fingerprintOf($there, DependencyIndex::suiteConfigurationIn($there)),
+            ImpactFingerprint::of($here, $this->groupsFor($here, 'tests/Example.pest.php')),
+            ImpactFingerprint::of($there, $this->groupsFor($there, 'tests/Example.pest.php')),
             'Two checkouts of the same project must land on the same index.',
         );
     }
@@ -239,6 +268,103 @@ final class DependencyIndexTest extends TestCase
         $reader = new DependencyIndex($this->scratch, 'inside', $project);
         $reader->load();
 
-        self::assertSame([$project . '/src/Other.php'], $reader->reuse($project . '/src/Inside.php'));
+        self::assertSame(
+            [WorkingDirectory::native($project . '/src/Other.php')],
+            $reader->reuse($project . '/src/Inside.php'),
+        );
+    }
+
+    public function testARunThatResolvedNothingKeepsThePreviousIndex(): void
+    {
+        // The runs that resolve nothing are the ones that widened to
+        // everything without walking a closure — a deletion, a manifest
+        // change. Flattening the index they just chose not to consult
+        // would make their next neighbour cold for no reason, and a
+        // `--dirty` run would look like it warmed anything at all.
+        $project = $this->scratch . '/kept';
+
+        if (!is_dir($project . '/src')) {
+            mkdir($project . '/src', 0o777, true);
+        }
+
+        file_put_contents($project . '/src/Thing.php', "<?php\nclass KeptThing {}\n");
+        file_put_contents($project . '/src/Other.php', "<?php\nclass KeptOther {}\n");
+
+        $warm = new DependencyIndex($this->scratch, 'kept', $project);
+        $warm->load();
+        $warm->record($project . '/src/Thing.php', [$project . '/src/Other.php']);
+        $warm->save();
+
+        $idle = new DependencyIndex($this->scratch, 'kept', $project);
+        $idle->load();
+        $idle->save();
+
+        $reader = new DependencyIndex($this->scratch, 'kept', $project);
+        $reader->load();
+
+        self::assertSame(
+            [WorkingDirectory::native($project . '/src/Other.php')],
+            $reader->reuse($project . '/src/Thing.php'),
+            'A run that resolved nothing fresh must leave the previous index readable.',
+        );
+    }
+
+    public function testTheIndexStoresPortableKeysAndAnswersNativeLookups(): void
+    {
+        // Lookup happens in the platform's own separators - the paths a
+        // run asks about come from realpath() and discovery - while the
+        // file on disk stays portable. On Windows a root that ends in
+        // the wrong separator used to fail every prefix comparison, and
+        // the index degenerated into an empty file: never read, never
+        // written, never noticed.
+        $project = $this->scratch . '/native';
+
+        if (!is_dir($project . '/src')) {
+            mkdir($project . '/src', 0o777, true);
+        }
+
+        file_put_contents($project . '/src/Thing.php', "<?php\nclass NativeThing {}\n");
+        file_put_contents($project . '/src/Other.php', "<?php\nclass NativeOther {}\n");
+
+        $native = WorkingDirectory::native($project);
+
+        $index = new DependencyIndex($this->scratch, 'native', $native);
+        $index->load();
+        $index->record(WorkingDirectory::native($project . '/src/Thing.php'), [WorkingDirectory::native($project . '/src/Other.php')]);
+        $index->save();
+
+        $written = (string) file_get_contents($this->scratch . '/native.deps.json');
+        $decoded = json_decode($written, true);
+
+        self::assertIsArray($decoded);
+        self::assertArrayHasKey('src/Thing.php', $decoded, 'Keys are stored portable: ' . $written);
+
+        $entry = $decoded['src/Thing.php'];
+
+        self::assertIsArray($entry);
+        self::assertArrayHasKey('dependencies', $entry);
+        self::assertSame(['src/Other.php'], $entry['dependencies']);
+
+        $reader = new DependencyIndex($this->scratch, 'native', $native);
+        $reader->load();
+
+        self::assertSame(
+            [WorkingDirectory::native($project . '/src/Other.php')],
+            $reader->reuse(WorkingDirectory::native($project . '/src/Thing.php')),
+            'A native lookup must find the portable entry behind the re-rooted key.',
+        );
+    }
+
+    /**
+     * @param non-empty-string $root
+     * @param non-empty-string $file
+     *
+     * @return list<TestGroup>
+     */
+    private function groupsFor(string $root, string $file): array
+    {
+        return [new TestGroup($file, [
+            new TestDefinition(new TestId($file, 'it works'), static fn(): mixed => null, MetadataCollection::from()),
+        ])];
     }
 }

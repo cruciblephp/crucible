@@ -15,10 +15,8 @@ use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 
 use function array_keys;
 use function array_pop;
-use function dirname;
 use function explode;
 use function file_get_contents;
-use function glob;
 use function in_array;
 use function is_array;
 use function is_file;
@@ -208,37 +206,23 @@ final class DependencyGraph
     }
 
     /**
+     * The suite configuration a Pest-family test file's discovery loads
+     * from its own directory upwards: `Pest.php` scopes and shared
+     * `Datasets/*.php` (D-033).
+     *
+     * Delegates to the one enumeration both consumers share ({@see
+     * SuiteConfiguration}), so the edge answer and the index's
+     * fingerprint can never walk the tree differently - which is
+     * exactly how they drifted, in a way that left the fingerprint
+     * blind to every configuration file the edges were adding.
+     *
      * @param non-empty-string $file
      *
      * @return list<string> absolute paths
      */
     private function suiteConfigurationAbove(string $file): array
     {
-        $found     = [];
-        $directory = dirname($file);
-        $root      = rtrim($this->projectRoot, DIRECTORY_SEPARATOR);
-
-        while (str_starts_with($directory, $root)) {
-            $pest = $directory . DIRECTORY_SEPARATOR . 'Pest.php';
-
-            if (is_file($pest)) {
-                $found[] = $pest;
-            }
-
-            $datasets = glob($directory . DIRECTORY_SEPARATOR . 'Datasets' . DIRECTORY_SEPARATOR . '*.php');
-
-            foreach ($datasets === false ? [] : $datasets as $dataset) {
-                $found[] = $dataset;
-            }
-
-            if ($directory === $root) {
-                break;
-            }
-
-            $directory = dirname($directory);
-        }
-
-        return $found;
+        return SuiteConfiguration::above($this->projectRoot, $file);
     }
 
     /**
