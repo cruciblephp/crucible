@@ -154,6 +154,100 @@ final class AutoloadResolutionImpactTest extends TestCase
         self::assertContains('tests/GreetingTest.php::testGreeting', $this->ranIds($fullEvents));
     }
 
+    public function testAPsr4ShadowFileInAPriorityDirectoryStillSelectsItsTestFromAWarmIndex(): void
+    {
+        // Two directories answer one PSR-4 prefix, and Composer tries
+        // them in the order they were given: a file that APPEARS in
+        // the first shadows the one the warm index recorded in the
+        // second. No tracked byte, no manifest and no classmap moves -
+        // a fingerprint over configuration alone cannot see it, and
+        // the stale answer names the shadowed file, so `--dirty`
+        // selects nothing while the full run is red.
+        $this->psr4Vendor();
+        mkdir($this->project . '/lib-new');
+        mkdir($this->project . '/lib-old');
+        $this->classSource('lib-old/Greeting.php', 'old');
+        $this->greetingTest();
+        $this->commit();
+
+        file_put_contents($this->project . '/warm.php', "<?php // warming the dependency index\n");
+        [$exit] = $this->crucible(['--dirty']);
+
+        self::assertSame(0, $exit, 'The warming run itself should be green and select nothing.');
+        unlink($this->project . '/warm.php');
+
+        // The attack: the shadow file, added inside the priority
+        // directory, wins the resolution and fails the test.
+        $this->classSource('lib-new/Greeting.php', 'new');
+
+        [$exit, $stdout, $events] = $this->crucible(['--dirty']);
+
+        self::assertNotSame(0, $exit, 'A shadowing file in a priority directory was silently dropped from the selection.');
+        self::assertStringNotContainsString('No tests are affected', $stdout);
+        self::assertContains('tests/GreetingTest.php::testGreeting', $this->ranIds($events));
+
+        // Cold parity: the same answer with the index deleted.
+        $this->dropIndex('.crucible.cache');
+
+        [$coldExit, , $coldEvents] = $this->crucible(['--dirty']);
+
+        self::assertNotSame(0, $coldExit, 'A cold run disagrees with the warm one - the index changes the answer.');
+        self::assertSame($this->ranIds($events), $this->ranIds($coldEvents));
+
+        // Full-run parity.
+        [$fullExit, , $fullEvents] = $this->crucible([]);
+
+        self::assertNotSame(0, $fullExit);
+        self::assertContains('tests/GreetingTest.php::testGreeting', $this->ranIds($fullEvents));
+    }
+
+    public function testTheWinningLoaderOrderStillSelectsItsTestFromAWarmIndex(): void
+    {
+        // Two loaders both declare the class, and the first registered
+        // wins. Reversing their order - a regenerated vendor, invisible
+        // to Git - moves the resolution, and a fingerprint that sorts
+        // its parts flat cannot see an order at all: both loaders
+        // contributed the same sorted strings either way.
+        $this->twoLoaderVendor('a', 'b');
+        $this->classmapFile('autoload_classmap-a.php', 'src/A.php');
+        $this->classmapFile('autoload_classmap-b.php', 'src/B.php');
+        $this->classSource('src/A.php', 'old');
+        $this->classSource('src/B.php', 'b');
+        $this->greetingTest();
+        $this->commit();
+
+        file_put_contents($this->project . '/warm.php', "<?php // warming the dependency index\n");
+        [$exit] = $this->crucible(['--dirty']);
+
+        self::assertSame(0, $exit, 'The warming run itself should be green and select nothing.');
+        unlink($this->project . '/warm.php');
+
+        // The attack: reverse the loaders inside vendor/ - untracked -
+        // and make the newly winning file fail.
+        $this->twoLoaderVendor('b', 'a');
+        $this->classSource('src/B.php', 'broken');
+
+        [$exit, $stdout, $events] = $this->crucible(['--dirty']);
+
+        self::assertNotSame(0, $exit, 'A loader-priority change was silently dropped from the selection.');
+        self::assertStringNotContainsString('No tests are affected', $stdout);
+        self::assertContains('tests/GreetingTest.php::testGreeting', $this->ranIds($events));
+
+        // Cold parity: the same answer with the index deleted.
+        $this->dropIndex('.crucible.cache');
+
+        [$coldExit, , $coldEvents] = $this->crucible(['--dirty']);
+
+        self::assertNotSame(0, $coldExit, 'A cold run disagrees with the warm one - the index changes the answer.');
+        self::assertSame($this->ranIds($events), $this->ranIds($coldEvents));
+
+        // Full-run parity.
+        [$fullExit, , $fullEvents] = $this->crucible([]);
+
+        self::assertNotSame(0, $fullExit);
+        self::assertContains('tests/GreetingTest.php::testGreeting', $this->ranIds($fullEvents));
+    }
+
     public function testASuiteConfigurationAppearingStillSelectsItsTestFromAWarmIndex(): void
     {
         // Green with no configuration above it: the pest file defaults
@@ -233,12 +327,63 @@ final class AutoloadResolutionImpactTest extends TestCase
      */
     private function classmap(string $source): void
     {
-        file_put_contents($this->project . '/vendor/composer/autoload_classmap.php', <<<PHP
+        $this->classmapFile('autoload_classmap.php', $source);
+    }
+
+    /**
+     * A named classmap - two loaders can each carry one, mapping the
+     * same class to different files, which is how registration order
+     * becomes part of the resolution.
+     */
+    private function classmapFile(string $name, string $source): void
+    {
+        file_put_contents($this->project . "/vendor/composer/{$name}", <<<PHP
             <?php
 
             return [
                 'Scratch\\\\Greeting' => dirname(__DIR__, 2) . '/{$source}',
             ];
+            PHP);
+    }
+
+    /**
+     * A vendor whose resolution is PSR-4 over TWO directories: Composer
+     * tries them in the order given, so a file appearing in the first
+     * shadows the one the second already had.
+     */
+    private function psr4Vendor(): void
+    {
+        file_put_contents($this->project . '/vendor/autoload.php', <<<'PHP'
+            <?php
+
+            declare(strict_types=1);
+
+            $loader = new \Composer\Autoload\ClassLoader();
+            $loader->addPsr4('Scratch\\', [dirname(__DIR__) . '/lib-new', dirname(__DIR__) . '/lib-old']);
+            $loader->register();
+
+            return $loader;
+            PHP);
+    }
+
+    /**
+     * A vendor with two registered loaders, $first before $second: both
+     * declare the class, and the first registered wins.
+     */
+    private function twoLoaderVendor(string $first, string $second): void
+    {
+        file_put_contents($this->project . '/vendor/autoload.php', <<<PHP
+            <?php
+
+            declare(strict_types=1);
+
+            \$firstLoader = new \Composer\Autoload\ClassLoader();
+            \$firstLoader->addClassMap(require __DIR__ . '/composer/autoload_classmap-{$first}.php');
+            \$firstLoader->register();
+
+            \$secondLoader = new \Composer\Autoload\ClassLoader();
+            \$secondLoader->addClassMap(require __DIR__ . '/composer/autoload_classmap-{$second}.php');
+            \$secondLoader->register();
             PHP);
     }
 
