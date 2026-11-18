@@ -693,6 +693,36 @@ includes:
     - vendor/cruciblephp/crucible/phpstan/crucible-dialect.neon
 ```
 
+### Other analysers: the aliased PHPUnit names
+
+Drop-in mode answers `PHPUnit\Framework\TestCase` and the rest of the incumbent's names through
+run-time `class_alias()` — invisible to a static analyser, because analysis runs no PHP. The
+package ships the declarations instead, one file, generated from the same alias map:
+
+```toml
+# mago.toml
+[source]
+includes = ["vendor/cruciblephp/crucible/stubs/phpunit.php"]
+```
+
+```xml
+<!-- psalm.xml -->
+<stubs>
+    <stub name="vendor/cruciblephp/crucible/stubs/phpunit.php"/>
+</stubs>
+```
+
+Each name is declared as a child of the Crucible class the alias answers, so the whole public API
+is inherited and nothing is rendered by hand; the attributes keep their target flags, so
+`#[Group('db')]` on a method parses as a valid usage of the aliased name. Two fidelity notes: the
+declarations are children, not the aliases themselves — analysis only cares that the names resolve
+with the right API — and `TodoStatus`, the one enum in the map, is declared as a copy because an
+enum cannot extend; pass `#[Todo]`'s status under the Crucible name, which its parameter actually
+takes.
+
+PHPStan needs none of this: its analysis-time aliases load through the extension's bootstrap, and
+a class both declared and aliased would collide.
+
 ### Type tests
 
 ```php
