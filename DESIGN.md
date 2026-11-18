@@ -6957,6 +6957,20 @@ lines, branches and paths together to the files under a path, on a path boundary
 the reports and `--min` judge that scope, an empty one cannot be judged as before, and the caches
 keep what was collected. Per-target floors wait until targets are named things.
 
+### D-169: the PHP extension of the OTR log declares the namespace the schema knows
+
+The OTR subscriber stamped its `php:` extension with `0.1.0` — a version of the
+`https://schema.phpunit.de/otr/php/` namespace that has never been published. The
+incumbent emits `0.0.1` (`OtrXmlLogger`, phpunit-main 12.5.44) and the oracle's own
+schema imports `otr/php/0.0.1` and declares `phpVersion` and `threadModel` there, so
+the moment the oracle reference checkout is installed — the one condition the schema
+test skips on — validation fails demanding elements the emitted namespace cannot
+provide. Measured at the base commit with the oracle present: the schema test fails
+with "No matching global element declaration available" for both `php:` elements;
+after the one-line alignment it validates the whole mixed run. The interop format is
+only as correct as the schema it answers to, and the incumbent's namespace is the
+published one.
+
 ---
 
 ## Closing the planned record
