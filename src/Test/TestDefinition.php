@@ -29,11 +29,16 @@ final readonly class TestDefinition
      * @param Closure(list<mixed>): mixed $test
      * @param list<non-empty-string>      $dependencies names of tests within the
      *                                                  same group that must pass first
+     * @param class-string|null           $class the namespaced class declaring the
+     *                                            test, when the declaring dialect has
+     *                                            one — a phpunit-dialect TestCase; null
+     *                                            for pest closures and inline checks
      */
     public function __construct(
         public TestId $id,
         public Closure $test,
         public MetadataCollection $metadata,
         public array $dependencies = [],
+        public ?string $class = null,
     ) {}
 }

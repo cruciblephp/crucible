@@ -33,8 +33,12 @@ use LucianoPereira\Crucible\Test\TestId;
  *
  *     final class Transactional implements AroundEachTest
  *     {
- *         public function around(TestId $id, callable $test): mixed
+ *         public function around(TestId $id, callable $test, ?string $class = null): mixed
  *         {
+ *             if ($class !== null && SkipDatabaseRollback::on($class, $id->name)) {
+ *                 return $test();
+ *             }
+ *
  *             $this->connection->beginTransaction();
  *
  *             try {
@@ -52,6 +56,13 @@ use LucianoPereira\Crucible\Test\TestId;
  * - Call `$test()` exactly once; what it returns is the test's return
  *   value and feeds `#[Depends]` injection. An extension that returns
  *   something else injects that instead.
+ * - The third argument is the namespaced class declaring the test,
+ *   when the declaring dialect has one: a phpunit-dialect test passes
+ *   its class name, so an attribute like `#[SkipDatabaseRollback]` is
+ *   one ReflectionMethod away; pest closures and inline checks give
+ *   null. TestId stays dialect-neutral (D-008) — the class is a
+ *   separate fact for the hook, never part of the identity that
+ *   travels the event stream.
  * - A throw before `$test()` classifies the test from that throw, and a
  *   throw after its outcome does the same: the extension's exception
  *   becomes the test's, like a failing setUp() would.
@@ -72,7 +83,10 @@ interface AroundEachTest extends Extension
      * Wrap one test's execution. Call `$test()` to run it; return what
      * it returned.
      *
-     * @param callable(): mixed $test
+     * @param callable(): mixed   $test
+     * @param class-string|null   $class the namespaced class declaring the test,
+     *                             when the declaring dialect has one; null
+     *                             for pest closures and inline checks
      */
-    public function around(TestId $id, callable $test): mixed;
+    public function around(TestId $id, callable $test, ?string $class = null): mixed;
 }

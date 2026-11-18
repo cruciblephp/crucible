@@ -7002,10 +7002,20 @@ that live in the supervisor under `--parallel`, one process away from the connec
 would run on, and the `#[Before]`/`#[After]` trait a migrated project reaches for first fails the
 one case DAMA exists for — `#[After]` is skipped when setUp() throws, so the open transaction fell
 to the next test to clean up (F-04, ticket #2 item 4). The extension surface gains a role for it:
-`Extension\AroundEachTest::around(TestId $id, callable $test): mixed` — call `$test()` to run the
-test, return what it returned (that value feeds `#[Depends]`), and put the cleanup in a `finally`,
+`Extension\AroundEachTest::around(TestId $id, callable $test, ?string $class = null): mixed` — call
+`$test()` to run the test, return what it returned (that value feeds `#[Depends]`), and put the
+cleanup in a `finally`,
 because the call brackets the WHOLE lifecycle: setUp, the `#[Before]` hooks, the pre-conditions, the
-body, the post-conditions, the `#[After]` hooks, tearDown.
+body, the post-conditions, the `#[After]` hooks, tearDown. The third parameter is the namespaced
+class declaring the test, when the declaring dialect has one — the phpunit dialect passes the
+`TestCase` name; pest closures and inline checks give null. It exists because a migrated DAMA
+project immediately needs the exemption: honoring a `#[SkipDatabaseRollback]`-style attribute is
+one ReflectionMethod over the class and the id's method name, where the first crucible consumer
+had been reconstructing the class from the test file's path. The class is a fact for the hook
+alone — TestId stays dialect-neutral (D-008), and the identity that travels the event stream and
+feeds partition hashing does not move. A class-based implementation must declare the third
+parameter (PHP rejects an implementation that drops one); the closure sugar may leave it out,
+an extra argument to a userland closure that does not take it being ignored.
 
 The role is dispatched wherever the test runs, never in the supervisor: the in-process runner
 carries it, and a worker builds the same instances because it re-loads `crucible.php` — the
@@ -7023,10 +7033,14 @@ transaction needs, and configured instances already cover that use everywhere.
 ✓ `AroundEachTestTest`: the bracket covers every executed test (DemoTest, datasets included, ends
 after begins); the setUp-throwing fixture still gets its end while neither the body nor tearDown
 ever ran; nesting order; a refusing hook errors the test without running it; retries re-enter;
-a todo is never bracketed; the hook's return feeds `#[Depends]`. ✓ `AroundEachTestCliTest` runs a
+a todo is never bracketed; the hook's return feeds `#[Depends]`; and the hook is told the
+declaring class of a phpunit-dialect test (null for a classless one), which is the exemption's
+whole input. ✓ `AroundEachTestCliTest` runs a
 project whose `->aroundEachTest()` closure logs its bracket: serial, `--parallel 2` (whichever
 process ran a test, that process's hook bracketed it, setUp-thrower included), and `--no-extensions`
-silencing it. Without the change the project's crucible.php fails with `Call to undefined method
+silencing it; a `#[SkipRollback]`-style attribute is honored from the class the hook is told, at
+method level and at class level, worker included. Without the change the project's crucible.php
+fails with `Call to undefined method
 Builder::aroundEachTest()`, which was the whole finding: no hook existed.
 
 ---

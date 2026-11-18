@@ -23,14 +23,18 @@ use LucianoPereira\Crucible\Test\TestId;
 final readonly class AroundEachTestClosure implements AroundEachTest
 {
     /**
-     * @param Closure(TestId, callable(): mixed): mixed $around
+     * The closure may declare the third parameter or leave it out —
+     * PHP ignores an extra argument for a userland closure that
+     * takes none of it.
+     *
+     * @param Closure(TestId, callable(): mixed, class-string|null=): mixed $around
      */
     public function __construct(
         private Closure $around,
     ) {}
 
-    public function around(TestId $id, callable $test): mixed
+    public function around(TestId $id, callable $test, ?string $class = null): mixed
     {
-        return ($this->around)($id, $test);
+        return ($this->around)($id, $test, $class);
     }
 }

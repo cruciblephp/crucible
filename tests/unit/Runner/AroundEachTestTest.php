@@ -72,7 +72,7 @@ final class AroundEachTestTest extends TestCase
                 private string $mark,
             ) {}
 
-            public function around(TestId $id, callable $test): mixed
+            public function around(TestId $id, callable $test, ?string $class = null): mixed
             {
                 // The dataset suffix rides along, so every parameterized
                 // row has its own bracket entry.
@@ -85,6 +85,33 @@ final class AroundEachTestTest extends TestCase
                 } finally {
                     $this->log[] = $this->mark . ':end:' . $name;
                 }
+            }
+        };
+    }
+
+    /**
+     * A hook that records the declaring class it was told — the fact a
+     * rollback hook reflects on to honor a `#[SkipDatabaseRollback]`-
+     * style attribute without reconstructing the class from the file
+     * path.
+     *
+     * @param ArrayObject<int, string> $log
+     */
+    private function classHook(ArrayObject $log): AroundEachTest
+    {
+        return new readonly class ($log) implements AroundEachTest {
+            /**
+             * @param ArrayObject<int, string> $log
+             */
+            public function __construct(
+                private ArrayObject $log,
+            ) {}
+
+            public function around(TestId $id, callable $test, ?string $class = null): mixed
+            {
+                $this->log[] = $id->name . '|' . ($class ?? 'null');
+
+                return $test();
             }
         };
     }
@@ -243,12 +270,57 @@ final class AroundEachTestTest extends TestCase
         self::assertSame(Outcome::Passed, $this->finished($events)->outcome);
     }
 
+    public function testTheHookReceivesTheDeclaringClassOfTheTest(): void
+    {
+        require_once __DIR__ . '/../../_fixtures/framework/DemoTest.php';
+
+        DemoTest::$lifecycle = [];
+
+        /** @var ArrayObject<int, string> $log */
+        $log = new ArrayObject();
+
+        $phpunit = (new TestBuilder())->build(DemoTest::class, 'tests/_fixtures/framework/DemoTest.php');
+
+        // A dialect that declares no class — an inline check, a pest()
+        // closure — hands the hook null rather than a guess.
+        $unclassed = new TestGroup('inline', [
+            new TestDefinition(
+                new TestId('tests/inline.php', 'unclassed'),
+                static function (): mixed {
+                    Assert::assertTrue(true);
+
+                    return null;
+                },
+                MetadataCollection::from(),
+            ),
+        ]);
+
+        $this->run([$phpunit, $unclassed], [$this->classHook($log)]);
+
+        $entries = [...$log];
+
+        // Every phpunit-dialect test told the hook its declaring class,
+        // so the reflection recipe needs no file-path reconstruction.
+        self::assertContains('testPasses|' . DemoTest::class, $entries, 'The hook was not told the class declaring testPasses.');
+
+        // The classless dialect told the hook null.
+        self::assertContains('unclassed|null', $entries, 'A test no class declares must hand the hook null, not a guess.');
+
+        foreach ($entries as $entry) {
+            if ($entry === 'unclassed|null') {
+                continue;
+            }
+
+            self::assertStringEndsWith('|' . DemoTest::class, $entry, 'A phpunit-dialect bracket carried a class other than the declaring one: ' . $entry);
+        }
+    }
+
     public function testAHookThatThrowsBeforeTheTestErrorsIt(): void
     {
         /** @var ArrayObject<int, string> $reached */
         $reached  = new ArrayObject();
         $refusing = new readonly class implements AroundEachTest {
-            public function around(TestId $id, callable $test): mixed
+            public function around(TestId $id, callable $test, ?string $class = null): mixed
             {
                 throw new RuntimeException('the connection refused to begin a transaction');
             }
