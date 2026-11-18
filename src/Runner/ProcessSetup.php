@@ -34,7 +34,9 @@ use const PATH_SEPARATOR;
 use const PHP_EOL;
 
 /**
- * What a process does before it discovers a suite: compatibility aliases, then bootstrap, ini, env and constants.
+ * What a process does before it discovers a suite: compatibility aliases, the
+ * PHP settings PHPUnit applies (include_path, ini, constants, env), then the
+ * bootstrap - which runs last and sees all of them (D-151, D-170).
  */
 final class ProcessSetup
 {
@@ -104,6 +106,24 @@ final class ProcessSetup
         // Run-wide display state, set before any test can render a failure.
         Differ::context($overrides->diffContext);
 
+        foreach ($configuration->php->ini as $name => $value) {
+            ini_set($name, $value);
+        }
+
+        foreach ($configuration->php->constants as $name => $value) {
+            if (!defined($name)) {
+                define($name, $value);
+            }
+        }
+
+        foreach ($configuration->php->env as $name => $value) {
+            self::applyEnv($name, $value, isset($configuration->php->forcedEnv[$name]));
+        }
+
+        // Last, as PHPUnit loads it: a bootstrap that boots an application
+        // reads the configured environment, ini values and constants. Ours
+        // ran first, so Symfony's Dotenv saw no APP_ENV and booted dev
+        // while the tests believed they were in test (F-02).
         $bootstrap = $overrides->bootstrap ?? $configuration->bootstrap;
 
         if ($bootstrap !== null) {
@@ -115,20 +135,6 @@ final class ProcessSetup
 
             if (is_file($bootstrap)) {
                 require_once $bootstrap;
-            }
-        }
-
-        foreach ($configuration->php->ini as $name => $value) {
-            ini_set($name, $value);
-        }
-
-        foreach ($configuration->php->env as $name => $value) {
-            self::applyEnv($name, $value, isset($configuration->php->forcedEnv[$name]));
-        }
-
-        foreach ($configuration->php->constants as $name => $value) {
-            if (!defined($name)) {
-                define($name, $value);
             }
         }
     }
