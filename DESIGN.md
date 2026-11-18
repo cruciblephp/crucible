@@ -6994,6 +6994,40 @@ then, and PHPUnit's own printer has the same property.
 project whose test asserts `headers_sent()` is false. It fails on 1.3.1 naming
 `Application.php:313` and passes after. ✓ A filtered run's stdout is byte-identical before and
 after the change, banner and `Configuration:` line included.
+### D-172: the around-test role — a per-test hook in the process that runs the test
+
+dama/doctrine-test-bundle wraps each test in a rolled-back transaction through PHPUnit event
+subscribers. On Crucible that has no equivalent to subscribe to: subscribers are reporting plugins
+that live in the supervisor under `--parallel`, one process away from the connection a transaction
+would run on, and the `#[Before]`/`#[After]` trait a migrated project reaches for first fails the
+one case DAMA exists for — `#[After]` is skipped when setUp() throws, so the open transaction fell
+to the next test to clean up (F-04, ticket #2 item 4). The extension surface gains a role for it:
+`Extension\AroundEachTest::around(TestId $id, callable $test): mixed` — call `$test()` to run the
+test, return what it returned (that value feeds `#[Depends]`), and put the cleanup in a `finally`,
+because the call brackets the WHOLE lifecycle: setUp, the `#[Before]` hooks, the pre-conditions, the
+body, the post-conditions, the `#[After]` hooks, tearDown.
+
+The role is dispatched wherever the test runs, never in the supervisor: the in-process runner
+carries it, and a worker builds the same instances because it re-loads `crucible.php` — the
+configuration file *is* the transport. `Builder::aroundEachTest(callable)` is the closure sugar,
+registered as an ordinary extension, so `--no-extensions` silences it for the whole run, workers
+included (the flag travels the manifest), and `crucible mutate`'s warm fork carries the same list so
+a mutant's writes land inside the same bracket its runs would give it. Registration order is nesting
+order (first registered outermost); a retried test re-enters `around()` per attempt; a test that
+never executes — todo, requirement-gated, dependency-blocked, a failed beforeAll — is never
+bracketed, because there is nothing to roll back; and what the hook prints or runs counts as the
+test's, inside the runner's per-test window. A CLI `--extension` class implementing the role runs
+only in the parent's in-process units: a bare class name cannot carry the connection wiring a
+transaction needs, and configured instances already cover that use everywhere.
+
+✓ `AroundEachTestTest`: the bracket covers every executed test (DemoTest, datasets included, ends
+after begins); the setUp-throwing fixture still gets its end while neither the body nor tearDown
+ever ran; nesting order; a refusing hook errors the test without running it; retries re-enter;
+a todo is never bracketed; the hook's return feeds `#[Depends]`. ✓ `AroundEachTestCliTest` runs a
+project whose `->aroundEachTest()` closure logs its bracket: serial, `--parallel 2` (whichever
+process ran a test, that process's hook bracketed it, setUp-thrower included), and `--no-extensions`
+silencing it. Without the change the project's crucible.php fails with `Call to undefined method
+Builder::aroundEachTest()`, which was the whole finding: no hook existed.
 
 ---
 

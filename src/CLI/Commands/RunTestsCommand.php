@@ -55,6 +55,7 @@ use LucianoPereira\Crucible\Event\IssueKind;
 use LucianoPereira\Crucible\Event\NdjsonWriter;
 use LucianoPereira\Crucible\Event\RunSummary;
 use LucianoPereira\Crucible\Exceptions\Exception;
+use LucianoPereira\Crucible\Extension\AroundEachTest;
 use LucianoPereira\Crucible\Extension\Check;
 use LucianoPereira\Crucible\Extension\CheckRunner;
 use LucianoPereira\Crucible\Extension\Extension;
@@ -1099,20 +1100,18 @@ final class RunTestsCommand
         // Shared with the supervisor: a prerequisite that runs here, in
         // the in-process remainder, still has to reach a dependent that
         // runs in a worker.
-        $dependencyValues = new DependencyValues();
-        $runner           = new TestRunner($emitter, $runnerOptions, coverage: $collector, dependencies: $dependencyValues);
-        $summary          = null;
-
-        // Run-scoped checks run inside the run bracket via the runner's
-        // after-tests hook, so their CheckFinished events precede
-        // run:finish. Null when none are configured.
-        // Extensions are dispatched by role (D-078): a Check inspects the
-        // project after the suite, exactly like a command gate but
-        // in-process. Other roles are ignored here until they ship.
-        // The spec's --extension registers a plugin by class name for one
-        // run; ->extension() registers an instance for every run. Both end
-        // up in the same role dispatch, so a CLI-registered Check is
-        // indistinguishable from a configured one once it is here.
+        // Extensions are dispatched by role (D-078): a Check inspects
+        // the project after the suite, exactly like a command gate but
+        // in-process. The around-test role (D-172) brackets every test
+        // the runner executes, so it is resolved before the runner is
+        // built. The spec's --extension registers a plugin by class
+        // name for one run; ->extension() registers an instance for
+        // every run. Both end up in the same role dispatch, so a
+        // CLI-registered extension is indistinguishable from a
+        // configured one once it is here — except that a CLI-registered
+        // around-test hook runs only in this process: a bare class name
+        // cannot carry the project wiring a transaction hook needs, and
+        // configured instances already cover that use in every worker.
         $registered = $this->extensionsFromCli($options);
 
         if (is_string($registered)) {
@@ -1121,8 +1120,28 @@ final class RunTestsCommand
             return 1;
         }
 
+        $extensions = $options->noExtensions ? [] : [...$configuration->extensions, ...$registered];
+
+        $around = array_values(array_filter(
+            $extensions,
+            static fn(Extension $extension): bool => $extension instanceof AroundEachTest,
+        ));
+
+        $dependencyValues = new DependencyValues();
+        $runner           = new TestRunner(
+            $emitter,
+            $runnerOptions,
+            coverage: $collector,
+            dependencies: $dependencyValues,
+            aroundEachTest: $around,
+        );
+        $summary = null;
+
+        // Run-scoped checks run inside the run bracket via the runner's
+        // after-tests hook, so their CheckFinished events precede
+        // run:finish. Null when none are configured.
         $checks = array_values(array_filter(
-            $options->noExtensions ? [] : [...$configuration->extensions, ...$registered],
+            $extensions,
             static fn(Extension $extension): bool => $extension instanceof Check,
         ));
         $vitest    = $vitestSuites;
@@ -1192,6 +1211,7 @@ final class RunTestsCommand
                 processIsolation: $options->processIsolation,
                 dependencyValues: $dependencyValues,
                 paths: $options->paths,
+                noExtensions: $options->noExtensions,
             ))->run($groups, $afterTests);
         } else {
             $summary = $runner->run($groups, $afterTests);
@@ -1753,13 +1773,25 @@ final class RunTestsCommand
         // PHP output buffering.
         ob_start();
 
+        // Around-test extensions (D-172) ride the configuration file
+        // this worker re-loads, so their instances exist here as they
+        // do in the parent — every test this worker runs is wrapped in
+        // its own process, which is the point. The parent's
+        // --no-extensions travels the manifest so a parallel run stays
+        // its sequential twin; CLI --extension registrations stay
+        // parent-side (D-078).
+        $around = array_values(array_filter(
+            $manifest->noExtensions ? [] : $configuration->extensions,
+            static fn(Extension $extension): bool => $extension instanceof AroundEachTest,
+        ));
+
         // #[Depends] across the boundary: what an earlier unit produced
         // arrives here, and what a later unit needs goes back out the
         // same way the coverage artifact does.
         $dependencyValues = new DependencyValues($manifest->dependencyValues, $manifest->provideValues);
 
         try {
-            (new TestRunner($emitter, $runnerOptions, coverage: $collector, dependencies: $dependencyValues))->run($groups);
+            (new TestRunner($emitter, $runnerOptions, coverage: $collector, dependencies: $dependencyValues, aroundEachTest: $around))->run($groups);
         } finally {
             ob_end_clean();
         }

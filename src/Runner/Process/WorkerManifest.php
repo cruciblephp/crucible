@@ -57,6 +57,7 @@ final readonly class WorkerManifest
      * @param list<string>           $provideValues       names whose return value a later unit depends on, so this worker records them
      * @param ?non-empty-string      $dependencyArtifact  where this worker writes the values it was asked to provide; null = none wanted
      * @param list<non-empty-string> $paths               the run's test paths (D-152), which discovery runs instead of the configured suites
+     * @param bool              $noExtensions           CLI --no-extensions (D-172): the worker registers no configured extension — the around-test role included — so a parallel run stays its sequential twin
      */
     public function __construct(
         public string $configuration,
@@ -80,6 +81,7 @@ final readonly class WorkerManifest
         public bool $pathCoverage = false,
         public ?string $globalState = null,
         public array $paths = [],
+        public bool $noExtensions = false,
     ) {}
 
     public function toJson(): string
@@ -109,6 +111,7 @@ final readonly class WorkerManifest
             'pathCoverage'       => $this->pathCoverage,
             'globalState'        => $this->globalState,
             'paths'              => $this->paths,
+            'noExtensions'       => $this->noExtensions,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
@@ -271,6 +274,7 @@ final readonly class WorkerManifest
                 ? $decoded['globalState']
                 : null,
             $paths,
+            ($decoded['noExtensions'] ?? false) === true,
         );
     }
 }
