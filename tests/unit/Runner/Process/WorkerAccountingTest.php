@@ -20,6 +20,7 @@ use function explode;
 use function fclose;
 use function file_get_contents;
 use function file_put_contents;
+use function getenv;
 use function is_array;
 use function is_dir;
 use function is_file;
@@ -285,7 +286,6 @@ final class WorkerAccountingTest extends TestCase
             self::fail('No event stream was written. stdout: ' . $stdout . ' stderr: ' . $stderr);
         }
 
-        /** @var list<string> $lines */
         $lines = array_values(array_filter(
             explode("\n", $contents),
             static fn(string $line): bool => $line !== '',
