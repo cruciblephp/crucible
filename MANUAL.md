@@ -693,6 +693,26 @@ includes:
     - vendor/cruciblephp/crucible/phpstan/crucible-dialect.neon
 ```
 
+### Other analysers: the tags on `Assert`
+
+The extension above is PHPStan's. The narrowing knowledge is not: every narrowing assertion also
+carries `@phpstan-assert`/`@psalm-assert` docblocks on `Assert` itself — the same 48 the incumbent's
+`Assert` ships, on the same signatures — so an analyser that cannot load a PHPStan extension reads
+the narrowing straight from the tags. With Mago, a suite that called `Assert::assertIsString($x)`
+and then used `$x` as a string reported a type error before these tags existed; with them, it
+narrows like PHPStan does.
+
+PHPStan reads both sources and keeps the better answer: the extension's `array{}` precision on an
+empty-list narrowing, for instance, survives the `list<mixed>` tag beside it — the black-box and
+parity probes (probe 30) pin that line for line.
+
+Nine narrowing methods stay extension-only because no portable tag can say what they prove without
+lying or losing precision: `assertEmpty`/`assertNotEmpty` (`empty()` is not a type),
+`assertNotSame` (`!==` against an expression), `assertCount`/`assertNotCount` (sized-array
+knowledge), and the `assertArrayHasKey`/`assertObjectHasProperty` families (has-offset,
+property-exists). On an analyser without extension support those nine narrow nothing — the
+annotations' honest floor.
+
 ### Type tests
 
 ```php

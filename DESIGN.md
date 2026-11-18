@@ -6957,6 +6957,41 @@ lines, branches and paths together to the files under a path, on a path boundary
 the reports and `--min` judge that scope, an empty one cannot be judged as before, and the caches
 keep what was collected. Per-target floors wait until targets are named things.
 
+### D-173: the assert narrowing is a portable docblock, not only an extension's answer
+
+Mago analysed a migrated suite with 2,738 errors once `phpunit/phpunit` was gone (ticket #2 item 5):
+the class names existed only through runtime `class_alias()` no analyser follows, and Crucible's
+type narrowing lived entirely in the PHPStan extension — an analyser that cannot load one read no
+narrowing at all, so `assertIsString($x)` left `$x` mixed and every later use of it was a type
+error. The fix for the narrowing half is the incumbent's own answer: the 48 `@phpstan-assert`
+docblocks PHPUnit 12.5.40 ships on its `Assert`, verbatim on Crucible's same signatures, each with a
+`@psalm-assert` twin beside it for the vocabulary Psalm and its kin read. PHPStan keeps its
+extension — the tags intersect with the extension's answers, so precision survives: the `array{}`
+answer an empty-list narrowing had before the `list<mixed>` tag is pinned unchanged by the
+black-box fixtures and probe 30's parity record.
+
+Nine methods stay extension-only because no portable tag says what they prove: `empty()` is not a
+type (`assertEmpty`/`assertNotEmpty`), `!==` against an expression has no negated-equals tag
+(`assertNotSame`), and count/key/property knowledge is shaped-array or has-offset, not a type
+(`assertCount`, `assertArrayHasKey`, `assertObjectHasProperty`, and their negatives). Fifteen
+annotated methods were never extension-narrowed at all — the closed-resource pair (F-10) and the
+contains-only family — so for them the tags are a gain on every analyser alike, PHPStan included.
+`assertSame` and `assertInstanceOf` carry the incumbent's template forms (`@phpstan-assert
+=ExpectedType $actual`); Psalm's tag has no `=` form, so its twin narrows to the resolved type
+`ExpectedType`, which `===` makes sound for both.
+
+✓ `AssertAnnotationParityTest`: the 48 tags are pinned as exact docblock lines; the extension's three
+narrowing tables are reflected, so every method is accounted for as annotated or extension-only and
+a future narrowing method lands in the gate the moment it is added; the extension-only nine are
+locked tag-free; the annotation-only fifteen are named as the exact set the tables do not cover;
+and the portability claim itself is proven black-box — the same `Analysis::run` the conformance suite
+uses, with NO extension included, narrows `PortableAnnotationFixture` from the docblocks alone
+(`string`, `int|string`, `int|numeric-string`, `false`, `stdClass`, `list<mixed>`, `resource`,
+`'const'`, `array<0|1, int>`, `array<0|1, stdClass>`). Before the change that run fails — the
+docblock gate on the very first method — and PHPStan, which also reads the tags, kept both its own
+suite and the parity record green with the extension loaded. The tags are the incumbent's own
+proven set: the reporter's Mago run reached zero errors with exactly these 48 applied.
+
 ---
 
 ## Closing the planned record
