@@ -6980,16 +6980,16 @@ namespace by trying each directory of the prefix in order until a file EXISTS, s
 that APPEARS in the priority directory shadows the one the index recorded — no tracked
 byte, manifest or classmap moves, and a fingerprint over configuration alone cannot see it.
 The project's prefix directory listings now reach the key: every `.php` file name under
-each prefix and fallback directory inside the root, relative, portable, sorted and hashed
-per directory. Vendor and outside-root directories are not listed — the graph drops those
+each prefix and fallback directory in the project, including the root itself. Paths are
+relative, portable, sorted and hashed per directory. Vendor and outside-root directories are not listed — the graph drops those
 resolutions, and vendor content is a dependency bump, an environment change upstream
 answers with a full run. The second: two loaders can both declare one class and the first
 registered wins, but the payload folded every part into one sorted list, and both loaders
 contributed the same sorted strings whichever came first. Each part carries its loader's
 registration ordinal now; within one loader the classmap and the namespaces still fold in
 sorted — set semantics, stable across a regeneration that merely reordered the array —
-but across loaders the sequence is part of the answer. The scheme tag moved to `deps:3`,
-so every index written before the listings and the ordinals is orphaned rather than read.
+but across loaders the sequence is part of the answer. Scheme `deps:4` adds the root
+listing and keeps vendor subtrees out of all directory scans.
 
 The suite component of that key was always empty for a second reason: production test ids
 are project-relative while the fingerprint walked them against an absolute root, so the
