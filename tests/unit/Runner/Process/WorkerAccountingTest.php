@@ -66,12 +66,13 @@ final class WorkerAccountingTest extends TestCase
         $this->remove($this->project);
     }
 
-    public function testAResultLostToRawStdoutIsReportedInsteadOfPassingSilently(): void
+    public function testRawStdoutWithoutANewlineKeepsTheFailureFrameIntact(): void
     {
         $this->project(false);
         // Raw stdout is not buffered with the test's echo output, and
-        // without a newline it corrupts the next NDJSON frame — here,
-        // the frame carrying the failure.
+        // without a newline it used to corrupt the next NDJSON frame —
+        // here, the frame carrying the failure. CB-23 moved the events to
+        // their own channel, so the parent now sees the original failure.
         $this->writeTest('PollutingTest', <<<'PHP'
             public function testPollutes(): void
             {
@@ -87,9 +88,14 @@ final class WorkerAccountingTest extends TestCase
 
         [$exit, $events] = $this->crucible(['--parallel', '2']);
 
-        self::assertNotSame(0, $exit, 'A lost failure must not leave the run green.');
-        self::assertSame('error', $this->outcomeOf($events, 'tests/PollutingTest.php::testPollutes'));
-        self::assertFalse($this->completed($events));
+        self::assertSame(1, $exit, 'The failing test must reach the parent as a failure.');
+        self::assertSame('fail', $this->outcomeOf($events, 'tests/PollutingTest.php::testPollutes'));
+        self::assertStringStartsWith(
+            'Failed asserting that',
+            $this->failureOf($events, 'tests/PollutingTest.php::testPollutes'),
+            'The frame survived, so the assertion message came with it.',
+        );
+        self::assertTrue($this->completed($events), 'Every planned result arrived; nothing was lost.');
     }
 
     public function testAnAcknowledgedStopOnCancellationIsNotReportedAsLost(): void
@@ -211,6 +217,26 @@ final class WorkerAccountingTest extends TestCase
         }
 
         return null;
+    }
+
+    /**
+     * @param list<string> $events
+     */
+    private function failureOf(array $events, string $id): string
+    {
+        foreach ($events as $line) {
+            $decoded = json_decode($line, true);
+
+            if (!is_array($decoded) || ($decoded['event'] ?? null) !== 'test:finish' || ($decoded['id'] ?? null) !== $id) {
+                continue;
+            }
+
+            $error = is_array($decoded['error'] ?? null) ? $decoded['error'] : [];
+
+            return is_string($error['message'] ?? null) ? $error['message'] : '';
+        }
+
+        return '';
     }
 
     /**

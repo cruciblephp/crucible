@@ -606,7 +606,13 @@ final class Supervisor
             $this->await($active);
 
             foreach ($active as $key => $worker) {
-                foreach ($worker->readLines() as $line) {
+                // stdout carries only user output (CB-23): discarding it
+                // keeps the pipe from filling, and its readiness is what
+                // wakes the loop. Events travel on stderr, behind the
+                // marker nextLine() splits on.
+                $worker->drainStdout();
+
+                while (($line = $worker->nextLine()) !== null) {
                     if ($this->parser->isRunFinished($line)) {
                         $worker->markFinished();
                         $reportedTotals[$key] = $this->parser->reportedTotal($line);
@@ -679,8 +685,6 @@ final class Supervisor
                         $this->tallyIssues($event);
                     }
                 }
-
-                $worker->drainStderr();
 
                 if (!$worker->atEof()) {
                     continue;
