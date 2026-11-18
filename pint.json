@@ -9,6 +9,7 @@
         "pest-oracle",
         "phpcpd-main",
         "phpunit-main",
+        "stubs",
         "tests/_fixtures",
         "conformance/probes/28-pest-matchers/arch-fixture",
         "conformance/probes/30-extension-types/fixture",

@@ -7128,6 +7128,38 @@ than its own". Both cases use the existing risky outcome and respect `--fail-on-
 PHP exposes each callable but gives no way to read its registered error levels. Saving
 the stack requires popping and reinstalling the callables with PHP's default mask, as
 PHPUnit 12.5.44 does in `activeErrorHandlers()`.
+### D-174: the aliased PHPUnit names get analysis-only declarations
+
+The other half of the reporter's 2,738 Mago errors (ticket #2 item 5) was the class surface itself:
+drop-in mode answers every `PHPUnit\Framework\*` name through `class_alias()`, and no static
+analyser follows a run-time alias — Mago runs no PHP, so a suite extending
+`PHPUnit\Framework\TestCase` analysed against a name that did not exist. The answer the reporter
+proved on their project ships here: a declarations file generated from the alias map, one child
+class per name extending the Crucible class the alias answers — `abstract class TestCase extends
+\LucianoPereira\Crucible\Framework\TestCase {}`, and so on — so the API is inherited and stays
+current without rendering a single signature. Attributes keep their target's own flags, read off
+reflection and decomposed into the incumbent's constants; `PHPUnit\Framework\MockObject\MockObject`
+and `Stub` are interfaces extending the one `Mocked` marker, exactly as the run-time pair aliases
+it.
+
+Three deliberate calls. Final and readonly targets still get children: PHP forbids the extension
+at run time, but a declarations file is parsed, never autoloaded, and the runtime rule never
+fires — the reporter's file worked the same way. `TodoStatus`, the one enum the attribute glob
+sweeps in, is re-declared with its cases instead (an enum cannot extend): the copy answers the
+aliased name, and `#[Todo]`'s status parameter takes the Crucible original, so the aliased spelling
+is the one place the declarations are looser than the alias. And PHPStan is pointed at none of
+this — its analysis-time aliases load through `phpstan/bootstrap.php`, and a class both declared
+and aliased would collide (the documented split: stubs for the analysers that cannot run PHP,
+bootstrap aliases for the one that can).
+
+The file is a generated artifact with a gate: `stubs/phpunit.php` must be byte-identical to a
+fresh `PhpUnitDeclarations::generate()` (deterministic: namespaces and names sorted), every alias
+map key must be declared exactly once and nothing else, `php -l` must accept the file, and each
+declaration's shape must equal what reflection says of its target — kind, abstract, readonly,
+extends, attribute flags, enum cases — read by the test from the file's own text, not from the
+generator. Without the artifact the gate fails on four of five counts. The Mockery names wait for
+the same treatment in a follow-up; a `crucible stubs` command is unnecessary while the file ships
+with the package.
 
 ---
 

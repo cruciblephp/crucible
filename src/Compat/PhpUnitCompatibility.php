@@ -124,9 +124,15 @@ final class PhpUnitCompatibility
     }
 
     /**
-     * @return array<string, class-string> PHPUnit name => Crucible class
+     * The map everything analysis-time reads (D-174): PHPUnit name =>
+     * the Crucible class the run-time alias answers. The stub generator
+     * reflects each target to declare the name for analysers that
+     * never run PHP, and the drift test holds the declarations against
+     * this map in both directions.
+     *
+     * @return array<non-empty-string, class-string> PHPUnit name => Crucible class
      */
-    private static function aliases(): array
+    public static function aliases(): array
     {
         $aliases = [
             'PHPUnit\Framework\TestCase'             => TestCase::class,
