@@ -24,6 +24,8 @@ use function sys_get_temp_dir;
 use function tempnam;
 use function unlink;
 
+use const PHP_BINARY;
+
 /**
  * Exercised through `SourceRewriter::apply()`/`preview()` — its real
  * entry points — rather than calling `CompositeEqualsPattern::locate()`
@@ -265,7 +267,7 @@ final class CompositeEqualsPatternTest extends TestCase
 
         $output = [];
         $exit   = null;
-        exec('php -l ' . escapeshellarg($tmp) . ' 2>&1', $output, $exit);
+        exec(escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($tmp) . ' 2>&1', $output, $exit);
         unlink($tmp);
 
         $this->assertSame(0, $exit, implode("\n", $output));
