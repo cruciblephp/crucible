@@ -45,13 +45,16 @@ use const E_WARNING;
  * handler above ours, and a blind one-frame restore pops the test's
  * frame while ours stays live — every error between windows then
  * lands in the next window's drain, attributed to a test that never
- * ran it. The drain walks down to its own handler, removes whatever
- * the window's code left above it, and never pops past the handler
- * install() replaced: the bootstrap's handler survives even a test
- * that removed ours. What the walk finds determines the hygiene
- * verdict ({@see hygiene()}), which the runner reports the way the
- * incumbent does: a leaked handler or a removed foreign one is the
- * test's own bug, and it is a risky verdict, not a silence.
+ * ran it. The drain walks down to its own closure — the one
+ * identity the window's code cannot counterfeit — removes whatever
+ * the window's code left above it, and when the window's code has
+ * removed ours, puts back everything it had to lift to notice,
+ * deepest first, so the handler install() replaced survives even a
+ * test that removed ours and the floor beneath it. What the walk
+ * finds determines the hygiene verdict ({@see hygiene()}), which the
+ * runner reports the way the incumbent does: a leaked handler or a
+ * removed foreign one is the test's own bug, and it is a risky
+ * verdict, not a silence.
  *
  * Deprecations are attributed on capture (DeprecationScope): a
  * trigger inside the project's own directories is `self`; a trigger
@@ -78,9 +81,6 @@ final class IssueCollector
 
     private bool $installed = false;
 
-    /** @var ?callable the handler install() replaced, and the floor the drain never pops past */
-    private $previous = null;
-
     /** @var ?Closure the window's own capture handler, identified by instance at drain time */
     private ?Closure $handler = null;
 
@@ -106,21 +106,40 @@ final class IssueCollector
     public function install(): void
     {
         $this->handler   = $this->capture(...);
-        $this->previous  = set_error_handler($this->handler, self::CAPTURED);
         $this->verdict   = null;
         $this->installed = true;
+
+        // The return value is deliberately unread: the floor's
+        // callable cannot identify the floor (a window can reinstall
+        // it above us), and its mask is unreadable in PHP - so the
+        // drain recognises only its own closure and puts back what it
+        // lifted, not what it can no longer know.
+        set_error_handler($this->handler, self::CAPTURED);
     }
 
     /**
      * Uninstalls the window and returns what the test triggered.
      *
-     * The stack is walked, not guessed: every frame above our own
-     * handler is removed, our handler is removed, and nothing at or
-     * below the handler install() replaced is ever popped. A window
-     * that removed BOTH its own handler and the one beneath it has
-     * breached that floor already — the walk restores what it had to
-     * lift to notice (measured against the incumbent: what remains
-     * stays, its removal is the test's) and stops at the empty stack.
+     * The stack is walked, not guessed — and the walk stops at one
+     * identity only: OUR OWN closure. A callable that merely looks
+     * like the floor does not stop it, because the window's code can
+     * reinstall the bootstrap's callable above our handler and a
+     * floor matched by callable ends the walk with the collector
+     * still installed under the copy, every later error landing in a
+     * window that never ran it. Everything above our handler is
+     * removed; our handler is removed; what the walk had to lift
+     * ONLY because the window's code had already removed our handler
+     * — the floor included — is put back, deepest first, exactly as
+     * the window found it beneath us.
+     *
+     * What the walk reinstalls, PHP reinstalls with the default
+     * mask: set_error_handler never reports the mask it replaced.
+     * The incumbent's own enumeration (activeErrorHandlers,
+     * TestCase.php:1751) reinstalls every handler on the stack with
+     * the default mask on every single test, so no mask-preserving
+     * bar exists to match — the set restored is the window's own,
+     * the mask on a restored frame is PHP's floor, and both are
+     * pinned in the tests with that citation.
      *
      * @return list<Issue>
      */
@@ -132,8 +151,13 @@ final class IssueCollector
 
             $lifted = [];
 
-            while (($top = $this->top()) !== null && $top !== $this->handler && $top !== $this->previous) {
-                // A frame the window's code left above our handler.
+            // Our own closure is the only stop the window's code
+            // cannot counterfeit: it never holds a reference to it,
+            // and PHP hands back the same instance it stored.
+            while (($top = $this->top()) !== null && $top !== $this->handler) {
+                // A frame the window's code left above our handler —
+                // or, if our handler is already gone, a frame lifted
+                // only to notice that it is.
                 restore_error_handler();
                 $lifted[] = $top;
             }
@@ -146,14 +170,16 @@ final class IssueCollector
                 }
             } else {
                 // Our handler was removed by the window's code. The
-                // floor install() recorded is where the stack stood
-                // before the window opened; leave it standing, and
-                // put back anything the walk had to lift only because
-                // the floor itself was already gone.
-                if ($this->top() === null && $this->previous !== null) {
-                    foreach (array_reverse($lifted) as $liftedHandler) {
-                        set_error_handler($liftedHandler);
-                    }
+                // walk lifted everything it passed to reach that
+                // conclusion — the floor install() replaced included,
+                // when the window's code had breached it too — and
+                // what the window left standing belongs to whoever
+                // installed it: put it back, deepest first, exactly
+                // as the window found it beneath our handler. What
+                // remains is what the incumbent's snapshot restore
+                // leaves: the set the window came in with.
+                foreach (array_reverse($lifted) as $liftedHandler) {
+                    set_error_handler($liftedHandler);
                 }
 
                 $this->verdict = self::HANDLERS_REMOVED;

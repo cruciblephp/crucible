@@ -7129,14 +7129,28 @@ error handlers other than its own" — while a wrecked stack keeps what remains 
 the breach.
 
 The drain now walks the stack: every frame above its own handler is removed, its own is
-removed, and nothing at or below the handler `install()` replaced is ever popped — the
-bootstrap's handler survives even a test that removed ours. When both our handler and the
-floor beneath it are gone, the walk puts back what it had to lift to notice the breach,
-stopping at the empty stack; a floor that still stands is left standing. The walk reads
-the top through a push-and-pop probe, so a look never moves the stack. The verdict rides
-the runner's existing risky outcome with the incumbent's exact wording, where
-`--fail-on-risky` already knows what to do with it: measured before this change, a leaky
-test and a stack-wrecking test both ended "OK, Risky: 0", silently.
+removed, and when the window's code has removed ours, everything the walk had to lift only
+to notice — the floor `install()` replaced included, when the breach took it too — is put
+back deepest first, so the bootstrap's handler survives even a test that removed ours and
+the floor beneath it. The walk reads the top through a push-and-pop probe, so a look never
+moves the stack. The verdict rides the runner's existing risky outcome with the incumbent's
+exact wording, where `--fail-on-risky` already knows what to do with it: measured before this
+change, a leaky test and a stack-wrecking test both ended "OK, Risky: 0", silently.
+
+Two defects survived the first drain, both found after it. First, the walk stopped at any
+callable identical to the floor's — and a window's code can reinstall the bootstrap's own
+callable above the collector, where the stop left the collector installed under the copy:
+measured, three frames remained where the bootstrap's alone should, and every later error
+landed in a window that never ran it. The walk now stops at one identity only, its own
+closure, which the window's code never holds a reference to; the copy is dropped as the
+leftover it is, with the left-handlers verdict. Second, what a walk puts back, PHP puts back
+with the default mask — `set_error_handler` never reports the mask it replaced, so a
+restored frame registered for `E_USER_WARNING` answers `E_USER_NOTICE` too. This is PHP's
+floor, not a choice: the incumbent's own enumeration (`activeErrorHandlers`,
+TestCase.php:1751) pops and reinstalls every handler on the stack with the default mask on
+every single test, so no mask-preserving bar exists to match. The restored SET is the
+window's own — pinned in the tests alongside the verdicts — and the mask on a restored
+frame carries the incumbent's own limitation with the citation.
 
 ---
 

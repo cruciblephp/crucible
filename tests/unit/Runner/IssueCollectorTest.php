@@ -298,6 +298,216 @@ final class IssueCollectorTest extends TestCase
         self::assertStringStartsWith('OK:', $stdout);
     }
 
+    public function testADrainIsNotFooledByAReinstalledFloorCallable(): void
+    {
+        // The spoofable-floor case cannot live in this process either:
+        // probing the stack the drain leaves behind means popping
+        // frames, and the host suite brackets this test with its own
+        // collector, which would flag the probe as the verdict working.
+        // A bare child process owns its whole stack.
+        $repoRoot = dirname(__DIR__, 3);
+        $script   = sys_get_temp_dir() . '/crucible-error-handler-spoof-' . uniqid() . '.php';
+
+        file_put_contents($script, <<<PHP
+            <?php
+
+            declare(strict_types=1);
+
+            require '{$repoRoot}/vendor/autoload.php';
+
+            use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+            use LucianoPereira\Crucible\Runner\IssueCollector;
+
+            \$seen = [];
+            \$bootstrap = static function (int \$level, string \$message) use (&\$seen): bool {
+                \$seen[] = 'bootstrap saw ' . \$message;
+
+                return true;
+            };
+
+            set_error_handler(\$bootstrap);
+
+            \$collector = new IssueCollector([], new WorkingDirectory('{$repoRoot}'));
+            \$collector->install();
+
+            // The window's code reinstalls the BOOTSTRAP'S own callable
+            // above the collector: a floor matched by callable stops the
+            // walk where it stands, and the collector stays installed
+            // under the copy - every later error lands in a window that
+            // never ran it.
+            set_error_handler(\$bootstrap);
+
+            \$collector->drain();
+
+            // Read the whole remaining stack by popping it, and put it
+            // back: what must remain is the bootstrap's frame, exactly
+            // once - the copy dropped, the collector gone.
+            \$remaining = [];
+            \$probe = static fn (): bool => true;
+
+            while (true) {
+                \$top = set_error_handler(\$probe);
+                restore_error_handler();
+
+                if (\$top === null) {
+                    break;
+                }
+
+                \$remaining[] = \$top;
+                restore_error_handler();
+            }
+
+            foreach (array_reverse(\$remaining) as \$handler) {
+                set_error_handler(\$handler);
+            }
+
+            if (\$remaining !== [\$bootstrap]) {
+                fwrite(STDOUT, 'FAIL: the drain left ' . count(\$remaining) . ' frame(s) where the bootstrap\'s alone should remain - the collector survived under the copy');
+                exit(1);
+            }
+
+            if (\$collector->hygiene() !== IssueCollector::HANDLERS_LEFT) {
+                fwrite(STDOUT, 'FAIL: the verdict was ' . var_export(\$collector->hygiene(), true));
+                exit(1);
+            }
+
+            fwrite(STDOUT, 'OK: the copy was dropped, the collector uninstalled, the floor intact');
+            exit(0);
+            PHP);
+
+        $process = proc_open(
+            [PHP_BINARY, $script],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+
+        if (!is_resource($process)) {
+            self::fail('The spoof fixture could not be started.');
+        }
+
+        $stdout = (string) stream_get_contents($pipes[1]);
+        stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        $exit = proc_close($process);
+        @unlink($script);
+
+        self::assertSame(0, $exit, $stdout);
+        self::assertStringStartsWith('OK:', $stdout);
+    }
+
+    public function testARestoredFrameKeepsAnsweringButCarriesTheMaskPhpAllowsUsToGiveIt(): void
+    {
+        // The mask case shares the wreck's constraint: reading the stack
+        // the drain leaves behind means popping frames, which the host
+        // suite would flag - and the pinned behaviour is PHP's own
+        // floor, so the child process says what the incumbent's
+        // TestCase does: set_error_handler never reports the mask it
+        // replaced, and the incumbent's own enumeration
+        // (activeErrorHandlers, TestCase.php:1751) reinstalls every
+        // handler on the stack with the default mask on every test, so
+        // no mask-preserving bar exists to match.
+        $repoRoot = dirname(__DIR__, 3);
+        $script   = sys_get_temp_dir() . '/crucible-error-handler-mask-' . uniqid() . '.php';
+
+        file_put_contents($script, <<<PHP
+            <?php
+
+            declare(strict_types=1);
+
+            require '{$repoRoot}/vendor/autoload.php';
+
+            use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
+            use LucianoPereira\Crucible\Runner\IssueCollector;
+
+            \$seen = [];
+            \$masked = static function (int \$level, string \$message) use (&\$seen): bool {
+                \$seen[] = 'masked saw ' . \$message;
+
+                return true;
+            };
+            \$floor = static function (int \$level, string \$message) use (&\$seen): bool {
+                \$seen[] = 'floor saw ' . \$message;
+
+                return true;
+            };
+
+            // A handler registered for E_USER_WARNING only.
+            set_error_handler(\$masked, E_USER_WARNING);
+            set_error_handler(\$floor);
+
+            \$collector = new IssueCollector([], new WorkingDirectory('{$repoRoot}'));
+            \$collector->install();
+
+            // The window removes its own handler and the floor beneath
+            // it, exposing the masked frame - the walk must put back
+            // what it had to lift to notice, exactly as the window
+            // found it.
+            restore_error_handler();
+            restore_error_handler();
+
+            \$collector->drain();
+
+            \$probe = static fn (): bool => true;
+            \$top   = set_error_handler(\$probe);
+            restore_error_handler();
+
+            if (\$top !== \$masked) {
+                fwrite(STDOUT, 'FAIL: the masked frame did not survive the drain. Saw: ' . implode(' | ', \$seen));
+                exit(1);
+            }
+
+            // What the drain reinstalled answers - the set is the
+            // window's own - but PHP gives no way to read a registered
+            // handler's mask, so the restored frame carries the
+            // default one, exactly as the incumbent's snapshot restore
+            // does. Pinned as the documented floor, not a silent drift.
+            trigger_error('a warning it wanted', E_USER_WARNING);
+
+            if (!in_array('masked saw a warning it wanted', \$seen, true)) {
+                fwrite(STDOUT, 'FAIL: the restored frame no longer answers what its mask asked for. Saw: ' . implode(' | ', \$seen));
+                exit(1);
+            }
+
+            trigger_error('a notice it never asked for', E_USER_NOTICE);
+
+            if (!in_array('masked saw a notice it never asked for', \$seen, true)) {
+                fwrite(STDOUT, 'FAIL: the restored frame no longer answers at all. Saw: ' . implode(' | ', \$seen));
+                exit(1);
+            }
+
+            if (\$collector->hygiene() !== IssueCollector::HANDLERS_REMOVED) {
+                fwrite(STDOUT, 'FAIL: the verdict was ' . var_export(\$collector->hygiene(), true));
+                exit(1);
+            }
+
+            fwrite(STDOUT, 'OK: masked frame restored and answering, verdict reported');
+            exit(0);
+            PHP);
+
+        $process = proc_open(
+            [PHP_BINARY, $script],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+
+        if (!is_resource($process)) {
+            self::fail('The mask fixture could not be started.');
+        }
+
+        $stdout = (string) stream_get_contents($pipes[1]);
+        stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        $exit = proc_close($process);
+        @unlink($script);
+
+        self::assertSame(0, $exit, $stdout);
+        self::assertStringStartsWith('OK:', $stdout);
+    }
+
     public function testRepeatedWindowsWithLeaksStayBalanced(): void
     {
         $seen      = [];
