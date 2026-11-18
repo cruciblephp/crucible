@@ -10,12 +10,14 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Runner;
 
+use Closure;
 use LucianoPereira\Crucible\Event\DeprecationScope;
 use LucianoPereira\Crucible\Event\Issue;
 use LucianoPereira\Crucible\Event\IssueKind;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 
 use function array_any;
+use function array_reverse;
 use function debug_backtrace;
 use function error_reporting;
 use function in_array;
@@ -38,6 +40,19 @@ use const E_WARNING;
  * each test, drained after it; the drained issues ride the
  * test:finish event.
  *
+ * The window brackets the handler STACK, not just its own entry. A
+ * test that pushes a handler and fails to remove it leaves that
+ * handler above ours, and a blind one-frame restore pops the test's
+ * frame while ours stays live — every error between windows then
+ * lands in the next window's drain, attributed to a test that never
+ * ran it. The drain walks down to its own handler, removes whatever
+ * the window's code left above it, and never pops past the handler
+ * install() replaced: the bootstrap's handler survives even a test
+ * that removed ours. What the walk finds determines the hygiene
+ * verdict ({@see hygiene()}), which the runner reports the way the
+ * incumbent does: a leaked handler or a removed foreign one is the
+ * test's own bug, and it is a risky verdict, not a silence.
+ *
  * Deprecations are attributed on capture (DeprecationScope): a
  * trigger inside the project's own directories is `self`; a trigger
  * in a dependency is `direct` when the nearest calling frame is
@@ -52,10 +67,25 @@ final class IssueCollector
         | E_NOTICE | E_USER_NOTICE
         | E_WARNING | E_USER_WARNING;
 
+    /** The incumbent's exact wording for a window that left handlers behind. */
+    public const string HANDLERS_LEFT = 'Test code or tested code did not remove its own error handlers';
+
+    /** The incumbent's exact wording for a window that removed handlers other than its own. */
+    public const string HANDLERS_REMOVED = 'Test code or tested code removed error handlers other than its own';
+
     /** @var list<Issue> */
     private array $issues = [];
 
     private bool $installed = false;
+
+    /** @var ?callable the handler install() replaced, and the floor the drain never pops past */
+    private $previous = null;
+
+    /** @var ?Closure the window's own capture handler, identified by instance at drain time */
+    private ?Closure $handler = null;
+
+    /** @var ?string the hygiene verdict of the last drain, in the incumbent's words */
+    private ?string $verdict = null;
 
     private int $deprecations = 0;
 
@@ -75,26 +105,92 @@ final class IssueCollector
 
     public function install(): void
     {
-        set_error_handler($this->capture(...), self::CAPTURED);
+        $this->handler   = $this->capture(...);
+        $this->previous  = set_error_handler($this->handler, self::CAPTURED);
+        $this->verdict   = null;
         $this->installed = true;
     }
 
     /**
-     * Uninstalls the handler and returns what the test triggered.
+     * Uninstalls the window and returns what the test triggered.
+     *
+     * The stack is walked, not guessed: every frame above our own
+     * handler is removed, our handler is removed, and nothing at or
+     * below the handler install() replaced is ever popped. A window
+     * that removed BOTH its own handler and the one beneath it has
+     * breached that floor already — the walk restores what it had to
+     * lift to notice (measured against the incumbent: what remains
+     * stays, its removal is the test's) and stops at the empty stack.
      *
      * @return list<Issue>
      */
     public function drain(): array
     {
         if ($this->installed) {
-            restore_error_handler();
             $this->installed = false;
+            $this->verdict   = null;
+
+            $lifted = [];
+
+            while (($top = $this->top()) !== null && $top !== $this->handler && $top !== $this->previous) {
+                // A frame the window's code left above our handler.
+                restore_error_handler();
+                $lifted[] = $top;
+            }
+
+            if ($this->top() === $this->handler) {
+                restore_error_handler();
+
+                if ($lifted !== []) {
+                    $this->verdict = self::HANDLERS_LEFT;
+                }
+            } else {
+                // Our handler was removed by the window's code. The
+                // floor install() recorded is where the stack stood
+                // before the window opened; leave it standing, and
+                // put back anything the walk had to lift only because
+                // the floor itself was already gone.
+                if ($this->top() === null && $this->previous !== null) {
+                    foreach (array_reverse($lifted) as $liftedHandler) {
+                        set_error_handler($liftedHandler);
+                    }
+                }
+
+                $this->verdict = self::HANDLERS_REMOVED;
+            }
         }
 
         $issues       = $this->issues;
         $this->issues = [];
 
         return $issues;
+    }
+
+    /**
+     * The hygiene verdict of the last drain, in the incumbent's words:
+     * handlers the window's code left installed, or handlers other
+     * than its own that it removed. Null when the window bracketed
+     * cleanly.
+     */
+    public function hygiene(): ?string
+    {
+        return $this->verdict;
+    }
+
+    /**
+     * The active handler, read with no net effect: the probe pushes
+     * and pops its own frame around the look.
+     *
+     * @return callable|null
+     */
+    private function top()
+    {
+        $probe = static fn(): bool => true;
+
+        $saw = set_error_handler($probe);
+        restore_error_handler();
+
+        return $saw;
     }
 
     /**
