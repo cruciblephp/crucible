@@ -99,4 +99,80 @@ final class VitestImpactTest extends TestCase
             array_map(static fn(VitestSuite $suite): array => [$suite->directory, $suite->related], $suites),
         );
     }
+
+    public function testARootLockfileRunsEverySuiteInFull(): void
+    {
+        $lockfile = $this->root() . '/pnpm-lock.yaml';
+
+        [$suites, $notes] = VitestImpact::select(
+            [new VitestSuite('src/Vitest'), new VitestSuite('src/Impact')],
+            new ChangedFiles([$lockfile]),
+            new WorkingDirectory($this->root()),
+        );
+
+        self::assertSame([[], []], array_map(static fn(VitestSuite $suite): array => $suite->related, $suites));
+        self::assertStringContainsString('configures it, running the whole suite', $notes[0]);
+        self::assertStringContainsString('configures it, running the whole suite', $notes[1]);
+    }
+
+    public function testASuiteLocalConfigurationRunsOnlyThatSuiteInFull(): void
+    {
+        $config = $this->root() . '/src/Vitest/vitest.config.ts';
+
+        [$suites, $notes] = VitestImpact::select(
+            [new VitestSuite('src/Vitest'), new VitestSuite('src/Impact')],
+            new ChangedFiles([$config]),
+            new WorkingDirectory($this->root()),
+        );
+
+        self::assertSame(
+            [['src/Vitest', []]],
+            array_map(static fn(VitestSuite $suite): array => [$suite->directory, $suite->related], $suites),
+            'The sibling suite must not answer for another package configuration.',
+        );
+        self::assertStringContainsString('no JS changes, skipped', $notes[1]);
+    }
+
+    public function testATypeScriptConfigurationRunsTheSuiteBelowIt(): void
+    {
+        $config = $this->root() . '/src/Vitest/tsconfig.build.json';
+
+        [$suites] = VitestImpact::select(
+            [new VitestSuite('src/Vitest')],
+            new ChangedFiles([$config]),
+            new WorkingDirectory($this->root()),
+        );
+
+        self::assertSame([[]], array_map(static fn(VitestSuite $suite): array => $suite->related, $suites));
+    }
+
+    public function testASharedModuleOutsideEveryRootIsOfferedToEachSuite(): void
+    {
+        $shared = $this->root() . '/resources/js/shared/format.ts';
+
+        [$suites, $notes] = VitestImpact::select(
+            [new VitestSuite('src/Vitest'), new VitestSuite('src/Impact')],
+            new ChangedFiles([$shared]),
+            new WorkingDirectory($this->root()),
+        );
+
+        self::assertSame(
+            [['src/Vitest', [$shared]], ['src/Impact', [$shared]]],
+            array_map(static fn(VitestSuite $suite): array => [$suite->directory, $suite->related], $suites),
+            'Vitest\'s own graph decides which suite the shared module reaches.',
+        );
+        self::assertStringContainsString('shared change(s) outside its root', $notes[0]);
+    }
+
+    public function testAFileThatIsNeitherAModuleNorAConfigurationLeavesTheSuitesOut(): void
+    {
+        [$suites, $notes] = VitestImpact::select(
+            [new VitestSuite('src/Vitest')],
+            new ChangedFiles([$this->root() . '/README.md']),
+            new WorkingDirectory($this->root()),
+        );
+
+        self::assertSame([], $suites);
+        self::assertStringContainsString('no JS changes, skipped', $notes[0]);
+    }
 }

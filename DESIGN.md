@@ -3479,12 +3479,30 @@ orchestrating rather than reimplementing a second dependency walk (the D-079 pri
 
 - **The JS tier is symmetric to the PHP one.** `Impact\VitestImpact::select()` sits beside
   `ImpactSelection`: it takes the configured suites and a `ChangedFiles`, and returns the suites
-  to run — each narrowed to the changed files that fall under its directory — plus human notes.
+  to run — each narrowed to the changed files that can reach it — plus human notes.
   The safety direction is copied deliberately: **any deletion widens every suite to a full run**
   (a deleted file's dependents are invisible to the graph, exactly why `ImpactSelection` widens
   PHP to everything), and a suite with no JS change is **dropped but named**, never silently
   skipped. `VitestSuite` gained a `related` field; a non-empty one is what flips `VitestRunner`
   to the `related` command form.
+- **The environment is not a module edge (CB-19, F-26).** A package manifest or lockfile
+  (`package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`,
+  `bun.lock[.b]`), a Vitest/Vite configuration, a `vitest.workspace.*`, a `tsconfig*.json` or
+  `jsconfig.json`, or a `.env` file runs the suite it configures **in full** instead of asking
+  `related` — a dependency bump or a changed resolver has no module edge to follow. Scope follows
+  the directory tree: a file inside the suite's directory or above it (a workspace root lockfile,
+  an inherited `tsconfig.json`) applies to that suite; a sibling package's configuration does not.
+  That is what the monorepo case pins: a root lockfile runs both suites, a `packages/app` config
+  runs `app` alone and leaves `web` out.
+- **A shared module outside every suite root is offered, not dropped.** `resources/js/shared/
+  format.ts` imported by two suites used to match no suite prefix, so the suite was dropped and a
+  JS-only run answered "No tests are affected". Such a module is now passed to every suite's
+  `related`, which is where the answer belongs: measured on Vitest 5.1.0, `vitest related
+  ../shared/format.js` in the importing app selected its dependent test, and the same command in
+  an independent suite exited 0 with "No affected test files found". An in-root source change
+  keeps the old narrowing; a file that is neither a module nor a configuration (a PHP test, a
+  README) still leaves every suite out.
+
 - **An affected JS suite keeps the run alive when no PHP test does.** This is the case that
   matters — a changed `.vue` with no PHP dependents. Impact mode used to `return 0` ("No tests
   are affected") the moment the PHP selection came back empty, and the "No tests found" guard
@@ -3495,7 +3513,12 @@ orchestrating rather than reimplementing a second dependency walk (the D-079 pri
   path. Completeness is untouched: `fullSuite` is already false under any impact flag, so a
   folded-in JS suite never marks the run complete (the D-071 gate holds).
 - **Verified end to end on the real suite.** `VitestImpactTest` pins the pure selector (narrow,
-  drop-and-name, deletion-widens, per-suite independence). Then a `crucible --related` at a real
+  drop-and-name, deletion-widens, per-suite independence, environment scope and shared modules),
+  and `VitestEnvironmentImpactTest` pins the command and verdict through the CLI with a recording
+  Vitest stand-in: a root lockfile and workspace configuration run both suites whole, a package
+  configuration runs that package alone, an ordinary source change stays `related`, a shared
+  module reaches both, an unrelated PHP edit starts no suite, and a failing JS verdict fails the
+  run. Then a `crucible --related` at a real
   source file in a Vue/Vitest project, with an **empty PHP suite**, folded in only the **38**
   dependent JS tests (`vitest related` narrowing 369 → 38) at exit 0; the same run pointed at an
   unrelated file dropped the suite and reported "No tests are affected" at exit 0; and a PHP
