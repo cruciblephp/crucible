@@ -7115,6 +7115,31 @@ published one.
 
 ---
 
+### D-171: the issue window brackets the handler stack, and a test that disturbs it is risky
+
+`IssueCollector::drain()` popped exactly one frame. A test that pushed its own handler and
+never removed it had that handler popped instead — the collector's stayed live past its
+window, and every error between windows landed in the next test's drain, attributed to a
+test that never ran it. A test that restored too far removed the bootstrap's handler just
+as silently. Measured against the incumbent (PHPUnit 12.5.44, black box): a leaked handler
+is reported as a risky verdict — "Test code or tested code did not remove its own error
+handlers" — and the leaked frame does not survive to the next window; a test that removed
+handlers other than its own is reported the same way — "Test code or tested code removed
+error handlers other than its own" — while a wrecked stack keeps what remains of it below
+the breach.
+
+The drain now walks the stack: every frame above its own handler is removed, its own is
+removed, and nothing at or below the handler `install()` replaced is ever popped — the
+bootstrap's handler survives even a test that removed ours. When both our handler and the
+floor beneath it are gone, the walk puts back what it had to lift to notice the breach,
+stopping at the empty stack; a floor that still stands is left standing. The walk reads
+the top through a push-and-pop probe, so a look never moves the stack. The verdict rides
+the runner's existing risky outcome with the incumbent's exact wording, where
+`--fail-on-risky` already knows what to do with it: measured before this change, a leaky
+test and a stack-wrecking test both ended "OK, Risky: 0", silently.
+
+---
+
 ## Closing the planned record
 
 Every phase scoped at project start — core 0–9 and growth G1–G5 — has landed with its

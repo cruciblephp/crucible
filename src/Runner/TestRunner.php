@@ -469,6 +469,7 @@ final readonly class TestRunner
 
         $duration  = $this->since($started);
         $issues    = $this->issues->drain();
+        $hygiene   = $this->issues->hygiene();
         $pollution = $this->settleGlobalState($definition->metadata, $snapshot);
 
         // Browser failure artifact: captured before the test's
@@ -521,6 +522,14 @@ final readonly class TestRunner
 
         if ($pollution !== []) {
             return $this->settleCoverage($definition, [...$result, 'outcome' => Outcome::Risky, 'reason' => 'This test modified global state: ' . implode(', ', $pollution) . '.'], $window);
+        }
+
+        // A window that left error handlers behind, or removed handlers
+        // other than its own, broke the isolation the next test runs
+        // under - the incumbent calls that risky, and so the drain's
+        // verdict rides the same outcome the oracle reports it under.
+        if ($hygiene !== null) {
+            return $this->settleCoverage($definition, [...$result, 'outcome' => Outcome::Risky, 'reason' => $hygiene . '.'], $window);
         }
 
         // A test slower than its declared size allows (D-101). Judged on
