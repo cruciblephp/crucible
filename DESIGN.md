@@ -6068,13 +6068,19 @@ assertion in them is a test in the run:
 
 A folded suite, like Vitest's (D-079): named `types`, selected by `--testsuite`/`--exclude-testsuite`
 (D-125's selection, now generic over both kinds), left out with a note under a PHP-only selection,
-and under `--changed` run only when a changed file is PHP or a `.neon`. With no project
-configuration, a written one at a stable path in the cache directory keeps PHPStan's result cache
-useful. The analysis's time is shared across its tests so the tree adds up. Measured: a PHPStan
-start costs seconds on this machine (about 7.7 s for one small file, xdebug loaded), which is the
-floor of a run that includes the suite — `--exclude-testsuite types` keeps an edit loop fast.
+and under `--changed` run only when a changed file is PHP or a PHPStan configuration, or when the
+change deletes a PHP file or one of those configurations (checked by name alone, since the file is
+gone), or deletes an entry no suffix can classify — a directory, a gitlink: a false green is the
+failure that filter prevents. With no project configuration, a written one at a stable path in the
+cache directory keeps PHPStan's result cache useful. The analysis's time is shared across its tests
+so the tree adds up. Measured: a PHPStan start costs seconds on this machine (about 7.7 s for one
+small file, xdebug loaded), which is the floor of a run that includes the suite —
+`--exclude-testsuite types` keeps an edit loop fast.
 
-✓ `TypeTestRunnerTest` through the real phpstan; ✓ five command-line snapshots (D-135).
+✓ `TypeTestRunnerTest` through the real phpstan; ✓ `TypeDeletionImpactTest`: deleting the analysed
+definition, PHPStan's `phpstan.neon.dist`, or renaming the definition to a non-PHP name keeps the
+tier and fails the narrowed run under `--dirty` and `--changed`, while an unrelated edit or deletion
+leaves it out; ✓ five command-line snapshots (D-135).
 
 ### D-131: one shape, two meanings
 

@@ -121,6 +121,7 @@ use function array_map;
 use function array_pad;
 use function array_unique;
 use function array_values;
+use function basename;
 use function class_exists;
 use function count;
 use function ctype_digit;
@@ -151,6 +152,7 @@ use function realpath;
 use function rtrim;
 use function sort;
 use function sprintf;
+use function str_contains;
 use function str_ends_with;
 use function str_starts_with;
 use function stream_get_contents;
@@ -853,7 +855,10 @@ final class RunTestsCommand
             // A type test can change with any PHP file or the analyser's
             // configuration (D-130); a change touching neither leaves the
             // type suites out rather than start an analysis for nothing.
-            if ($typeSuites !== [] && array_filter($files, static fn(string $file): bool => str_ends_with($file, '.php') || str_ends_with($file, '.neon')) === []) {
+            // Deletions count too: the defining file is already gone, so
+            // checking only the remaining paths answered green for a run
+            // whose type assertion had just gone red (CB-24).
+            if ($typeSuites !== [] && !$this->typesCanChange($files, $changed->deleted)) {
                 $typeSuites = [];
             }
 
@@ -1488,6 +1493,47 @@ final class RunTestsCommand
         }
 
         return $selected;
+    }
+
+    /**
+     * Whether the change set can change a type test's verdict (D-130):
+     * PHP source or the analyser's configuration. A deletion is answered
+     * by its name alone — the file is gone before this runs — and an
+     * entry the name cannot settle (no extension at all: a directory, a
+     * gitlink, a suffix-less config) keeps the suites, because a false
+     * green is the failure this filter exists to prevent (CB-24).
+     *
+     * @param list<non-empty-string> $files   the changed files that still exist, absolute
+     * @param list<non-empty-string> $deleted the deleted ones, repository-relative
+     */
+    private function typesCanChange(array $files, array $deleted): bool
+    {
+        foreach ($files as $file) {
+            if ($this->isTypeAnalysisInput($file)) {
+                return true;
+            }
+        }
+
+        foreach ($deleted as $name) {
+            if ($this->isTypeAnalysisInput($name) || !str_contains(basename($name), '.')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A path the type tier reads: PHP source (a type test asserts
+     * something about it), or PHPStan's own configuration — the three
+     * names it looks for, `phpstan.neon`, `phpstan.neon.dist` and
+     * `phpstan.dist.neon`, plus the `.neon` files they include.
+     */
+    private function isTypeAnalysisInput(string $path): bool
+    {
+        return str_ends_with($path, '.php')
+            || str_ends_with($path, '.neon')
+            || str_ends_with($path, '.neon.dist');
     }
 
     /**
