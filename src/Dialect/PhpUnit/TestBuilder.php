@@ -122,6 +122,13 @@ final readonly class TestBuilder
                     static fn(array $dependencyValues): mixed => (new $className())->invokeTest($methodName, [...$arguments, ...$dependencyValues], $hooks, $id->dataset),
                     $metadata,
                     $dependencies,
+
+                    // The declaring class rides along for the hooks
+                    // that reflect on it (D-172) — an around-test
+                    // rollback checks a #[SkipDatabaseRollback]-style
+                    // attribute without reconstructing the class from
+                    // the file path.
+                    $className,
                 );
             }
         }

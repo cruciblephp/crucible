@@ -577,7 +577,8 @@ final readonly class TestRunner
      * whole lifecycle (setUp, hooks, body, tearDown), so an extension's
      * finally runs even when setUp() throws (D-172) — the one case a
      * `#[Before]`/`#[After]` pair cannot cover, since Crucible skips the
-     * after phase when setUp() fails, as the incumbent does.
+     * after phase when setUp() fails, as the incumbent does. The
+     * declaring class rides along for the hooks that reflect on it.
      *
      * @param list<mixed> $dependencyValues
      */
@@ -586,7 +587,7 @@ final readonly class TestRunner
         $test = static fn(): mixed => ($definition->test)($dependencyValues);
 
         foreach (array_reverse($this->aroundEachTest) as $extension) {
-            $test = static fn(): mixed => $extension->around($definition->id, $test);
+            $test = static fn(): mixed => $extension->around($definition->id, $test, $definition->class);
         }
 
         return $test();

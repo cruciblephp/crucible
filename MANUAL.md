@@ -810,7 +810,7 @@ $connection = your_connection_from_the_bootstrap();
 
 return Crucible::configure()
     ->testSuite('unit', 'tests')
-    ->aroundEachTest(function (TestId $id, callable $test) use ($connection): mixed {
+    ->aroundEachTest(function (TestId $id, callable $test, ?string $class = null) use ($connection): mixed {
         $connection->beginTransaction();
 
         try {
@@ -821,19 +821,52 @@ return Crucible::configure()
     });
 ```
 
+The closure's third parameter is the namespaced class declaring the test, when the declaring
+dialect has one — a PHPUnit `TestCase` — and `null` for pest closures and inline checks. It
+exists for the exemption a real project needs: a `#[SkipDatabaseRollback]`-style attribute is
+one `ReflectionMethod` away, with no reconstruction of the class from the file path:
+
+```php
+->aroundEachTest(function (TestId $id, callable $test, ?string $class = null) use ($connection): mixed {
+    $skip = $class !== null && (
+        (new ReflectionMethod($class, $id->name))->getAttributes(SkipDatabaseRollback::class) !== []
+        || (new ReflectionClass($class))->getAttributes(SkipDatabaseRollback::class) !== []
+    );
+
+    if ($skip) {
+        return $test();
+    }
+
+    $connection->beginTransaction();
+
+    try {
+        return $test();
+    } finally {
+        $connection->rollBack();
+    }
+});
+```
+
+A method-level attribute exempts that method; a class-level one exempts the whole class. The
+class is a fact the hook is told, never part of the test's identity — `TestId` stays
+dialect-neutral, so event streams and partition hashes do not move when a dialect declares
+classes or does not.
+
 `$connection` is whatever your bootstrap already builds — the Doctrine `EntityManager`'s wrapped
 connection, a DBAL connection, a PDO instance: the transaction API is the same three calls. Call
 `$test()` once and return what it returned — that value feeds `#[Depends]` injection. A class-based
 extension works the same way when it needs its own dependencies: implement
-`LucianoPereira\Crucible\Extension\AroundEachTest` and register it with `->extension(new ...)` —
-the interface documents the whole contract at its declaration. With several wraps the first call is
+`LucianoPereira\Crucible\Extension\AroundEachTest` — its `around()` declares the same three
+parameters — and register it with `->extension(new ...)` — the interface documents the whole
+contract at its declaration. With several wraps the first call is
 the outermost; a retried test re-opens its bracket per attempt; and `--no-extensions` silences every
 hook for the whole run, workers included.
 
-The bracketed shape above — begin, run, `finally` — is what
+The bracketed shape above — begin, run, `finally`, and the exemption — is what
 `tests/unit/CLI/AroundEachTestCliTest.php` executes end to end, with the two transaction calls
-replaced by two log writes: serial, `--parallel 2`, and a test whose `setUp()` throws, whose
-bracket still closes.
+replaced by two log writes: serial, `--parallel 2` (a worker honors the exemption too, because
+it re-discovers and is told the same class), a test whose `setUp()` throws, whose bracket still
+closes, and a `#[SkipRollback]`-style attribute honored at method level and at class level.
 
 ---
 

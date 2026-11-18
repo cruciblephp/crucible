@@ -780,7 +780,11 @@ final class Builder
      * when setUp() throws, which a `#[Before]`/`#[After]` pair cannot
      * promise, because the after phase is skipped when setUp() fails.
      *
-     *     ->aroundEachTest(function (TestId $id, callable $test): mixed {
+     *     ->aroundEachTest(function (TestId $id, callable $test, ?string $class = null): mixed {
+     *         if ($class !== null && SkipDatabaseRollback::on($class, $id->name)) {
+     *             return $test();
+     *         }
+     *
      *         $this->connection->beginTransaction();
      *
      *         try {
@@ -791,10 +795,14 @@ final class Builder
      *     })
      *
      * Call `$test()` once and return what it returned — that value
-     * feeds #[Depends] injection. With several wraps, the first call is
-     * the outermost. Registered as an {@see AroundEachTest} extension:
-     * `--no-extensions` silences it, and a `--parallel` worker re-loads
-     * this file, so its tests run wrapped too.
+     * feeds #[Depends] injection. The third closure parameter is the
+     * namespaced class declaring the test, when the declaring dialect
+     * has one — take it or leave it, PHP ignores the extra argument
+     * for a closure that does not declare it. With several wraps, the
+     * first call is the outermost. Registered as an
+     * {@see AroundEachTest} extension: `--no-extensions` silences it,
+     * and a `--parallel` worker re-loads this file, so its tests run
+     * wrapped too.
      */
     public function aroundEachTest(callable $around): self
     {
