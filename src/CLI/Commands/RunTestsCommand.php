@@ -83,7 +83,7 @@ use LucianoPereira\Crucible\Runner\OutcomeLog;
 use LucianoPereira\Crucible\Runner\Process\DependencyValues;
 use LucianoPereira\Crucible\Runner\Process\EventParser;
 use LucianoPereira\Crucible\Runner\Process\Supervisor;
-use LucianoPereira\Crucible\Runner\Process\UnitPreloads;
+use LucianoPereira\Crucible\Runner\Process\UnitDependencies;
 use LucianoPereira\Crucible\Runner\Process\WorkerManifest;
 use LucianoPereira\Crucible\Runner\ProcessSetup;
 use LucianoPereira\Crucible\Runner\PropertyFailures;
@@ -562,6 +562,9 @@ final class RunTestsCommand
             return 2;
         }
 
+        // Keep the discovery set before impact selection or filters narrow it.
+        $discoveredGroups = $groups;
+
         // The progress view, chosen AFTER discovery so a Pest.php
         // pest()->printer()->compact() declaration is known (D-066);
         // nothing is emitted before the run itself. --view=<key> is
@@ -875,27 +878,6 @@ final class RunTestsCommand
             print $testFiles . PHP_EOL;
 
             return 1;
-        }
-
-        // The files discovery found, before any selection narrows
-        // them: a filtered-out file's declarations still satisfy the
-        // file that calls them, because sequential discovery loaded
-        // the whole suite whatever the filter removed. The parallel
-        // path couples workers over this list (UnitPreloads), and it
-        // must be captured before TestSelection reassigns $groups.
-        /** @var list<non-empty-string> $discoveredFiles */
-        $discoveredFiles = [];
-
-        foreach ($groups as $group) {
-            if ($group->tests === []) {
-                continue;
-            }
-
-            $file = $group->tests[0]->id->file;
-
-            if (!in_array($file, $discoveredFiles, true)) {
-                $discoveredFiles[] = $file;
-            }
         }
 
         $groups = (new TestSelection(
@@ -1216,7 +1198,13 @@ final class RunTestsCommand
                 processIsolation: $options->processIsolation,
                 dependencyValues: $dependencyValues,
                 paths: $options->paths,
-                preloads: UnitPreloads::map($discoveredFiles, $workingDirectory),
+                fullDiscovery: UnitDependencies::hasCoupling(
+                    array_values(array_unique(array_map(static fn(TestGroup $group): string => $group->tests[0]->id->file, $discoveredGroups))),
+                    $workingDirectory,
+                ),
+                onlySuites: $options->testsuite,
+                exceptSuites: $options->excludeTestsuite,
+                suffixes: $options->testSuffixes,
             ))->run($groups, $afterTests);
         } else {
             $summary = $runner->run($groups, $afterTests);
@@ -1710,32 +1698,23 @@ final class RunTestsCommand
                 }
             }
 
-            // The declared symbols another discovered file's code
-            // uses: loaded before discovery - declarations first,
-            // nothing run - so a suite that couples files at runtime
-            // behaves in this worker exactly as it behaves in the
-            // sequential process, where discovery loads every file
-            // anyway. An uncoupled suite preloads nothing, which is
-            // the whole point of routing units at all.
-            $preloads = [];
-
-            foreach ($manifest->units as $unit) {
-                foreach ($unit->preload as $file) {
-                    $native = WorkingDirectory::native($workingDirectory->absolute($file));
-
-                    if (is_file($native) && !in_array($native, $preloads, true)) {
-                        $preloads[] = $native;
-                    }
-                }
-            }
-
             $discoverer = new TestDiscoverer();
-            $discoverer->preload($preloads);
-
-            $groups = $manifest->filter(
-                $unitFiles !== []
-                    ? $discoverer->discoverUnits($configuration, $workingDirectory, $unitFiles, inlineScan: $manifest->paths === [])
-                    : $discoverer->discover($configuration, $workingDirectory, paths: $manifest->paths),
+            $groups     = $manifest->filter(
+                !$manifest->fullDiscovery && $unitFiles !== []
+                    ? $discoverer->discoverUnits(
+                        $configuration,
+                        $workingDirectory,
+                        $unitFiles,
+                        inlineScan: $manifest->onlySuites === null && $manifest->paths === [],
+                    )
+                    : $discoverer->discover(
+                        $configuration,
+                        $workingDirectory,
+                        $manifest->onlySuites,
+                        $manifest->exceptSuites,
+                        $manifest->suffixes,
+                        $manifest->paths,
+                    ),
             );
         } catch (Exception $e) {
             fwrite(STDERR, $e->getMessage() . PHP_EOL);

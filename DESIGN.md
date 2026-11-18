@@ -6984,22 +6984,14 @@ unit, ~15 ms a spawn on this machine — and that is the worker-reuse question, 
 before it is attempted: 300 files under `--parallel 8` drop from 10.0 s to 4.6 s, with
 discovery no longer the term that grows.
 
-Routing units was a behaviour change, not only a cost one, and the first cut missed it: a
-suite may couple files with nothing but a call — a helper function declared in one test
-file, used from another's body, or a fixture class one file extends. Sequential discovery
-loads every discovered file into the one process, so the coupling is satisfied by the
-accident of process; a worker that loads only its own units is not, and the call died with
-"Call to undefined function" in a suite that passed sequentially — a parallel run failing
-what its sequential twin passes is a regression, whatever one thinks of the coupling. The
-parent now scans the discovery once — `UnitPreloads`, tokens only, no code executes —
-mapping each file's referenced class-likes and called functions to the files that declare
-them, and each unit's manifest carries the closure, transitive and ordered so declarations
-exist before a dependent's top level runs. The worker requires them before discovery, under
-the same load watcher discovery uses, without running them; an uncoupled suite preloads
-nothing, so the two-loads-per-file bound holds (the 300-file run still measures 4.4 s). The
-scan covers every DISCOVERED file, not only the selected units: a filtered-out file's
-declarations still answer the caller in the sequential process, whatever the filter
-removed, and the parallel twin must too.
+A suite can rely on symbols declared by another test file. PHP treats function names as
+case-insensitive, and the top-level code in a test file can observe state set by files
+loaded before it. Requiring only the referenced files ahead of a unit changed that order.
+If the token scan finds a cross-file reference, the workers repeat the parent's discovery
+using the same suite selection, suffixes and positional paths. They then filter the
+discovered groups to their assigned tests. The scan uses the files from before impact
+selection and test filters. Workers in suites without a detected reference still discover
+their own units directly.
 
 ---
 

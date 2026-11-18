@@ -32,6 +32,7 @@ use function realpath;
 use function rmdir;
 use function scandir;
 use function sort;
+use function str_replace;
 use function stream_get_contents;
 use function substr_count;
 use function sys_get_temp_dir;
@@ -41,21 +42,8 @@ use function unlink;
 use const PHP_BINARY;
 
 /**
- * A worker runs the tests its units name — and a suite may couple
- * files with nothing but a call. A helper function declared in one
- * test file and used from another's body is satisfied in the
- * sequential process by the accident of discovery loading every
- * file; a worker that loads only its own units used to die with
- * "Call to undefined function", failing in `--parallel` what the
- * same suite passed sequentially, and what the pre-change worker
- * passed by rediscovering the whole suite.
- *
- * The parent names, per unit, the other discovered files whose
- * declared symbols the unit's file uses, and the worker requires
- * them before discovery without running them. The counters pin the
- * honest price: a coupled file loads once more, in the caller's
- * worker; an uncoupled suite loads exactly its own files
- * (WorkerUnitDiscoveryTest).
+ * The worker must preserve discovery order for a suite with references
+ * between test files, even when the callee's tests were filtered out.
  */
 final class WorkerCoupledUnitsTest extends TestCase
 {
@@ -144,29 +132,20 @@ final class WorkerCoupledUnitsTest extends TestCase
         self::assertSame(0, $exit, 'The sequential run is the behavioural baseline.');
         $sequential = $this->ranIds($events);
 
-        // The parallel twin must answer identically. Before the
-        // preload this died in Beta's worker with a fatal "Call to
+        // The parallel twin must answer identically. Before full
+        // discovery this died in Beta's worker with a fatal "Call to
         // undefined function" and the run exited 2.
         [$exit, $stdout, $events] = $this->crucible(['--parallel', '2']);
 
         self::assertSame(0, $exit, $stdout);
         self::assertSame($sequential, $this->ranIds($events), 'A parallel run executes the sequential plan exactly.');
 
-        // The honest price, pinned: the parent discovers both files,
-        // Alpha's own worker loads it again to run it, and Beta's
-        // worker preloads it so the call resolves — one extra load,
-        // paid only by the coupling.
-        self::assertSame([3, 2], $this->counters(), 'Alpha loads three times (parent, its worker, the caller\'s worker preload); Beta twice (parent, its worker).');
+        // Each worker repeats discovery for a coupled suite, then runs its own unit.
+        self::assertSame([3, 3], $this->counters());
     }
 
-    public function testAFilteredParallelRunStillPreloadsTheFileItCoupledTo(): void
+    public function testAFilteredParallelRunStillDiscoversTheFileItCoupledTo(): void
     {
-        // The filter leaves Beta the only selected unit — but
-        // sequential discovery still loaded Alpha, whatever the
-        // filter removed, so the call was answered there. The
-        // preload map must be built over the discovery, not over the
-        // selection, or the filtered parallel run dies where its
-        // sequential twin passes.
         [$exit, , $events] = $this->crucible(['--filter', 'testGreetsViaAlpha']);
 
         self::assertSame(0, $exit);
@@ -179,8 +158,85 @@ final class WorkerCoupledUnitsTest extends TestCase
         self::assertSame($sequential, $this->ranIds($events), 'The filtered parallel run must answer what its sequential twin answers.');
 
         // The only unit is Beta, and the only worker is its own: the
-        // parent discovered both files, the worker preloaded Alpha.
+        // parent discovered both files, the worker discovered both before running Beta.
         self::assertSame([2, 2], $this->counters());
+    }
+
+    public function testCrossFileFunctionCallsUsePhpCaseInsensitivity(): void
+    {
+        $beta   = $this->project . '/tests/BetaTest.php';
+        $source = (string) file_get_contents($beta);
+        file_put_contents($beta, str_replace('alpha_greeting()', 'ALPHA_GREETING()', $source));
+
+        [$sequentialExit, , $sequential]    = $this->crucible([]);
+        [$parallelExit, $stdout, $parallel] = $this->crucible(['--parallel', '2']);
+
+        self::assertSame(0, $sequentialExit);
+        self::assertSame(0, $parallelExit, $stdout);
+        self::assertSame($this->ranIds($sequential), $this->ranIds($parallel));
+    }
+
+    public function testCoupledWorkersPreserveFileOrderAndTheSelectedSuites(): void
+    {
+        file_put_contents($this->project . '/tests/AlphaTest.php', <<<'PHP'
+            <?php
+
+            use LucianoPereira\Crucible\Framework\TestCase;
+
+            $GLOBALS['orderMarker'] = 'alpha';
+
+            final class AlphaTest extends TestCase
+            {
+                public function testAlphaReadsBeta(): void
+                {
+                    self::assertSame('alpha', beta_saw());
+                }
+            }
+            PHP);
+        file_put_contents($this->project . '/tests/BetaTest.php', <<<'PHP'
+            <?php
+
+            use LucianoPereira\Crucible\Framework\TestCase;
+
+            $GLOBALS['whatBetaSaw'] = $GLOBALS['orderMarker'] ?? 'missing';
+
+            function beta_saw(): string
+            {
+                return $GLOBALS['whatBetaSaw'];
+            }
+
+            final class BetaTest extends TestCase
+            {
+                public function testBetaReadsTheSameState(): void
+                {
+                    self::assertSame('alpha', beta_saw());
+                }
+            }
+            PHP);
+        file_put_contents($this->project . '/crucible.php', <<<'PHP'
+            <?php
+
+            use LucianoPereira\Crucible\Configuration\Crucible;
+
+            return Crucible::configure()
+                ->testSuite('other', [], files: ['OutsideTest.php'])
+                ->testSuite('unit', 'tests')
+                ->build();
+            PHP);
+        file_put_contents($this->project . '/OutsideTest.php', <<<'PHP'
+            <?php
+            use LucianoPereira\Crucible\Framework\TestCase;
+            final class OutsideTest extends TestCase {}
+            throw new \RuntimeException('The unselected suite was loaded.');
+            PHP);
+
+        [$sequentialExit, , $sequential]    = $this->crucible(['--testsuite', 'unit']);
+        [$parallelExit, $stdout, $parallel] = $this->crucible(['--parallel', '2', '--testsuite', 'unit']);
+
+        self::assertSame(0, $sequentialExit);
+        self::assertSame(0, $parallelExit, $stdout);
+        self::assertCount(2, $this->ranIds($parallel));
+        self::assertSame($this->ranIds($sequential), $this->ranIds($parallel));
     }
 
     /**

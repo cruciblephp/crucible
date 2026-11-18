@@ -57,6 +57,10 @@ final readonly class WorkerManifest
      * @param list<string>           $provideValues       names whose return value a later unit depends on, so this worker records them
      * @param ?non-empty-string      $dependencyArtifact  where this worker writes the values it was asked to provide; null = none wanted
      * @param list<non-empty-string> $paths               the run's test paths (D-152), which discovery runs instead of the configured suites
+     * @param bool                   $fullDiscovery replay discovery in the original order for a coupled suite
+     * @param ?list<non-empty-string> $onlySuites
+     * @param list<non-empty-string>  $exceptSuites
+     * @param list<non-empty-string>  $suffixes
      */
     public function __construct(
         public string $configuration,
@@ -80,6 +84,10 @@ final readonly class WorkerManifest
         public bool $pathCoverage = false,
         public ?string $globalState = null,
         public array $paths = [],
+        public bool $fullDiscovery = false,
+        public ?array $onlySuites = null,
+        public array $exceptSuites = [],
+        public array $suffixes = [],
     ) {}
 
     public function toJson(): string
@@ -87,7 +95,7 @@ final readonly class WorkerManifest
         return json_encode([
             'configuration' => $this->configuration,
             'units'         => array_map(
-                static fn(WorkUnit $unit): array => ['file' => $unit->file, 'tests' => $unit->tests, 'preload' => $unit->preload],
+                static fn(WorkUnit $unit): array => ['file' => $unit->file, 'tests' => $unit->tests],
                 $this->units,
             ),
             'order'              => $this->order->value,
@@ -109,6 +117,10 @@ final readonly class WorkerManifest
             'pathCoverage'       => $this->pathCoverage,
             'globalState'        => $this->globalState,
             'paths'              => $this->paths,
+            'fullDiscovery'      => $this->fullDiscovery,
+            'onlySuites'         => $this->onlySuites,
+            'exceptSuites'       => $this->exceptSuites,
+            'suffixes'           => $this->suffixes,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
@@ -214,15 +226,7 @@ final readonly class WorkerManifest
                 }
             }
 
-            $preload = [];
-
-            foreach (is_array($unit['preload'] ?? null) ? $unit['preload'] : [] as $file) {
-                if (is_string($file) && $file !== '') {
-                    $preload[] = $file;
-                }
-            }
-
-            $units[] = new WorkUnit($unit['file'], $tests, 0.0, $preload);
+            $units[] = new WorkUnit($unit['file'], $tests);
         }
 
         $testToken       = $decoded['testToken'] ?? null;
@@ -279,6 +283,18 @@ final readonly class WorkerManifest
                 ? $decoded['globalState']
                 : null,
             $paths,
+            ($decoded['fullDiscovery'] ?? false) === true,
+            is_array($decoded['onlySuites'] ?? null) ? self::strings($decoded['onlySuites']) : null,
+            self::strings($decoded['exceptSuites'] ?? null),
+            self::strings($decoded['suffixes'] ?? null),
         );
+    }
+
+    /** @return list<non-empty-string> */
+    private static function strings(mixed $value): array
+    {
+        return is_array($value)
+            ? array_values(array_filter($value, static fn(mixed $item): bool => is_string($item) && $item !== ''))
+            : [];
     }
 }

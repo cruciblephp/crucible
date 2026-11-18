@@ -15,73 +15,37 @@ use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Impact\ReferenceScanner;
 use PhpToken;
 
-use function array_keys;
 use function count;
 use function file_get_contents;
 use function is_file;
 use function strrpos;
+use function strtolower;
 use function substr;
 
 /**
- * Which discovered files a unit's own file needs loaded before its
- * tests run: the suite files whose declared symbols its code
- * references.
- *
- * A suite may couple files with nothing but a call - a helper
- * function declared in one test file, called from another's body, or
- * a fixture class one file extends. The sequential process satisfies
- * that by the accident of loading every discovered file into one
- * process; a worker that discovers only its own units does not, and
- * the call dies with "Call to undefined function" in a suite that
- * passes sequentially - a parallel run failing what its sequential
- * twin passes is a regression, not isolation semantics.
- *
- * The parent scans the discovery once - tokens only, no code
- * executes - and each unit's manifest names the OTHER discovered
- * files its file uses, so the worker can require them before
- * discovery without running them. The scan covers every discovered
- * file, not only the selected units: a filtered-out file's
- * declarations still satisfy the caller, because sequential
- * discovery loads the whole suite whatever the filter removed.
- *
- * Deliberately an over-approximation, the ReferenceScanner's own
- * direction: a name that matches nothing costs nothing, a surplus
- * preload only loads a file the sequential run loaded anyway, and a
- * missed coupling is the fatal. The closure is transitive and
- * ordered - a preload whose own top level uses a third file's
- * declarations gets that file first - so declarations exist before
- * the file whose top level executes against them; a cycle falls
- * back to best effort, exactly as it does in the sequential
- * process's own file order.
+ * Detects references to symbols declared in other discovered files.
+ * A coupled suite needs the parent's discovery order in its workers.
  */
-final readonly class UnitPreloads
+final readonly class UnitDependencies
 {
     /**
-     * The preload map over one run's discovered files.
-     *
-     * @param list<non-empty-string>    $files as TestId carries them, in discovery's order
-     *
-     * @return array<string, list<non-empty-string>> each input file => the other files to require before its own discovery, in dependency order
+     * @param list<non-empty-string> $files as TestId carries them
      */
-    public static function map(array $files, WorkingDirectory $workingDirectory): array
+    public static function hasCoupling(array $files, WorkingDirectory $workingDirectory): bool
     {
         /** @var array<string, non-empty-string> $absolute input file => native absolute path */
         $absolute = [];
-
-        /** @var array<non-empty-string, non-empty-string> $keys native absolute path => the input file form to report */
-        $keys = [];
 
         foreach ($files as $file) {
             $native = WorkingDirectory::native($workingDirectory->absolute($file));
 
             if (is_file($native)) {
-                $keys[$native]   = $file;
                 $absolute[$file] = $native;
             }
         }
 
         if ($absolute === []) {
-            return [];
+            return false;
         }
 
         /** @var array<string, list<non-empty-string>> $classes declared class-like => declaring files */
@@ -107,81 +71,36 @@ final readonly class UnitPreloads
             }
 
             foreach ($locator->declarationsIn($native) as $class) {
-                $classes[$class][] = $native;
+                $classes[strtolower($class)][] = $native;
             }
 
             foreach (self::declaredFunctions($source) as $name) {
-                $functions[$name][] = $native;
+                $functions[strtolower($name)][] = $native;
             }
 
             $references[$native] = $scanner->referencesIn($source);
             $calls[$native]      = self::calledFunctions($source);
         }
 
-        /** @var array<non-empty-string, list<non-empty-string>> $direct file => the other files its own code needs */
-        $direct = [];
-
         foreach ($absolute as $native) {
-            /** @var array<non-empty-string, true> $needs */
-            $needs = [];
-
             foreach ($references[$native] ?? [] as $class) {
-                foreach ($classes[$class] ?? [] as $declaredIn) {
+                foreach ($classes[strtolower($class)] ?? [] as $declaredIn) {
                     if ($declaredIn !== $native) {
-                        $needs[$declaredIn] = true;
+                        return true;
                     }
                 }
             }
 
             foreach ($calls[$native] ?? [] as $name) {
-                foreach ($functions[$name] ?? [] as $declaredIn) {
+                foreach ($functions[strtolower($name)] ?? [] as $declaredIn) {
                     if ($declaredIn !== $native) {
-                        $needs[$declaredIn] = true;
+                        return true;
                     }
                 }
             }
-
-            $direct[$native] = array_keys($needs);
         }
 
-        $preloads = [];
-
-        foreach ($absolute as $file => $native) {
-            /** @var array<non-empty-string, true> $visited */
-            $visited = [];
-
-            /** @var list<non-empty-string> $ordered */
-            $ordered = [];
-
-            $visit = static function (string $target) use (&$visit, &$visited, &$ordered, $direct, $native): void {
-                if ($target === $native || isset($visited[$target])) {
-                    return;
-                }
-
-                $visited[$target] = true;
-
-                foreach ($direct[$target] ?? [] as $need) {
-                    $visit($need);
-                }
-
-                $ordered[] = $target;
-            };
-
-            foreach ($direct[$native] ?? [] as $need) {
-                $visit($need);
-            }
-
-            /** @var list<non-empty-string> $filesToLoad */
-            $filesToLoad = [];
-
-            foreach ($ordered as $target) {
-                $filesToLoad[] = $keys[$target];
-            }
-
-            $preloads[$file] = $filesToLoad;
-        }
-
-        return $preloads;
+        return false;
     }
 
     /**
@@ -248,7 +167,7 @@ final readonly class UnitPreloads
         for ($i = 0; $i < $count; $i++) {
             $token = $tokens[$i];
 
-            if (!$token->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED])) {
+            if (!$token->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_NAME_RELATIVE])) {
                 continue;
             }
 

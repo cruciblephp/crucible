@@ -456,32 +456,6 @@ final readonly class TestDiscoverer
     }
 
     /**
-     * Require files another unit's code uses at runtime, before this
-     * worker's own discovery: a suite file can declare a function or
-     * class a different selected file's code calls, and the worker
-     * that runs the caller no longer loads every discovered file to
-     * find out. Under the same load watcher discovery uses, so a file
-     * that stops the process while being preloaded reports the same
-     * cause a discovery load would.
-     *
-     * @param list<string> $files absolute, native paths
-     */
-    public function preload(array $files): void
-    {
-        foreach ($files as $file) {
-            $file = WorkingDirectory::native($file);
-
-            if ($file === '' || !is_file($file)) {
-                continue;
-            }
-
-            $this->loading($file);
-            require_once $file;
-            $this->loading(null);
-        }
-    }
-
-    /**
      * Names the file about to be loaded, and arms a shutdown check the
      * first time.
      *
