@@ -14,6 +14,8 @@ use LucianoPereira\Crucible\Attributes\CoversClass;
 use LucianoPereira\Crucible\CLI\Application;
 use LucianoPereira\Crucible\CLI\CliOptions;
 use LucianoPereira\Crucible\Configuration\Crucible;
+use LucianoPereira\Crucible\Console\Runtime\Runtime;
+use LucianoPereira\Crucible\Console\Terminal\FakeTerminal;
 use LucianoPereira\Crucible\Event\DeprecationScope;
 use LucianoPereira\Crucible\Event\IssueKind;
 use LucianoPereira\Crucible\Framework\TestCase;
@@ -23,8 +25,6 @@ use function array_values;
 use function dirname;
 use function file_get_contents;
 use function glob;
-use function ob_get_clean;
-use function ob_start;
 use function preg_match;
 
 /**
@@ -102,9 +102,16 @@ final class AnsweredOptionsTest extends TestCase
 
     public function testCheckVersionAnswersAndExitsWithoutRunningAnything(): void
     {
-        ob_start();
-        $exit   = (new Application())->run(['crucible', '--check-version']);
-        $output = (string) ob_get_clean();
+        $terminal = new FakeTerminal();
+        Runtime::setTerminal($terminal);
+
+        try {
+            $exit = (new Application())->run(['crucible', '--check-version']);
+        } finally {
+            Runtime::reset();
+        }
+
+        $output = $terminal->output();
 
         $this->assertSame(0, $exit);
         $this->assertStringContainsString('no update channel', $output);

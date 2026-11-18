@@ -13,6 +13,8 @@ namespace LucianoPereira\Crucible\Tests\CLI;
 use LucianoPereira\Crucible\Attributes\CoversClass;
 use LucianoPereira\Crucible\CLI\Application;
 use LucianoPereira\Crucible\CLI\CliOptions;
+use LucianoPereira\Crucible\Console\Runtime\Runtime;
+use LucianoPereira\Crucible\Console\Terminal\FakeTerminal;
 use LucianoPereira\Crucible\Framework\TestCase;
 
 use function array_diff;
@@ -22,8 +24,6 @@ use function dirname;
 use function file_get_contents;
 use function implode;
 use function in_array;
-use function ob_get_clean;
-use function ob_start;
 use function preg_match;
 use function preg_match_all;
 use function sort;
@@ -92,9 +92,16 @@ final class DocumentedOptionsTest extends TestCase
 
     public function testEveryOptionAppearsInTheBuiltInHelp(): void
     {
-        ob_start();
-        (new Application())->run(['crucible', '--help']);
-        $help = (string) ob_get_clean();
+        $terminal = new FakeTerminal();
+        Runtime::setTerminal($terminal);
+
+        try {
+            (new Application())->run(['crucible', '--help']);
+        } finally {
+            Runtime::reset();
+        }
+
+        $help = $terminal->output();
 
         $missing = [];
 
