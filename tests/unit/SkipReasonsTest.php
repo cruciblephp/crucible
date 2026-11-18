@@ -75,6 +75,11 @@ final class SkipReasonsTest extends TestCase
         'the process ignores mode bits, so an unreadable path cannot be observed.'                      => 'a filesystem the process is not exempt from — root reads and writes regardless of mode',
         'the process ignores mode bits, so an unwritable path cannot be observed.'                      => 'a filesystem the process is not exempt from — root reads and writes regardless of mode',
         'the browser could not paint a frame: '                                                         => 'a renderer able to produce a frame — ✓ measured 2026-09-16 as Chromium answering "Unable to capture screenshot" through a LIVE session, not the dead driver this entry used to claim; Page::screenshot() retries it and this is the backstop',
+        'mbstring is the stand-in for a dynamic regular extension.'                                     => 'a loaded regular extension to resolve by its bare name, the form a coverage worker is told to load',
+        'Zend OPcache is the stand-in for the zend-extension mechanism.'                                => 'a loaded Zend extension to resolve by its bare name, the mechanism xdebug loads through',
+        'The .so form fails to resolve on Windows; Unix builds it can load.'                            => 'a Windows PHP — its extension_dir naming is exactly what the suffixed form cannot resolve, and the reproduction is pinned where it happens',
+        'The help is written for a machine with no driver loaded.'                                      => 'a machine with no coverage driver loaded, which is the machine the help addresses',
+        'The worker arguments exist only when a driver is loaded to re-create.'                         => 'a coverage driver the supervisor can re-create on the child command line',
     ];
 
     /**

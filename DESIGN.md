@@ -6959,6 +6959,22 @@ keep what was collected. Per-target floors wait until targets are named things.
 
 ---
 
+### D-169: a coverage worker is told to load its driver by the bare name
+
+`-d extension=NAME` completes against the platform's own extension_dir: bare `pcov`
+finds pcov.so on Linux and php_pcov.dll on Windows, and bare `xdebug` loads through the
+zend_extension mechanism the same way. The suffixed forms carried on a coverage worker's
+command line (`extension=pcov.so`, `zend_extension=xdebug.so`) are Unix filenames — on
+Windows the child answered "Unable to load dynamic library 'pcov.so' (tried: ext/pcov.so,
+ext/php_pcov.so.dll)" and started without its driver. Measured with the same mechanism
+classes on this machine: `-d extension=mbstring` and `-d zend_extension=opcache` both
+resolve, while `extension=mbstring.so` produces the startup failure the fix exists to
+remove; the failure message users are told to run has been corrected with the arguments
+themselves. A driver the child's ini already loads produces the already-loaded notice
+either way; a child that must load its own now can, on every platform.
+
+---
+
 ## Closing the planned record
 
 Every phase scoped at project start — core 0–9 and growth G1–G5 — has landed with its

@@ -80,7 +80,7 @@ final readonly class DriverFactory
 
         if ($branchCoverage) {
             return ($pathCoverage ? 'path' : 'branch') . " coverage needs xdebug — pcov cannot collect branches.\n"
-                . '  php -d zend_extension=xdebug.so -d xdebug.mode=coverage crucible --coverage'
+                . '  php -d zend_extension=xdebug -d xdebug.mode=coverage crucible --coverage'
                 . ' (pecl install xdebug if missing)';
         }
 
@@ -88,6 +88,6 @@ final readonly class DriverFactory
             . "  Debian/Ubuntu:  apt install php-pcov   (the Sury packages carry PHP 8.5 builds)\n"
             . "  macOS/Homebrew: brew install shivammathur/extensions/pcov@8.5\n"
             . "  any platform:   pecl install xdebug, then run with XDEBUG_MODE=coverage\n"
-            . 'Load the extension on demand (php -d zend_extension=xdebug.so -d xdebug.mode=coverage crucible --coverage) to keep normal runs fast.';
+            . 'Load the extension on demand (php -d zend_extension=xdebug -d xdebug.mode=coverage crucible --coverage) to keep normal runs fast.';
     }
 }
