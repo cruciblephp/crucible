@@ -78,6 +78,16 @@ final class WorkerProcess
 
     private bool $exited = false;
 
+    /**
+     * The first terminal status the process reported. proc_get_status()
+     * answers a signal only to the call that first observes the exit: a
+     * second read reports -1, which made `close()` lose the signal that
+     * `atEof()` had already seen (CB-23, WSL).
+     *
+     * @var ?array{exitcode: int, signaled: bool, termsig: int}
+     */
+    private ?array $terminal = null;
+
     private ?int $signal = null;
 
     /**
@@ -300,9 +310,7 @@ final class WorkerProcess
             return true;
         }
 
-        $status = proc_get_status($this->process);
-
-        if ($status['running']) {
+        if ($this->terminalStatus() === null) {
             return false;
         }
 
@@ -343,12 +351,13 @@ final class WorkerProcess
         fclose($this->stdout);
         fclose($this->stderr);
 
-        $status = proc_get_status($this->process);
+        do {
+            $status = $this->terminalStatus();
 
-        while ($status['running']) {
-            usleep(1_000);
-            $status = proc_get_status($this->process);
-        }
+            if ($status === null) {
+                usleep(1_000);
+            }
+        } while ($status === null);
 
         $exit = proc_close($this->process);
 
@@ -359,6 +368,31 @@ final class WorkerProcess
         }
 
         return $exit;
+    }
+
+    /**
+     * The status of a process that is no longer running, cached: the
+     * first call is the only one that carries the signal.
+     *
+     * @return ?array{exitcode: int, signaled: bool, termsig: int}
+     */
+    private function terminalStatus(): ?array
+    {
+        if ($this->terminal !== null) {
+            return $this->terminal;
+        }
+
+        $status = proc_get_status($this->process);
+
+        if ($status['running']) {
+            return null;
+        }
+
+        return $this->terminal = [
+            'exitcode' => $status['exitcode'],
+            'signaled' => $status['signaled'],
+            'termsig'  => $status['termsig'],
+        ];
     }
 
     /** Reads what the stderr pipe holds now; the byte count, for callers deciding whether to wait. */

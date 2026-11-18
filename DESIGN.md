@@ -7466,7 +7466,9 @@ one frame and leaves everything after it buffered — the text before a frame is
 that preceded it in the pipe, so D-124 is preserved without a temporary file. stdout is left to
 the user entirely and drained by `Supervisor::drainStdout()`; `ColdMutantExecutor` reads frames
 the same way. A marker split across two reads keeps its prefix buffered, and a partial frame at
-exit is never reported as a line.
+exit is never reported as a line. `proc_get_status()` carries a signal only to the call that first
+observes the exit, so that terminal status is cached: `atEof()` may read it before `close()`, and
+the crash diagnosis still names the signal (WSL regression, `SIGSEGV` as 11, not -1).
 
 ✓ `WorkerAccountingTest`: the raw-stdout case now arrives `fail`, with `Failed asserting that…`
 as its message, and `complete: true` — before, the frame was skipped, the test was reported as a
