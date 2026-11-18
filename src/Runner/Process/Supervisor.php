@@ -547,15 +547,6 @@ final class Supervisor
                     $this->phpArguments(),
                 );
 
-                if (!$worker instanceof WorkerProcess) {
-                    $freeSlots[] = $slot;
-                    $this->reportLost($planned->expected, [], 'The worker process for this test could not be started.');
-
-                    continue;
-                }
-
-                $key = spl_object_id($worker);
-
                 /** @var array<string, int> $wanted */
                 $wanted = [];
 
@@ -564,14 +555,23 @@ final class Supervisor
                     $wanted[$id] = ($wanted[$id] ?? 0) + 1;
                 }
 
-                $active[$key]            = $worker;
-                $finished[$key]          = [];
-                $expectedCounts[$key]    = $wanted;
-                $plannedCounts[$key]     = null;
-                $reportedTotals[$key]    = null;
-                $slotOf[$key]            = $slot;
-                $artifactOf[$key]        = $artifact;
-                $isolatedOf[$key]        = $planned->isolated;
+                if (!$worker instanceof WorkerProcess) {
+                    $freeSlots[] = $slot;
+                    $this->reportMissing($wanted, [], 'The worker process for this test could not be started.');
+
+                    continue;
+                }
+
+                $key = spl_object_id($worker);
+
+                $active[$key]         = $worker;
+                $finished[$key]       = [];
+                $expectedCounts[$key] = $wanted;
+                $plannedCounts[$key]  = null;
+                $reportedTotals[$key] = null;
+                $slotOf[$key]         = $slot;
+                $artifactOf[$key]     = $artifact;
+                $isolatedOf[$key]     = $planned->isolated;
             }
 
             if ($active === []) {
