@@ -31,6 +31,7 @@ use function rmdir;
 use function scandir;
 use function stream_get_contents;
 use function sys_get_temp_dir;
+use function trim;
 use function uniqid;
 use function unlink;
 

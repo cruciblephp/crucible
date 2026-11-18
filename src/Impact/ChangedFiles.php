@@ -153,9 +153,10 @@ final readonly class ChangedFiles
     {
         $fields = explode("\0", $output);
 
-        // Every record is NUL-terminated, so the split ends with one
-        // empty field; an empty name is never a real record.
-        if ($fields !== [] && $fields[array_key_last($fields)] === '') {
+        // Every record is NUL-terminated, so the split (which always
+        // yields at least one field) ends with one empty field; an empty
+        // name is never a real record.
+        if ($fields[array_key_last($fields)] === '') {
             array_pop($fields);
         }
 

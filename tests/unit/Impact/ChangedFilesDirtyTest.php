@@ -20,6 +20,8 @@ use function explode;
 use function fclose;
 use function file_get_contents;
 use function file_put_contents;
+use function getenv;
+use function is_array;
 use function is_dir;
 use function is_file;
 use function is_resource;
@@ -139,6 +141,9 @@ final class ChangedFilesDirtyTest extends TestCase
         self::assertCount(2, $this->ranIds($events), $stdout);
     }
 
+    /**
+     * @return array{int, string, list<string>}
+     */
     private function dirty(): array
     {
         return $this->crucible(['--dirty']);
@@ -178,7 +183,6 @@ final class ChangedFilesDirtyTest extends TestCase
             return [$exit, $stdout . $stderr, []];
         }
 
-        /** @var list<string> $lines */
         $lines = array_values(array_filter(explode("\n", $contents), static fn(string $line): bool => $line !== ''));
 
         return [$exit, $stdout, $lines];
