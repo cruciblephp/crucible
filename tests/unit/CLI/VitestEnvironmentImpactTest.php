@@ -171,7 +171,7 @@ final class VitestEnvironmentImpactTest extends TestCase
     {
         file_put_contents(
             $this->project . '/tests/Unit/ControlTest.php',
-            (string) file_get_contents($this->project . '/tests/Unit/ControlTest.php') . "\n// edited\n",
+            file_get_contents($this->project . '/tests/Unit/ControlTest.php') . "\n// edited\n",
         );
 
         [$exit, , $finished] = $this->crucible(['--dirty']);
