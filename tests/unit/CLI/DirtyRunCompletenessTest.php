@@ -144,7 +144,7 @@ final class DirtyRunCompletenessTest extends TestCase
         // Only the kept test changed, so --dirty selects exactly it.
         file_put_contents(
             $this->project . '/tests/KeepTest.php',
-            (string) file_get_contents($this->project . '/tests/KeepTest.php') . "\n// touched\n",
+            file_get_contents($this->project . '/tests/KeepTest.php') . "\n// touched\n",
         );
 
         [$exit, $events] = $this->crucible(['-u', '--dirty']);
