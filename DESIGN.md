@@ -7115,7 +7115,7 @@ published one.
 
 ---
 
-### D-171: the issue window brackets the handler stack, and a test that disturbs it is risky
+### D-177: the issue window brackets the handler stack, and a test that disturbs it is risky
 
 `IssueCollector::install()` saves the callables on the error-handler stack before opening
 the capture window. Drain discards frames above its capture closure and reports
