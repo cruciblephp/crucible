@@ -91,9 +91,10 @@ final readonly class ChangedFiles
         /** @var array<non-empty-string, true> $deleted */
         $deleted = [];
         $fields  = self::fields($output);
+        $counter = count($fields);
 
         // -z pairs each status with its path, in that order.
-        for ($index = 0; $index + 1 < count($fields); $index += 2) {
+        for ($index = 0; $index + 1 < $counter; $index += 2) {
             $status = $fields[$index];
             $name   = $fields[$index + 1];
 
