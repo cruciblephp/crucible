@@ -292,9 +292,6 @@ final readonly class ImpactFingerprint
      *
      * @param non-empty-string $root    native
      * @param string           $prefix  the loader ordinal's prefix
-     * @param string           $directory
-     *
-     * @return ?string
      */
     private static function listingPart(string $root, string $prefix, string $directory): ?string
     {
@@ -360,8 +357,6 @@ final readonly class ImpactFingerprint
     /**
      * @param non-empty-string $root
      * @param list<string>    $paths
-     *
-     * @return string
      */
     private static function pathsOf(string $root, array $paths): string
     {
@@ -382,9 +377,6 @@ final readonly class ImpactFingerprint
      * DependencyGraph::fileOf()}).
      *
      * @param non-empty-string $root native
-     * @param string           $path
-     *
-     * @return string
      */
     private static function relative(string $root, string $path): string
     {

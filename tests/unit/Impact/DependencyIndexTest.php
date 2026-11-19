@@ -145,7 +145,7 @@ final class DependencyIndexTest extends TestCase
         }
 
         file_put_contents($root . '/tests/Example.pest.php', "<?php\n");
-        $groups = $this->groupsFor($root, 'tests/Example.pest.php');
+        $groups = $this->groupsFor('tests/Example.pest.php');
 
         $before = ImpactFingerprint::of($root, $groups);
 
@@ -208,8 +208,8 @@ final class DependencyIndexTest extends TestCase
         }
 
         self::assertSame(
-            ImpactFingerprint::of($here, $this->groupsFor($here, 'tests/Example.pest.php')),
-            ImpactFingerprint::of($there, $this->groupsFor($there, 'tests/Example.pest.php')),
+            ImpactFingerprint::of($here, $this->groupsFor('tests/Example.pest.php')),
+            ImpactFingerprint::of($there, $this->groupsFor('tests/Example.pest.php')),
             'Two checkouts of the same project must land on the same index.',
         );
     }
@@ -356,12 +356,11 @@ final class DependencyIndexTest extends TestCase
     }
 
     /**
-     * @param non-empty-string $root
      * @param non-empty-string $file
      *
      * @return list<TestGroup>
      */
-    private function groupsFor(string $root, string $file): array
+    private function groupsFor(string $file): array
     {
         return [new TestGroup($file, [
             new TestDefinition(new TestId($file, 'it works'), static fn(): mixed => null, MetadataCollection::from()),
