@@ -6967,3 +6967,22 @@ nothing remains deferred — the backlog is empty, and the two items that were *
 rather than deferred (the Codeception Cest dialect, RESEARCH.md §5; and the asset→source
 mapping the retrigger endpoint replaced, D-083) are recorded where they were decided.
 New entries continue as new work lands.
+
+### D-169: a worker reads the run history only for an ordering that asks it
+
+`results.json` is written for the next run, not for the current one: the parent reads it to
+schedule and to report, and every worker re-reads it before scheduling its own unit. Only two
+orderings answer from it — `defects`, which scores past outcomes, and `duration`, which predicts
+from the last run — so a worker running the default (`declared`) order read and decoded a file
+whose answer it would never consult. Measured on a synthetic history of 20,000 test entries
+(4.8 MB, the shape a few thousand tests reach after a few hundred runs): `ResultCache::load()`
+takes 33 ms per call here. Every unit is a process, so a 300-file suite under `--parallel` paid
+that once per worker for nothing; with the worker batching experiment (a separate, opt-in
+change) it would be paid once per batch instead.
+
+`ExecutionOrder::needsHistory()` is now the single answer to the question, used by the worker's
+gate and by the "ordering by X with recording off does nothing" notice, so an ordering added
+later cannot read history on one side and not the other without a failing pin. Property
+failures stay loaded unconditionally on the worker side: a recorded counterexample is replayed
+during the test itself, under any ordering.
+

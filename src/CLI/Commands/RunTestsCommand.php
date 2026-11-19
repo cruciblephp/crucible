@@ -488,7 +488,7 @@ final class RunTestsCommand
         // Both history-aware orderings read the result cache, so asking
         // for one with recording off is asking for nothing to happen —
         // said out loud rather than silently ignored, as in the spec.
-        if (!$cacheResult && ($order === ExecutionOrder::DefectsFirst || $order === ExecutionOrder::Duration)) {
+        if (!$cacheResult && $order->needsHistory()) {
             printf(
                 'Tests cannot be ordered by %s because recording of the test run history is disabled.' . PHP_EOL . PHP_EOL,
                 $order->value,
@@ -1677,8 +1677,14 @@ final class RunTestsCommand
 
         // Ordering reads the cache; persistence stays with the
         // supervisor, which sees every result on the merged stream.
+        // What a worker orders is its own unit: with the default (and
+        // every non-history) ordering the file would answer questions
+        // this process never asks, so only the two that read it — and
+        // only when recording is on — pay for the read and the decode.
         $cacheFile = $workingDirectory->absolute($configuration->cacheDirectory) . '/results.json';
-        $cache     = $configuration->cacheResult ? ResultCache::load($cacheFile) : new ResultCache();
+        $cache     = $configuration->cacheResult && $manifest->order->needsHistory()
+            ? ResultCache::load($cacheFile)
+            : new ResultCache();
 
         $groups = Repetition::apply($groups, $manifest->overrides->repeat);
         $groups = (new Scheduler(
