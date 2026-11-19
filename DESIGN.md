@@ -6959,7 +6959,7 @@ keep what was collected. Per-target floors wait until targets are named things.
 
 ---
 
-### D-169: a coverage worker is told to load its driver by the bare name
+### D-178: a coverage worker is told to load its driver by the bare name
 
 `-d extension=NAME` completes against the platform's own extension_dir: bare `pcov`
 finds pcov.so on Linux and php_pcov.dll on Windows, and bare `xdebug` loads through the
