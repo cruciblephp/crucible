@@ -7456,3 +7456,21 @@ nothing remains deferred — the backlog is empty, and the two items that were *
 rather than deferred (the Codeception Cest dialect, RESEARCH.md §5; and the asset→source
 mapping the retrigger endpoint replaced, D-083) are recorded where they were decided.
 New entries continue as new work lands.
+
+### D-189: the suite walk is a per-directory answer, not a per-case one
+
+The fingerprint's suite component walks from each file's directory up to the root, looking
+for `Pest.php` and `Datasets/*.php` at every level. That walk depends on the DIRECTORY, yet
+it ran once per test case, so a data provider with 3,000 rows in 300 files walked and
+globbed the tree 3,000 times for 300 distinct answers. The earlier fingerprint already
+deduplicated by directory; the rewrite D-179 needed (relative ids resolved against the
+root) folded the walk into the per-case loop and lost it. Restoring the dedupe inside
+`of()` is the whole change: measured on a scratch tree with a `Pest.php` above 300 files
+and a `Datasets/` beside them, the call drops from 350 ms to 2.4 ms (median of seven,
+Windows), and **the key is byte-identical before and after** (`432d0a8d5989f92a…`), so no
+index is orphaned and a warm cache stays warm.
+
+The dedupe lives for the length of one call and no longer, deliberately: a `Pest.php`
+added between two runs still has to move the key, which is what the regression test pins
+on a many-row group.
+

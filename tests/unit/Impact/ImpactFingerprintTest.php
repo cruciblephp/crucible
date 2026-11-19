@@ -133,6 +133,40 @@ final class ImpactFingerprintTest extends TestCase
         );
     }
 
+    public function testTheNumberOfCasesInOneDirectoryDoesNotMoveTheKey(): void
+    {
+        $root = $this->tree();
+
+        // A provider's rows are all the same files in the same
+        // directories: the walk answers the same question once. Before
+        // the per-directory pass, a 3,000-row fixture walked the tree
+        // and globbed `Datasets/` 3,000 times for one answer.
+        $rows = [];
+
+        for ($row = 0; $row < 500; $row++) {
+            $rows[] = new TestDefinition(
+                new TestId('Feature/Example.pest.php', 'row ' . $row),
+                static fn(): mixed => null,
+                MetadataCollection::from(),
+            );
+        }
+
+        $many = [new TestGroup('Feature/Example.pest.php', $rows)];
+
+        self::assertSame(
+            ImpactFingerprint::of($root, $this->groups()),
+            ImpactFingerprint::of($root, $many),
+            'How many cases a file contributes is not part of the key.',
+        );
+
+        // And the dedupe is per CALL: what appears between two runs must
+        // still reach the key, or a warm index would replay stale edges.
+        $before = ImpactFingerprint::of($root, $many);
+        file_put_contents($root . '/Feature/Pest.php', "<?php\n");
+
+        self::assertNotSame($before, ImpactFingerprint::of($root, $many));
+    }
+
     public function testConfigurationAboveTheFileCountsToo(): void
     {
         $root = $this->tree();
