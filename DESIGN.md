@@ -6957,7 +6957,7 @@ lines, branches and paths together to the files under a path, on a path boundary
 the reports and `--min` judge that scope, an empty one cannot be judged as before, and the caches
 keep what was collected. Per-target floors wait until targets are named things.
 
-### D-169: the PHP extension of the OTR log declares the namespace the schema knows
+### D-179: the PHP extension of the OTR log declares the namespace the schema knows
 
 The OTR subscriber stamped its `php:` extension with `0.1.0` — a version of the
 `https://schema.phpunit.de/otr/php/` namespace that has never been published. The
