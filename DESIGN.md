@@ -6959,7 +6959,7 @@ keep what was collected. Per-target floors wait until targets are named things.
 
 ---
 
-### D-169: the dependency index's key carries the Composer resolution, and its paths walk natively
+### D-175: the dependency index's key carries the Composer resolution, and its paths walk natively
 
 A warm index answers for files whose bytes have not changed, so the key has to carry
 everything else the answer depends on. It carried the PSR-4 prefixes only: a class
