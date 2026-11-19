@@ -102,9 +102,6 @@ final class NoHeadersBeforeTestsTest extends TestCase
         self::assertSame(0, $exit);
     }
 
-    /**
-     * @return int
-     */
     private function crucible(): int
     {
         $process = proc_open(
