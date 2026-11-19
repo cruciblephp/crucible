@@ -294,7 +294,7 @@ final readonly class ImpactSelection
     {
         return str_ends_with($file, '.pest.php')
             || str_ends_with($file, '.crucible.php')
-            || ($this->pestDetector !== null && is_file($file) && ($this->pestDetector)($file));
+            || ($this->pestDetector instanceof Closure && is_file($file) && ($this->pestDetector)($file));
     }
 
     /**
