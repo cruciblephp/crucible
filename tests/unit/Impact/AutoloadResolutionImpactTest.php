@@ -481,7 +481,7 @@ final class AutoloadResolutionImpactTest extends TestCase
         }
 
         $stdout = (string) stream_get_contents($pipes[1]);
-        $stderr = (string) stream_get_contents($pipes[2]);
+        stream_get_contents($pipes[2]);
         fclose($pipes[1]);
         fclose($pipes[2]);
 
