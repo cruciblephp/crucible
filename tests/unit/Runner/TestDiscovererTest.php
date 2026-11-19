@@ -135,7 +135,7 @@ final class TestDiscovererTest extends TestCase
         $rediscovered = (new TestDiscoverer())->discoverUnits(
             $configuration,
             $directory,
-            array_map(static fn(string $file): string => $directory->absolute($file), $files),
+            array_map($directory->absolute(...), $files),
         );
 
         self::assertSame($this->idsOf($full), $this->idsOf($rediscovered));
