@@ -7054,7 +7054,7 @@ rather than deferred (the Codeception Cest dialect, RESEARCH.md §5; and the ass
 mapping the retrigger endpoint replaced, D-083) are recorded where they were decided.
 New entries continue as new work lands.
 
-### D-169: a worker reads the run history only for an ordering that asks it
+### D-180: a worker reads the run history only for an ordering that asks it
 
 `results.json` is written for the next run, not for the current one: the parent reads it to
 schedule and to report, and every worker re-reads it before scheduling its own unit. Only two
