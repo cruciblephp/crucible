@@ -23,4 +23,17 @@ enum ExecutionOrder: string
     case Random        = 'random';
     case Reversed      = 'reverse';
     case SizeAscending = 'size';
+
+    /**
+     * Whether this ordering answers from the recorded run history
+     * (`.crucible.cache/results.json`). Only these two do: `defects`
+     * scores past outcomes and `duration` predicts the next run from
+     * the last one. The others are pure functions of the plan, which
+     * is what lets a worker skip reading a file whose answer it would
+     * never consult.
+     */
+    public function needsHistory(): bool
+    {
+        return $this === self::DefectsFirst || $this === self::Duration;
+    }
 }
