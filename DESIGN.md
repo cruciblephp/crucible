@@ -6959,7 +6959,7 @@ keep what was collected. Per-target floors wait until targets are named things.
 
 ---
 
-### D-170: a worker discovers its own units, not the whole suite
+### D-176: a worker discovers its own units, not the whole suite
 
 A worker's manifest already names exactly what it owes — one unit, the file and the id
 strings. Discovery ignored that and rebuilt the entire configured suite before filtering
