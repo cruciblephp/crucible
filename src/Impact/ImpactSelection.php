@@ -106,6 +106,8 @@ final readonly class ImpactSelection
 
         /** @var array<string, true> $targets */
         $targets = [];
+        /** @var array<string, string> $shadows a file a changed one may now hide from the autoloader => that changed file */
+        $shadows = [];
         /** @var array<string, true> $ruled the groups matching rules put in doubt */
         $ruled      = [];
         $undeclared = 0;
@@ -160,6 +162,16 @@ final readonly class ImpactSelection
             }
 
             $targets[$real] = true;
+
+            // A file that appears ahead of another in a loader's search
+            // takes its class over. Recorded closures hold the file it
+            // shadows, never the new one, so the change counts as
+            // touching that file too.
+            if ($real !== '') {
+                foreach ($this->graph->shadowedBy($real) as $shadowed) {
+                    $shadows[$shadowed] = $real;
+                }
+            }
         }
 
         $notes = [];
@@ -198,9 +210,12 @@ final readonly class ImpactSelection
             $memberships = $ruled === [] ? [] : $this->membershipsOf($group);
             $carried += $memberships;
 
-            $hits = $targets === []
-                ? []
-                : array_intersect_key($this->closureOf($group), $targets);
+            $closure = $targets === [] ? [] : $this->closureOf($group);
+            $hits    = array_intersect_key($closure, $targets);
+
+            foreach (array_keys(array_intersect_key($closure, $shadows)) as $shadowed) {
+                $hits[$shadows[$shadowed]] = true;
+            }
 
             if ($hits !== []) {
                 $reached += $hits;

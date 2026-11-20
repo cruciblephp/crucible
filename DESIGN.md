@@ -7211,62 +7211,47 @@ narrows to `string`, `int|string`, `int|numeric-string`, `false`, `stdClass`, `l
 `resource`, `'const'`, `array<0|1, int>` and `array<0|1, stdClass>` from the docblocks alone.
 Before the change that run fails on the very first method.
 
----
+### D-179: the dependency index answers from the resolution it was built on, and a new file names what it shadows
 
-### D-175: the dependency index's key carries the Composer resolution, and its paths walk natively
+A warm index replays a file's dependencies while its bytes are unchanged, so the key has to carry
+everything else the answer depends on. It carried the PSR-4 prefixes only. A class remapped in
+`vendor/composer/autoload_classmap.php` (a regenerated autoloader, recorded by neither
+`composer.json` nor the lockfile, and invisible to the Git change set) resolved elsewhere while the
+key said nothing had happened, and `--dirty` reported a red suite as "No tests are affected" with
+exit 0. Measured on a scratch Git project: warm index, remapped classmap, failing `src/New.php`,
+`--dirty` selects zero and exits 0; delete the one `*.deps.json` and the same command fails like the
+full run. The key now folds in the manifests and each registered loader's resolution data:
+classmap entries, PSR-4 and PSR-0 prefixes with their fallbacks, and the authoritative flag. Each
+loader carries its registration position, because two loaders can both declare a class and the
+first registered wins; a flat sorted list gave the same key whichever came first. Paths are folded
+in relative to the project root, so two checkouts of one project land on one key, and an entry
+outside the root contributes only its name. The scheme tag (`deps:5`) orphans every index written
+before these rules.
 
-A warm index answers for files whose bytes have not changed, so the key has to carry
-everything else the answer depends on. It carried the PSR-4 prefixes only: a class
-remapped in `vendor/composer/autoload_classmap.php` — a regenerated autoloader, recorded
-by neither `composer.json` nor the lockfile, and invisible to the Git change set —
-resolved elsewhere while the key said nothing had happened, and `--dirty` reported a red
-suite as "no tests are affected" with exit 0. Measured against a scratch Git project: warm
-index, remapped classmap, failing `src/New.php`, `--dirty` selects zero and exits 0; delete
-the one `*.deps.json` and the same command fails like the full run. The key now folds in
-the manifests and the registered loaders' resolution data — classmap entries, PSR-4 and
-PSR-0 prefixes with their fallbacks, the authoritative flag — every path relative to the
-project root so two checkouts of one project land on one key, and an entry outside the
-root contributing only its name.
+One resolution change is not in the key. A loader tries the directories of a prefix in order until
+a file exists, so a file that appears in the priority directory takes the class over with no byte
+of the recorded file, a manifest or the classmap moving. Hashing every prefix directory's listing
+would see it, at the cost of walking the source tree on every run. It is cheaper to look where the
+cause already is: the new file is in the change set. `DependencyGraph::shadowedBy()` derives the
+class names a changed file would declare under each prefix it sits in, and lists every other place
+the registered loaders would look for those names; selection treats the change as touching each of
+those files. The work is per change, not per source file, and erring wide costs nothing, because a
+candidate no closure contains selects nothing.
 
-Two false greens survived that first key, both reproduced on a warm index while the full
-run was red and the cold run selected the test. The first: `findFile()` answers for a
-namespace by trying each directory of the prefix in order until a file EXISTS, so a file
-that APPEARS in the priority directory shadows the one the index recorded — no tracked
-byte, manifest or classmap moves, and a fingerprint over configuration alone cannot see it.
-The project's prefix directory listings now reach the key: every `.php` file name under
-each prefix and fallback directory in the project, including the root itself. Paths are
-relative, portable, sorted and hashed per directory. Vendor and outside-root directories are not listed — the graph drops those
-resolutions, and vendor content is a dependency bump, an environment change upstream
-answers with a full run. The second: two loaders can both declare one class and the first
-registered wins, but the payload folded every part into one sorted list, and both loaders
-contributed the same sorted strings whichever came first. Each part carries its loader's
-registration ordinal now; within one loader the classmap and the namespaces still fold in
-sorted — set semantics, stable across a regeneration that merely reordered the array —
-but across loaders the sequence is part of the answer. Scheme `deps:4` adds the root
-listing and keeps vendor subtrees out of all directory scans.
+The suite component of the key was always empty: production test ids are project-relative while
+the fingerprint walked them against an absolute root, so the walk never entered its loop. The
+enumeration now lives once, in `SuiteConfiguration::above()`, shared by the edge rules, the
+selection root (D-033) and the fingerprint. On Windows the index never persisted at all: a root
+joined with `/` does not prefix-match the `\` paths realpath answers with, so `save()` wrote `[]`.
+The root is normalized to the platform's separator, lookups happen in native form, and only the
+stored file stays portable. `save()` keeps the previous index when a run resolved nothing fresh,
+and `--cache-directory` reaches the index as it reaches every other cache.
 
-The suite component of that key was always empty for a second reason: production test ids
-are project-relative while the fingerprint walked them against an absolute root, so the
-walk never entered its loop; the pinning test stayed green by building absolute ids, a
-shape discovery never produces. The enumeration now lives once, in
-`SuiteConfiguration::above()`, and the edge rules and the fingerprint share it — the two
-had drifted before, one seeing the configuration files the other was blind to.
-
-On Windows the index never persisted at all: a root joined with `/` does not prefix-match
-the `\` paths realpath answers with, so `save()` dropped every entry and wrote `[]`. The
-root is now normalized to the platform's own separator, lookups happen in native form,
-and only the stored file stays portable — a cache moved between machines still reads, a
-run in its own checkout still hits. `save()` also keeps the previous index when a run
-resolved nothing fresh: the runs that reach that state are the ones that widened without
-walking a closure, and flattening the cache they had just chosen not to use turned their
-next neighbour cold. `--cache-directory` reaches the index, as it already reached every
-other cache consumer. The payload carries a scheme tag, so every index written before
-these rules is orphaned by a different key rather than read.
-
-✓ Reproduced before/after on both sides: six `ImpactFingerprintTest` failures and an empty
-`deps.json` on Windows at `d912050`; both false greens (classmap remap, added `Pest.php`)
-failing under WSL; all green on both platforms after, cold and warm selecting identical
-ids and verdicts.
+✓ `AutoloadResolutionImpactTest` runs each case through `--dirty` warm, then cold, then whole, and
+asserts the same red answer each time: a remapped classmap, reversed loader order, a `Pest.php`
+appearing above an unchanged test, and a shadow file in the priority directory and at the project
+root. ✓ `ImpactFingerprintTest` and `DependencyIndexTest` pin the key's parts, checkout
+independence, native lookups and the kept index.
 
 ---
 
