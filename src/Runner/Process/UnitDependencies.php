@@ -247,7 +247,7 @@ final readonly class UnitDependencies
      * or function body). With $untilGroupCloses, past the closer of the
      * group $start opens instead (an attribute's `#[...]`).
      *
-     * @param list<PhpToken> $tokens
+     * @param array<PhpToken> $tokens
      */
     private static function pastStatement(array $tokens, int $start, bool $untilGroupCloses = false): int
     {
@@ -284,7 +284,7 @@ final readonly class UnitDependencies
     /**
      * The index of the next token that is not whitespace or a comment.
      *
-     * @param list<PhpToken> $tokens
+     * @param array<PhpToken> $tokens
      */
     private static function nextSignificant(array $tokens, int $from): ?int
     {

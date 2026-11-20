@@ -45,15 +45,15 @@ final class UnitDependenciesTest extends TestCase
     public static function loadTimeEffects(): array
     {
         return [
-            'a define()'                => ["<?php\ndefine('SHARED', 1);\nfinal class A {}\n"],
-            'a global'                  => ["<?php\n\$GLOBALS['shared'] = 1;\n"],
-            'a top-level variable'      => ["<?php\n\$shared = 1;\n"],
-            'a require'                 => ["<?php\nrequire_once __DIR__ . '/helpers.php';\n"],
-            'an ini_set()'              => ["<?php\nini_set('memory_limit', '1G');\n"],
-            'a top-level const'         => ["<?php\nconst SHARED = 1;\n"],
-            'a braced namespace'        => ["<?php\nnamespace App {\n    final class A {}\n}\n"],
-            'inline output'             => ["<?php final class A {} ?>\nhello\n"],
-            'a call that is not Pest'   => ["<?php\nclass_alias(A::class, 'B');\n"],
+            'a define()'                 => ["<?php\ndefine('SHARED', 1);\nfinal class A {}\n"],
+            'a global'                   => ["<?php\n\$GLOBALS['shared'] = 1;\n"],
+            'a top-level variable'       => ["<?php\n\$shared = 1;\n"],
+            'a require'                  => ["<?php\nrequire_once __DIR__ . '/helpers.php';\n"],
+            'an ini_set()'               => ["<?php\nini_set('memory_limit', '1G');\n"],
+            'a top-level const'          => ["<?php\nconst SHARED = 1;\n"],
+            'a braced namespace'         => ["<?php\nnamespace App {\n    final class A {}\n}\n"],
+            'inline output'              => ["<?php final class A {} ?>\nhello\n"],
+            'a call that is not Pest'    => ["<?php\nclass_alias(A::class, 'B');\n"],
             'a registration-named const' => ["<?php\ntest;\n"],
         ];
     }

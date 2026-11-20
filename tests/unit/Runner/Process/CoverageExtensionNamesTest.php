@@ -94,7 +94,7 @@ final class CoverageExtensionNamesTest extends TestCase
         $shared = $this->sharedExtension();
 
         if ($shared === null) {
-            self::markTestSkipped('No loaded extension is a shared library in extension_dir.');
+            self::markTestSkipped('No loaded extension is a shared library in extension_dir (this build compiles them in).');
         }
 
         [, , $stderr] = $this->php(['-d', 'extension=' . $shared . '.so', '-r', 'echo "ok";']);

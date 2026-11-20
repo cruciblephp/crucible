@@ -167,10 +167,8 @@ final readonly class ImpactSelection
             // takes its class over. Recorded closures hold the file it
             // shadows, never the new one, so the change counts as
             // touching that file too.
-            if ($real !== '') {
-                foreach ($this->graph->shadowedBy($real) as $shadowed) {
-                    $shadows[$shadowed] = $real;
-                }
+            foreach ($this->graph->shadowedBy($real) as $shadowed) {
+                $shadows[$shadowed] = $real;
             }
         }
 
