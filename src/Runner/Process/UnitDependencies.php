@@ -163,9 +163,9 @@ final readonly class UnitDependencies
     }
 
     /**
-     * @param list<string> $loaded    files discovery loaded, in order
-     * @param list<string> $functions functions discovery declared
-     * @param list<string> $classes   class-likes discovery declared
+     * @param list<string>       $loaded    files discovery loaded, in order
+     * @param list<string>       $functions functions discovery declared
+     * @param list<class-string> $classes   class-likes discovery declared
      */
     private static function plan(array $loaded, array $functions, array $classes, WorkingDirectory $workingDirectory, Source $source): self
     {
@@ -214,9 +214,10 @@ final readonly class UnitDependencies
 
         foreach ($roles as $file => $role) {
             $relative = self::inProject($file, $root);
+            $portable = $relative === null ? '' : WorkingDirectory::portable($relative);
 
-            if ($role === self::PRELOAD && $relative !== null) {
-                $preload[] = WorkingDirectory::portable($relative);
+            if ($role === self::PRELOAD && $portable !== '') {
+                $preload[] = $portable;
             }
         }
 
@@ -345,7 +346,7 @@ final readonly class UnitDependencies
     }
 
     /**
-     * @return list<string>
+     * @return list<class-string>
      */
     private static function declaredClassLikes(): array
     {

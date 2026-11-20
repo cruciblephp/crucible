@@ -94,7 +94,7 @@ final class DoubleTest extends TestCase
         $this->createStub(Mailer::class)->method('send')->with('vip@x.com');
     }
 
-    public function testConsecutiveCallsMapAndThrow(): void
+    public function testConsecutiveCallsMapAndThrow(): never
     {
         $mailer = $this->createStub(Mailer::class);
         $mailer->method('queueSize')->willReturnOnConsecutiveCalls(1, 2);

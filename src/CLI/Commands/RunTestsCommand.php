@@ -1242,10 +1242,10 @@ final class RunTestsCommand
                 noExtensions: $options->noExtensions,
                 stopOnConfigured: $runnerOptions->stopsOnAnyOutcome(),
                 fullDiscovery: $workerDiscovery->fullDiscovery,
-                preload: $workerDiscovery->preload,
                 onlySuites: $options->testsuite,
                 exceptSuites: $options->excludeTestsuite,
                 suffixes: $options->testSuffixes,
+                preload: $workerDiscovery->preload,
             ))->run($groups, $afterTests);
         } else {
             $summary = $runner->run($groups, $afterTests);
