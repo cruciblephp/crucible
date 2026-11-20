@@ -117,7 +117,7 @@ final class WorkerUnitDiscoveryTest extends TestCase
             {
                 public static function rows(): array
                 {
-                    file_put_contents(__DIR__ . '/../counters.log', "provider alpha\n", FILE_APPEND);
+                    file_put_contents(__DIR__ . '/../counters.log', "provider alpha\n", FILE_APPEND | LOCK_EX);
 
                     return [
                         'row one' => ['one'],
@@ -141,7 +141,7 @@ final class WorkerUnitDiscoveryTest extends TestCase
             declare(strict_types=1);
 
             \test((static function (): string {
-                file_put_contents(__DIR__ . '/../counters.log', "load beta\n", FILE_APPEND);
+                file_put_contents(__DIR__ . '/../counters.log', "load beta\n", FILE_APPEND | LOCK_EX);
 
                 return 'beta knows its name';
             })(), function (): void {
@@ -156,7 +156,7 @@ final class WorkerUnitDiscoveryTest extends TestCase
             declare(strict_types=1);
 
             \check((static function (): \Closure {
-                file_put_contents(__DIR__ . '/../counters.log', "load gamma\n", FILE_APPEND);
+                file_put_contents(__DIR__ . '/../counters.log', "load gamma\n", FILE_APPEND | LOCK_EX);
 
                 return fn(): string => 'gamma';
             })())->toBe('gamma');

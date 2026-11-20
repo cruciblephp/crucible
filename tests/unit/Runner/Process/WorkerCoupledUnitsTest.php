@@ -80,7 +80,7 @@ final class WorkerCoupledUnitsTest extends TestCase
 
             use LucianoPereira\Crucible\Framework\TestCase;
 
-            file_put_contents(__DIR__ . '/../counters.log', "load alpha\n", FILE_APPEND);
+            file_put_contents(__DIR__ . '/../counters.log', "load alpha\n", FILE_APPEND | LOCK_EX);
 
             function alpha_greeting(): string
             {
@@ -106,7 +106,7 @@ final class WorkerCoupledUnitsTest extends TestCase
 
             use LucianoPereira\Crucible\Framework\TestCase;
 
-            file_put_contents(__DIR__ . '/../counters.log', "load beta\n", FILE_APPEND);
+            file_put_contents(__DIR__ . '/../counters.log', "load beta\n", FILE_APPEND | LOCK_EX);
 
             final class BetaTest extends TestCase
             {
@@ -240,7 +240,7 @@ final class WorkerCoupledUnitsTest extends TestCase
             {
                 public static function rows(): array
                 {
-                    file_put_contents(__DIR__ . '/../counters.log', "load alpha\n", FILE_APPEND);
+                    file_put_contents(__DIR__ . '/../counters.log', "load alpha\n", FILE_APPEND | LOCK_EX);
 
                     return [['from alpha']];
                 }
@@ -312,7 +312,7 @@ final class WorkerCoupledUnitsTest extends TestCase
             {
                 public static function rows(): array
                 {
-                    file_put_contents(__DIR__ . '/../counters.log', "load alpha\n", FILE_APPEND);
+                    file_put_contents(__DIR__ . '/../counters.log', "load alpha\n", FILE_APPEND | LOCK_EX);
 
                     return [['from pest']];
                 }
