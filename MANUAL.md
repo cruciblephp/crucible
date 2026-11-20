@@ -1052,6 +1052,6 @@ PHPUnit spellings complete too.
 
 ## Credits
 
-1.3.2's Symfony, Doctrine and analyser work came from Thomas (lekoala), through the
-[issue #2](https://github.com/cruciblephp/crucible/issues/2) report and the 19 pull requests
-behind it. Thank you.
+1.3.2's Symfony, Doctrine and analyser feedback came from Thomas (lekoala), through the
+[issue #2](https://github.com/cruciblephp/crucible/issues/2) report and the pull requests that
+addressed several of its items. Thank you.

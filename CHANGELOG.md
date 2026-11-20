@@ -4,7 +4,7 @@ Every release, as it ships. RELEASE.md is the full record of what shipped, each 
 
 ## v1.3.2 — 2026-11-20
 
-Thanks to Thomas (lekoala), who moved a Symfony 8.1 / Doctrine / PostgreSQL suite from PHPUnit to Crucible, reported what broke in issue #2, and sent the 19 pull requests most of this release is made from. The recommendations in that issue shaped the terminal-stream output, the env/ini ordering, `LogicalAnd`, the around-test hook for DAMA, the analyser stubs and the portable assert tags; the two item-6 requests (`--testsuite` path intersection and per-class `--profile`) remain open.
+Thanks to Thomas (lekoala) for the Symfony 8.1 / Doctrine / PostgreSQL migration, the issue #2 report, and the pull requests that addressed several of its items. The two item-6 requests (`--testsuite` path intersection and per-class `--profile`) remain open.
 
 - Fixed `->env()`, `->ini()` and `->constant()` being applied after the bootstrap, so Symfony's `Dotenv::bootEnv()` saw no `APP_ENV` and loaded the dev environment: they apply before it, as PHPUnit's do. A bootstrap that `define()`s a constant also set with `->constant()` now finds it defined
 - Fixed a bootstrap given as a Windows absolute path, `C:\…` or a UNC share, never being loaded
