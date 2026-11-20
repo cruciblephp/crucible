@@ -39,9 +39,8 @@ use const PHP_BINARY;
 /**
  * A production kernel starting a native session checks headers_sent().
  * The no-colour banner used printf(), so the check failed on every run;
- * colour was safe because Splash writes through the terminal (F-01,
- * ticket #2 item 1). The fixture test asserts the flag is still false
- * when the test body runs.
+ * colour was safe because Splash writes through the terminal. The fixture
+ * test asserts the flag is still false when the test body runs.
  */
 #[CoversClass(CliOutput::class)]
 final class NoHeadersBeforeTestsTest extends TestCase

@@ -56,7 +56,7 @@ use const PATHINFO_EXTENSION;
  * An ordinary in-root source change keeps the `related` path, and a
  * change under no suite root that is neither a module nor one of those
  * configurations (a PHP file, a README) leaves every suite out. A
- * dropped suite is named, never silently skipped (F-26).
+ * dropped suite is named, never silently skipped.
  */
 final readonly class VitestImpact
 {

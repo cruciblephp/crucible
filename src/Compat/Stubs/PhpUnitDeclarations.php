@@ -27,10 +27,10 @@ use function var_export;
 
 /**
  * The analysis-only declarations for the PHPUnit names the run-time
- * compatibility layer aliases (D-174). `class_alias()` is invisible to
+ * compatibility layer aliases (D-177). `class_alias()` is invisible to
  * every static analyser — no process runs — so a drop-in suite whose
  * tests extend `PHPUnit\Framework\TestCase` analysed as 2,738 errors
- * the moment `phpunit/phpunit` left the tree (ticket #2 item 5). This
+ * the moment `phpunit/phpunit` left the tree. This
  * generator turns the alias map into real declarations an analyser
  * can parse: a class per name, extending the Crucible class the alias
  * answers, so the whole public API is inherited and stays current

@@ -43,7 +43,7 @@ use const PHP_BINARY;
 /**
  * A project's bootstrap boots its application from APP_ENV: the value the
  * configuration sets must be there before the bootstrap runs, in the parent
- * and in every worker (F-02). The bootstrap records what it saw, so the
+ * and in every worker. The bootstrap records what it saw, so the
  * assertion is on the bootstrap's own view, not on the test's.
  */
 #[CoversClass(ProcessSetup::class)]

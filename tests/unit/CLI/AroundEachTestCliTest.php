@@ -44,9 +44,8 @@ use const PHP_BINARY;
  * `--parallel` worker there — and its cleanup still runs when setUp()
  * throws, which is what dama/doctrine-test-bundle needs from Crucible
  * and what a `#[Before]`/`#[After]` trait could not promise, because
- * the after phase is skipped when setUp() fails (F-04, ticket #2 item
- * 4). The hook records its bracket, so the assertion reads the hook's
- * own view of the run. The closure also receives each test's declaring
+ * the after phase is skipped when setUp() fails. The hook records its
+ * bracket, so the assertion reads the hook's own view of the run. The closure also receives each test's declaring
  * class, and honors a `#[SkipRollback]` attribute with it — the
  * recipe a rolled-back project needs to exempt a test, with no
  * file-path reconstruction.

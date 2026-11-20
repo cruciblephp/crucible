@@ -124,7 +124,7 @@ final class PhpUnitCompatibility
     }
 
     /**
-     * The map everything analysis-time reads (D-174): PHPUnit name =>
+     * The map everything analysis-time reads (D-177): PHPUnit name =>
      * the Crucible class the run-time alias answers. The stub generator
      * reflects each target to declare the name for analysers that
      * never run PHP, and the drift test holds the declarations against

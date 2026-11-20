@@ -49,7 +49,7 @@ use const PHP_BINARY;
 
 /**
  * The JS tier under impact selection when the environment changes
- * (CB-19, D-079/D-080): a root manifest, lockfile or workspace
+ * (D-079/D-080): a root manifest, lockfile or workspace
  * configuration runs every suite in full; a package's own configuration
  * runs that package alone; an ordinary source change keeps `related`; a
  * shared module outside every suite root is offered to each suite's own

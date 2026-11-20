@@ -41,10 +41,10 @@ use function uniqid;
 use function unlink;
 
 /**
- * PHPUnit applies `<ini>`, `<const>` and `<env>` before the bootstrap
- * (PhpHandler, then BootstrapLoader), so a bootstrap that boots an
- * application reads the configured values. Crucible ran the bootstrap
- * first, and Symfony's Dotenv booted dev from a missing APP_ENV (F-02).
+ * PHPUnit applies `<ini>`, `<const>` and `<env>` before the bootstrap, so
+ * a bootstrap that boots an application reads the configured values.
+ * Crucible ran the bootstrap first, and Symfony's Dotenv booted dev from
+ * a missing APP_ENV.
  */
 #[CoversClass(ProcessSetup::class)]
 final class ProcessSetupOrderTest extends TestCase

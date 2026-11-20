@@ -3485,7 +3485,7 @@ orchestrating rather than reimplementing a second dependency walk (the D-079 pri
   PHP to everything), and a suite with no JS change is **dropped but named**, never silently
   skipped. `VitestSuite` gained a `related` field; a non-empty one is what flips `VitestRunner`
   to the `related` command form.
-- **The environment is not a module edge (CB-19, F-26).** A package manifest or lockfile
+- **The environment is not a module edge.** A package manifest or lockfile
   (`package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`,
   `bun.lock[.b]`), a Vitest/Vite configuration, a `vitest.workspace.*`, a `tsconfig*.json` or
   `jsconfig.json`, or a `.env` file runs the suite it configures **in full** instead of asking
@@ -6998,168 +6998,185 @@ lines, branches and paths together to the files under a path, on a path boundary
 the reports and `--min` judge that scope, an empty one cannot be judged as before, and the caches
 keep what was collected. Per-target floors wait until targets are named things.
 
-### D-170: `env()` and `ini()` apply before the bootstrap
+### D-169: `env()` and `ini()` apply before the bootstrap
 
 A migrated Symfony application boots from `APP_ENV` in `tests/bootstrap.php` (`Dotenv::bootEnv()`),
 and Crucible loaded the bootstrap before applying `->env()`. The bootstrap therefore saw no
 `APP_ENV`, loaded `.env.dev`, and the tests ran against dev mailers and feature flags while the
-configuration said `test` (F-02, ticket #2's item 2). PHPUnit 12.5.40 does the opposite:
-`PhpHandler::handle()` applies include paths, INI settings, constants, global/server variables and
-`<env>` in that order, then `BootstrapLoader` requires the bootstrap.
+configuration said `test`. PHPUnit does the opposite: a bootstrap that records `getenv()`,
+`ini_get()` and `defined()` sees the configuration's `<env>`, `<ini>` and `<const>` values.
 
 `ProcessSetup::phpSettings()` now follows that order: include_path, INI, constants, env, then the
-bootstrap. A bootstrap that writes back keeps what it wrote — it runs last, as it does under
-PHPUnit — and D-151's `<env>` semantics are unchanged (an exported value is kept unless forced,
-`$_SERVER` is never written). ✓ Observed, not assumed: `ProcessSetupOrderTest` has the bootstrap
-record `getenv()`, `$_ENV`, `ini_get()` and `defined()`; `EnvBeforeBootstrapTest` runs a project
-whose bootstrap writes what it saw, serial and `--parallel 2`, and every process (parent and
-workers) reports `test`, the configured ini value and the configured constant. Both fail 4/4
-against 1.3.1 and pass 4/4 after.
-### D-171: pre-run CLI output does not send HTTP headers
+bootstrap. A bootstrap that writes back keeps what it wrote, because it runs last, and D-151's
+`<env>` semantics are unchanged (an exported value is kept unless forced, `$_SERVER` is never
+written). ✓ `ProcessSetupOrderTest` has the bootstrap record `getenv()`, `$_ENV`, `ini_get()` and
+`defined()`; `EnvBeforeBootstrapTest` runs a project whose bootstrap writes what it saw, serial and
+`--parallel 2`, and every process (parent and workers) reports `test`, the configured ini value and
+the configured constant. Both fail 4/4 against 1.3.1 and pass 4/4 after.
+
+### D-170: pre-run CLI output does not send HTTP headers
 
 A migrated Symfony application boots a production kernel in some tests; starting a native session
 then throws `Failed to start the session because headers have already been sent by
-"…/src/CLI/Application.php" at line 313`, because the no-colour banner used `printf()`. The
-colour path was safe — `Splash` writes through the terminal — and PHPUnit is safe everywhere
-because its printer writes to the STDOUT stream, which bypasses PHP's output layer (F-01, ticket
-#2 item 1).
+"…/src/CLI/Application.php" at line 313`, because the no-color banner used `printf()`. The color
+path was safe, since `Splash` writes through the terminal, and PHPUnit is safe everywhere because
+its printer writes to the STDOUT stream, which bypasses PHP's output layer.
 
 Pre-run CLI output now goes through `Console\Output\CliOutput`, which writes to the terminal
 stream (`fwrite`) and adds no newline of its own unless asked. Everything printed before the run
 was converted: the plain banner and its separator in `Application`, configuration and seed
-notices, impact and selection notes, coverage/extension notes, and the errors that stop a run
+notices, impact and selection notes, coverage and extension notes, and the errors that stop a run
 before it starts. Reporter output during and after the run is out of scope: no kernel is booted
 then, and PHPUnit's own printer has the same property.
 
-✓ `CliOutputTest` pins write/line through the `FakeTerminal`; `NoHeadersBeforeTestsTest` runs a
-project whose test asserts `headers_sent()` is false. It fails on 1.3.1 naming
-`Application.php:313` and passes after. ✓ A filtered run's stdout is byte-identical before and
-after the change, banner and `Configuration:` line included.
-### D-172: the around-test role — a per-test hook in the process that runs the test
+✓ `CliOutputTest` pins write and line through the `FakeTerminal`; `NoHeadersBeforeTestsTest` runs a
+project whose test asserts `headers_sent()` is false. It fails on 1.3.1 naming `Application.php:313`
+and passes after. ✓ A filtered run's stdout is byte-identical before and after, banner and
+`Configuration:` line included.
+
+### D-171: LogicalAnd, and the logical constraints under PHPUnit's names
+
+Symfony's BrowserKit and DomCrawler assertion traits build their constraints with
+`LogicalAnd::fromConstraints(...)`. Without the class under that name `assertResponseRedirects()`,
+`assertSelectorTextContains()` and the like error out. `Assert\Constraint\LogicalAnd` joins its
+constraints, passes when every one does, and reads `A and B` in a failure. With no constraints it
+passes, as PHPUnit's does. `LogicalAnd` and `LogicalOr` are aliased next to `LogicalNot`.
+
+A project that wrote its own `PHPUnit\Framework\Constraint\LogicalAnd` shim before this class
+existed must delete it: a declaration and an alias of one class name cannot coexist, and whichever
+loads second dies. MANUAL's migration steps say so. ✓ `LogicalAndTest` pins the pass, the failing
+member, the empty set, the wording, and that the aliased names resolve to the Crucible classes.
+
+### D-172: the around-test role, a per-test hook in the process that runs the test
 
 dama/doctrine-test-bundle wraps each test in a rolled-back transaction through PHPUnit event
-subscribers. On Crucible that has no equivalent to subscribe to: subscribers are reporting plugins
-that live in the supervisor under `--parallel`, one process away from the connection a transaction
-would run on, and the `#[Before]`/`#[After]` trait a migrated project reaches for first fails the
-one case DAMA exists for — `#[After]` is skipped when setUp() throws, so the open transaction fell
-to the next test to clean up (F-04, ticket #2 item 4). The extension surface gains a role for it:
-`Extension\AroundEachTest::around(TestId $id, callable $test, ?string $class = null): mixed` — call
+subscribers. Crucible has no equivalent to subscribe to: subscribers are reporting plugins that
+live in the supervisor under `--parallel`, one process away from the connection a transaction would
+run on, and the `#[Before]`/`#[After]` trait a migrated project reaches for first fails the one
+case DAMA exists for. `#[After]` is skipped when setUp() throws, so the open transaction fell to
+the next test to clean up. The extension surface gains a role for it:
+`Extension\AroundEachTest::around(TestId $id, callable $test, ?string $class = null): mixed`. Call
 `$test()` to run the test, return what it returned (that value feeds `#[Depends]`), and put the
-cleanup in a `finally`,
-because the call brackets the WHOLE lifecycle: setUp, the `#[Before]` hooks, the pre-conditions, the
-body, the post-conditions, the `#[After]` hooks, tearDown. The third parameter is the namespaced
-class declaring the test, when the declaring dialect has one — the phpunit dialect passes the
-`TestCase` name; pest closures and inline checks give null. It exists because a migrated DAMA
-project immediately needs the exemption: honoring a `#[SkipDatabaseRollback]`-style attribute is
-one ReflectionMethod over the class and the id's method name, where the first crucible consumer
-had been reconstructing the class from the test file's path. The class is a fact for the hook
-alone — TestId stays dialect-neutral (D-008), and the identity that travels the event stream and
-feeds partition hashing does not move. A class-based implementation must declare the third
-parameter (PHP rejects an implementation that drops one); the closure sugar may leave it out,
-an extra argument to a userland closure that does not take it being ignored.
+cleanup in a `finally`, because the call brackets the whole lifecycle: setUp, the `#[Before]`
+hooks, the pre-conditions, the body, the post-conditions, the `#[After]` hooks, tearDown.
+
+The third parameter is the namespaced class declaring the test, when the declaring dialect has
+one: the phpunit dialect passes the `TestCase` name; pest closures and inline checks give null. It
+exists because a migrated DAMA project needs the exemption: honoring a `#[SkipDatabaseRollback]`-
+style attribute is one ReflectionMethod over the class and the id's method name. The class is a
+fact for the hook alone. TestId stays dialect-neutral (D-008), and the identity that travels the
+event stream and feeds partition hashing does not move. A class-based implementation must declare
+the third parameter (PHP rejects an implementation that drops one); the closure sugar may leave it
+out, an extra argument to a userland closure that does not take it being ignored.
 
 The role is dispatched wherever the test runs, never in the supervisor: the in-process runner
-carries it, and a worker builds the same instances because it re-loads `crucible.php` — the
-configuration file *is* the transport. `Builder::aroundEachTest(callable)` is the closure sugar,
+carries it, and a worker builds the same instances because it re-loads `crucible.php`, so the
+configuration file is the transport. `Builder::aroundEachTest(callable)` is the closure sugar,
 registered as an ordinary extension, so `--no-extensions` silences it for the whole run, workers
-included (the flag travels the manifest), and `crucible mutate`'s warm fork carries the same list so
-a mutant's writes land inside the same bracket its runs would give it. Registration order is nesting
-order (first registered outermost); a retried test re-enters `around()` per attempt; a test that
-never executes — todo, requirement-gated, dependency-blocked, a failed beforeAll — is never
-bracketed, because there is nothing to roll back; and what the hook prints or runs counts as the
-test's, inside the runner's per-test window. A CLI `--extension` class implementing the role runs
-only in the parent's in-process units: a bare class name cannot carry the connection wiring a
+included (the flag travels the manifest), and `crucible mutate`'s warm fork carries the same list
+so a mutant's writes land inside the same bracket its runs would give it. Registration order is
+nesting order (first registered outermost); a retried test re-enters `around()` per attempt; a
+test that never executes (todo, requirement-gated, dependency-blocked, a failed beforeAll) is
+never bracketed, because there is nothing to roll back; and what the hook prints or runs counts as
+the test's, inside the runner's per-test window. A CLI `--extension` class implementing the role
+runs only in the parent's in-process units: a bare class name cannot carry the connection wiring a
 transaction needs, and configured instances already cover that use everywhere.
 
-✓ `AroundEachTestTest`: the bracket covers every executed test (DemoTest, datasets included, ends
-after begins); the setUp-throwing fixture still gets its end while neither the body nor tearDown
-ever ran; nesting order; a refusing hook errors the test without running it; retries re-enter;
-a todo is never bracketed; the hook's return feeds `#[Depends]`; and the hook is told the
-declaring class of a phpunit-dialect test (null for a classless one), which is the exemption's
-whole input. ✓ `AroundEachTestCliTest` runs a
-project whose `->aroundEachTest()` closure logs its bracket: serial, `--parallel 2` (whichever
-process ran a test, that process's hook bracketed it, setUp-thrower included), and `--no-extensions`
-silencing it; a `#[SkipRollback]`-style attribute is honored from the class the hook is told, at
-method level and at class level, worker included. Without the change the project's crucible.php
-fails with `Call to undefined method
-Builder::aroundEachTest()`, which was the whole finding: no hook existed.
+✓ `AroundEachTestTest`: the bracket covers every executed test (datasets included, ends after
+begins); the setUp-throwing fixture still gets its end while neither the body nor tearDown ever
+ran; nesting order; a refusing hook errors the test without running it; retries re-enter; a todo
+is never bracketed; the hook's return feeds `#[Depends]`; and the hook is told the declaring class
+of a phpunit-dialect test (null for a classless one). ✓ `AroundEachTestCliTest` runs a project
+whose `->aroundEachTest()` closure logs its bracket: serial, `--parallel 2` (whichever process ran
+a test, that process's hook bracketed it, setUp-thrower included), and `--no-extensions` silencing
+it; a `#[SkipRollback]`-style attribute is honored from the class the hook is told, at method
+level and at class level, worker included. Without the change the project's crucible.php fails
+with `Call to undefined method Builder::aroundEachTest()`: no hook existed.
 
----
+### D-173: a worker reads the run history only for an ordering that asks it
 
-### D-178: a coverage worker is told to load its driver by the bare name
+`results.json` is written for the next run, not for the current one: the parent reads it to
+schedule and to report, and every worker re-reads it before scheduling its own unit. Only two
+orderings answer from it, `defects`, which scores past outcomes, and `duration`, which predicts
+from the last run, so a worker running the default (`declared`) order read and decoded a file
+whose answer it would never consult. Measured on a synthetic history of 20,000 test entries
+(4.8 MB, the shape a few thousand tests reach after a few hundred runs): `ResultCache::load()`
+takes 33 ms per call. Every unit is a process, so a 300-file suite under `--parallel` paid that
+once per worker for nothing.
 
-`-d extension=NAME` completes against the platform's own extension_dir: bare `pcov`
-finds pcov.so on Linux and php_pcov.dll on Windows, and bare `xdebug` loads through the
-zend_extension mechanism the same way. The suffixed forms carried on a coverage worker's
-command line (`extension=pcov.so`, `zend_extension=xdebug.so`) are Unix filenames — on
-Windows the child answered "Unable to load dynamic library 'pcov.so' (tried: ext/pcov.so,
-ext/php_pcov.so.dll)" and started without its driver. Measured with the same mechanism
-classes on this machine: `-d extension=mbstring` and `-d zend_extension=opcache` both
-resolve, while `extension=mbstring.so` produces the startup failure the fix exists to
-remove; the failure message users are told to run has been corrected with the arguments
-themselves. A driver the child's ini already loads produces the already-loaded notice
-either way; a child that must load its own now can, on every platform.
-### D-169: the PHP extension of the OTR log declares the namespace the schema knows
+`ExecutionOrder::needsHistory()` is now the single answer to the question, used by the worker's
+gate and by the "ordering by X with recording off does nothing" notice, so an ordering added later
+cannot read history on one side and not the other without a failing pin. Property failures stay
+loaded unconditionally on the worker side: a recorded counterexample is replayed during the test
+itself, under any ordering.
 
-The OTR subscriber stamped its `php:` extension with `0.1.0` — a version of the
-`https://schema.phpunit.de/otr/php/` namespace that has never been published. The
-incumbent emits `0.0.1` (`OtrXmlLogger`, phpunit-main 12.5.44) and the oracle's own
-schema imports `otr/php/0.0.1` and declares `phpVersion` and `threadModel` there, so
-the moment the oracle reference checkout is installed — the one condition the schema
-test skips on — validation fails demanding elements the emitted namespace cannot
-provide. Measured at the base commit with the oracle present: the schema test fails
-with "No matching global element declaration available" for both `php:` elements;
-after the one-line alignment it validates the whole mixed run. The interop format is
-only as correct as the schema it answers to, and the incumbent's namespace is the
-published one.
+### D-174: a coverage worker is told to load its driver by the bare name
 
----
+`-d extension=NAME` completes against the platform's own extension_dir: bare `pcov` finds pcov.so
+on Linux and php_pcov.dll on Windows, and bare `xdebug` loads through the zend_extension mechanism
+the same way. The suffixed forms carried on a coverage worker's command line (`extension=pcov.so`,
+`zend_extension=xdebug.so`) are Unix filenames; on Windows the child answered "Unable to load
+dynamic library 'pcov.so'" and started without its driver. Measured with the same mechanism
+classes: a loaded shared extension and `-d zend_extension=opcache` both resolve by bare name, while
+the `.so` form produces the startup failure the fix exists to remove. The failure message users are
+told to run was corrected with the arguments themselves. A driver the child's ini already loads
+produces the already-loaded notice either way; a child that must load its own now can, on every
+platform. The test picks its shared extension at run time and skips on a build that compiles every
+extension in.
 
-### D-177: the issue window brackets the handler stack, and a test that disturbs it is risky
+### D-175: the PHP extension of the OTR log declares the namespace the schema knows
 
-`IssueCollector::install()` saves the callables on the error-handler stack before opening
-the capture window. Drain discards frames above its capture closure and reports
-"Test code or tested code did not remove its own error handlers". If the capture closure
-is missing, drain discards the stack left by the test and restores the saved callables in
-order. This removes replacement handlers and restores any bootstrap handlers that the
-test popped. The runner reports "Test code or tested code removed error handlers other
-than its own". Both cases use the existing risky outcome and respect `--fail-on-risky`.
+The OTR subscriber stamped its `php:` extension with `0.1.0`, a version of the
+`https://schema.phpunit.de/otr/php/` namespace that has never been published. The published schema
+imports `otr/php/0.0.1` and declares `phpVersion` and `threadModel` there, so once the reference
+schema is installed (the one condition `OtrSchemaTest` skips on), validation fails demanding
+elements the emitted namespace cannot provide. Measured with the schema present: the test fails
+with "No matching global element declaration available" for both `php:` elements; after the
+one-line alignment it validates the whole mixed run. The interop format is only as correct as the
+schema it answers to.
 
-PHP exposes each callable but gives no way to read its registered error levels. Saving
-the stack requires popping and reinstalling the callables with PHP's default mask, as
-PHPUnit 12.5.44 does in `activeErrorHandlers()`.
-### D-174: the aliased PHPUnit names get analysis-only declarations
+### D-176: the issue window brackets the handler stack, and a test that disturbs it is risky
 
-The other half of the reporter's 2,738 Mago errors (ticket #2 item 5) was the class surface itself:
-drop-in mode answers every `PHPUnit\Framework\*` name through `class_alias()`, and no static
-analyser follows a run-time alias — Mago runs no PHP, so a suite extending
-`PHPUnit\Framework\TestCase` analysed against a name that did not exist. The answer the reporter
-proved on their project ships here: a declarations file generated from the alias map, one child
-class per name extending the Crucible class the alias answers — `abstract class TestCase extends
-\LucianoPereira\Crucible\Framework\TestCase {}`, and so on — so the API is inherited and stays
-current without rendering a single signature. Attributes keep their target's own flags, read off
-reflection and decomposed into the incumbent's constants; `PHPUnit\Framework\MockObject\MockObject`
-and `Stub` are interfaces extending the one `Mocked` marker, exactly as the run-time pair aliases
-it.
+`IssueCollector::install()` saves the callables on the error-handler stack before opening the
+capture window. Drain discards frames above its capture closure and reports "Test code or tested
+code did not remove its own error handlers". If the capture closure is missing, drain discards the
+stack left by the test and restores the saved callables in order, which removes replacement
+handlers and restores any bootstrap handlers the test popped, and the runner reports "Test code or
+tested code removed error handlers other than its own". Both cases use the existing risky outcome
+and respect `--fail-on-risky`, so a suite that failed on neither before can fail on this now.
 
-Three deliberate calls. Final and readonly targets still get children: PHP forbids the extension
-at run time, but a declarations file is parsed, never autoloaded, and the runtime rule never
-fires — the reporter's file worked the same way. `TodoStatus`, the one enum the attribute glob
-sweeps in, is re-declared with its cases instead (an enum cannot extend): the copy answers the
-aliased name, and `#[Todo]`'s status parameter takes the Crucible original, so the aliased spelling
-is the one place the declarations are looser than the alias. And PHPStan is pointed at none of
-this — its analysis-time aliases load through `phpstan/bootstrap.php`, and a class both declared
-and aliased would collide (the documented split: stubs for the analysers that cannot run PHP,
-bootstrap aliases for the one that can).
+PHP exposes each callable but gives no way to read its registered error levels. Saving the stack
+means popping it and reinstalling the callables with the default mask, so a handler registered
+with a narrower mask loses it for the run.
 
-The file is a generated artifact with a gate: `stubs/phpunit.php` must be byte-identical to a
-fresh `PhpUnitDeclarations::generate()` (deterministic: namespaces and names sorted), every alias
-map key must be declared exactly once and nothing else, `php -l` must accept the file, and each
-declaration's shape must equal what reflection says of its target — kind, abstract, readonly,
-extends, attribute flags, enum cases — read by the test from the file's own text, not from the
-generator. Without the artifact the gate fails on four of five counts. The Mockery names wait for
-the same treatment in a follow-up; a `crucible stubs` command is unnecessary while the file ships
-with the package.
+### D-177: the aliased PHPUnit names get analysis-only declarations
+
+A user's Mago run over a migrated suite gave 2,738 errors once `phpunit/phpunit` was gone. Half of
+them were the class surface: drop-in mode answers every `PHPUnit\Framework\*` name through
+`class_alias()`, and no static analyser follows a run-time alias. Mago runs no PHP, so a suite
+extending `PHPUnit\Framework\TestCase` analysed against a name that did not exist. The fix ships
+here: a declarations file generated from the alias map, one child class per name extending the
+Crucible class the alias answers (`abstract class TestCase extends
+\LucianoPereira\Crucible\Framework\TestCase {}`), so the API is inherited and stays current without
+rendering a single signature. Attributes keep their target's own flags, read off reflection and
+decomposed into constants; `PHPUnit\Framework\MockObject\MockObject` and `Stub` are interfaces
+extending the one `Mocked` marker, exactly as the run-time pair aliases it.
+
+Three deliberate calls. Final and readonly targets still get children: PHP forbids the extension at
+run time, but a declarations file is parsed, never autoloaded, so the runtime rule never fires.
+`TodoStatus`, the one enum the attribute glob sweeps in, is re-declared with its cases instead (an
+enum cannot extend): the copy answers the aliased name, and `#[Todo]`'s status parameter takes the
+Crucible original, so the aliased spelling is the one place the declarations are looser than the
+alias. And PHPStan is pointed at none of this: its analysis-time aliases load through
+`phpstan/bootstrap.php`, and a class both declared and aliased would collide.
+
+The file is a generated artifact with a gate: `stubs/phpunit.php` must be byte-identical to a fresh
+`PhpUnitDeclarations::generate()` (deterministic: namespaces and names sorted), every alias map key
+must be declared exactly once and nothing else, `php -l` must accept the file, and each
+declaration's shape must equal what reflection says of its target (kind, abstract, readonly,
+extends, attribute flags, enum cases), read by the test from the file's own text, not from the
+generator. The Mockery names wait for the same treatment in a follow-up; a `crucible stubs` command
+is unnecessary while the file ships with the package.
 
 ---
 
@@ -7171,22 +7188,3 @@ nothing remains deferred — the backlog is empty, and the two items that were *
 rather than deferred (the Codeception Cest dialect, RESEARCH.md §5; and the asset→source
 mapping the retrigger endpoint replaced, D-083) are recorded where they were decided.
 New entries continue as new work lands.
-
-### D-180: a worker reads the run history only for an ordering that asks it
-
-`results.json` is written for the next run, not for the current one: the parent reads it to
-schedule and to report, and every worker re-reads it before scheduling its own unit. Only two
-orderings answer from it — `defects`, which scores past outcomes, and `duration`, which predicts
-from the last run — so a worker running the default (`declared`) order read and decoded a file
-whose answer it would never consult. Measured on a synthetic history of 20,000 test entries
-(4.8 MB, the shape a few thousand tests reach after a few hundred runs): `ResultCache::load()`
-takes 33 ms per call here. Every unit is a process, so a 300-file suite under `--parallel` paid
-that once per worker for nothing; with the worker batching experiment (a separate, opt-in
-change) it would be paid once per batch instead.
-
-`ExecutionOrder::needsHistory()` is now the single answer to the question, used by the worker's
-gate and by the "ordering by X with recording off does nothing" notice, so an ordering added
-later cannot read history on one side and not the other without a failing pin. Property
-failures stay loaded unconditionally on the worker side: a recorded counterexample is replayed
-during the test itself, under any ordering.
-

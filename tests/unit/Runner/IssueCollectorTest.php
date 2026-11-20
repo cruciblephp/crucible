@@ -168,7 +168,7 @@ final class IssueCollectorTest extends TestCase
         // The test's own handler, never removed: a blind one-frame
         // restore pops THIS one and leaves the collector's live, which
         // is how errors between windows ended up in the next one's
-        // drain (F-43).
+        // drain.
         set_error_handler(static fn(): bool => true);
 
         $collector->drain();
@@ -434,12 +434,10 @@ final class IssueCollectorTest extends TestCase
         // The mask case shares the wreck's constraint: reading the stack
         // the drain leaves behind means popping frames, which the host
         // suite would flag - and the pinned behaviour is PHP's own
-        // floor, so the child process says what the incumbent's
-        // TestCase does: set_error_handler never reports the mask it
-        // replaced, and the incumbent's own enumeration
-        // (activeErrorHandlers, TestCase.php:1751) reinstalls every
-        // handler on the stack with the default mask on every test, so
-        // no mask-preserving bar exists to match.
+        // floor: set_error_handler never reports the mask it replaced,
+        // so the only way to read the stack is to pop it and reinstall
+        // every handler with the default mask. No mask-preserving
+        // behavior exists to match.
         $repoRoot = dirname(__DIR__, 3);
         $script   = sys_get_temp_dir() . '/crucible-error-handler-mask-' . uniqid() . '.php';
 

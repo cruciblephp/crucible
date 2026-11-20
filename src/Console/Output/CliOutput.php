@@ -18,9 +18,9 @@ use const PHP_EOL;
  * CLI output that does not send HTTP headers.
  *
  * PHP's `print`/`printf`/`echo` write through the output layer, and the
- * first byte marks `headers_sent()` for the rest of the process (F-01,
- * ticket #2 item 1). A test that boots a production kernel and starts a
- * native session then fails with "headers have already been sent ...".
+ * first byte marks `headers_sent()` for the rest of the process. A test
+ * that boots a production kernel and starts a native session then fails
+ * with "headers have already been sent ...".
  * PHPUnit writes to the STDOUT stream, which bypasses that layer; so does
  * the terminal writer, so pre-run output goes through it — colour, plain
  * and errors alike. Reporter output after the run is out of scope: no

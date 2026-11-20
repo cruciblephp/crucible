@@ -29,7 +29,7 @@ use LucianoPereira\Crucible\Test\TestId;
  * `#[After]` hooks, tearDown(). The after part of a rollback therefore
  * belongs in a `finally`, which is the one thing a `#[Before]`/`#[After]`
  * trait could not give: `#[After]` is skipped when setUp() throws, so
- * the trait's cleanup fell to the next test (F-04, ticket #2 item 4).
+ * the trait's cleanup fell to the next test.
  *
  *     final class Transactional implements AroundEachTest
  *     {

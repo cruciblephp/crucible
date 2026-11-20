@@ -35,7 +35,7 @@ use function var_export;
 use const PHP_BINARY;
 
 /**
- * The analysis-only declarations for the aliased PHPUnit names (D-174):
+ * The analysis-only declarations for the aliased PHPUnit names (D-177):
  * the drift gate. The stubs file is a generated artifact — its claim
  * is that every name the run-time compatibility layer answers is
  * declared in a shape an analyser can parse, and that the shape says

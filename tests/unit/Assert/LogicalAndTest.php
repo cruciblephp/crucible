@@ -27,7 +27,7 @@ use function class_exists;
  * Symfony's BrowserKitAssertionsTrait and DomCrawlerAssertionsTrait
  * compose their constraints with `LogicalAnd::fromConstraints(...)`
  * under the incumbent's name; assertResponseRedirects() and
- * assertSelectorTextContains() could not run without it (F-03).
+ * assertSelectorTextContains() could not run without it.
  */
 #[CoversClass(LogicalAnd::class)]
 final class LogicalAndTest extends TestCase

@@ -48,7 +48,7 @@ use const PHP_BINARY;
  * (D-033). Impact selection used to add those edges only for the two
  * explicit suffixes, so editing a suite configuration selected nothing
  * from the Pest files named like PHPUnit ones — the ordinary shape of a
- * real Pest project (F-14).
+ * real Pest project.
  */
 final class PestConfigurationImpactTest extends TestCase
 {

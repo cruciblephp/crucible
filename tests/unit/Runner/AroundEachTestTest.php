@@ -48,7 +48,7 @@ use function substr_count;
  * configured extensions, in the process that runs it, including when
  * setUp() throws — the case dama/doctrine-test-bundle needs and a
  * `#[Before]`/`#[After]` trait cannot cover, because the after phase is
- * skipped when setUp() fails (F-04, ticket #2 item 4).
+ * skipped when setUp() fails.
  */
 #[CoversClass(TestRunner::class)]
 #[CoversClass(AroundEachTest::class)]

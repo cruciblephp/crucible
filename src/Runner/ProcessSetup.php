@@ -36,7 +36,7 @@ use const PHP_EOL;
 /**
  * What a process does before it discovers a suite: compatibility aliases, the
  * PHP settings PHPUnit applies (include_path, ini, constants, env), then the
- * bootstrap - which runs last and sees all of them (D-151, D-170).
+ * bootstrap - which runs last and sees all of them (D-151, D-169).
  */
 final class ProcessSetup
 {
@@ -123,7 +123,7 @@ final class ProcessSetup
         // Last, as PHPUnit loads it: a bootstrap that boots an application
         // reads the configured environment, ini values and constants. Ours
         // ran first, so Symfony's Dotenv saw no APP_ENV and booted dev
-        // while the tests believed they were in test (F-02).
+        // while the tests believed they were in test.
         $bootstrap = $overrides->bootstrap ?? $configuration->bootstrap;
 
         if ($bootstrap !== null) {

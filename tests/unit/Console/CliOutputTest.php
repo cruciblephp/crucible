@@ -20,7 +20,7 @@ use const PHP_EOL;
 
 /**
  * Pre-run CLI output goes through the terminal writer, not PHP's
- * print/printf, so it cannot mark HTTP headers as sent (F-01).
+ * print/printf, so it cannot mark HTTP headers as sent.
  */
 #[CoversClass(CliOutput::class)]
 final class CliOutputTest extends TestCase
