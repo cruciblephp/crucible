@@ -58,6 +58,10 @@ final readonly class WorkerManifest
      * @param ?non-empty-string      $dependencyArtifact  where this worker writes the values it was asked to provide; null = none wanted
      * @param list<non-empty-string> $paths               the run's test paths (D-152), which discovery runs instead of the configured suites
      * @param bool              $noExtensions           CLI --no-extensions (D-172): the worker registers no configured extension — the around-test role included — so a parallel run stays its sequential twin
+     * @param bool                   $fullDiscovery replay discovery in the original order for a coupled suite
+     * @param ?list<non-empty-string> $onlySuites
+     * @param list<non-empty-string>  $exceptSuites
+     * @param list<non-empty-string>  $suffixes
      */
     public function __construct(
         public string $configuration,
@@ -82,6 +86,10 @@ final readonly class WorkerManifest
         public ?string $globalState = null,
         public array $paths = [],
         public bool $noExtensions = false,
+        public bool $fullDiscovery = false,
+        public ?array $onlySuites = null,
+        public array $exceptSuites = [],
+        public array $suffixes = [],
     ) {}
 
     public function toJson(): string
@@ -112,6 +120,10 @@ final readonly class WorkerManifest
             'globalState'        => $this->globalState,
             'paths'              => $this->paths,
             'noExtensions'       => $this->noExtensions,
+            'fullDiscovery'      => $this->fullDiscovery,
+            'onlySuites'         => $this->onlySuites,
+            'exceptSuites'       => $this->exceptSuites,
+            'suffixes'           => $this->suffixes,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
@@ -275,6 +287,18 @@ final readonly class WorkerManifest
                 : null,
             $paths,
             ($decoded['noExtensions'] ?? false) === true,
+            ($decoded['fullDiscovery'] ?? false) === true,
+            is_array($decoded['onlySuites'] ?? null) ? self::strings($decoded['onlySuites']) : null,
+            self::strings($decoded['exceptSuites'] ?? null),
+            self::strings($decoded['suffixes'] ?? null),
         );
+    }
+
+    /** @return list<non-empty-string> */
+    private static function strings(mixed $value): array
+    {
+        return is_array($value)
+            ? array_values(array_filter($value, static fn(mixed $item): bool => is_string($item) && $item !== ''))
+            : [];
     }
 }

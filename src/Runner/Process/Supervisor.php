@@ -111,6 +111,10 @@ final class Supervisor
      * @param list<non-empty-string> $paths        the run's test paths (D-152), carried into every manifest so a worker discovers what the parent did
      * @param bool              $noExtensions     CLI --no-extensions, carried into every manifest (D-172) so a worker registers no configured extension either — the around-test role included
      * @param bool              $stopOnConfigured  a stop-on option is active, so a worker's early halt is an acknowledged cancellation
+     * @param bool                   $fullDiscovery replay discovery in the original order for a coupled suite
+     * @param ?list<non-empty-string> $onlySuites
+     * @param list<non-empty-string>  $exceptSuites
+     * @param list<non-empty-string>  $suffixes
      */
     public function __construct(
         private readonly Emitter $emitter,
@@ -139,6 +143,10 @@ final class Supervisor
         private readonly array $paths = [],
         private readonly bool $noExtensions = false,
         private readonly bool $stopOnConfigured = false,
+        private readonly bool $fullDiscovery = false,
+        private readonly ?array $onlySuites = null,
+        private readonly array $exceptSuites = [],
+        private readonly array $suffixes = [],
     ) {}
 
     /**
@@ -552,6 +560,10 @@ final class Supervisor
                         $globalState,
                         $this->paths,
                         $this->noExtensions,
+                        $this->fullDiscovery,
+                        $this->onlySuites,
+                        $this->exceptSuites,
+                        $this->suffixes,
                     ),
                     $planned->expected,
                     $this->phpArguments(),

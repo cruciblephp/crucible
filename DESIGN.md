@@ -7253,6 +7253,49 @@ appearing above an unchanged test, and a shadow file in the priority directory a
 root. ✓ `ImpactFingerprintTest` and `DependencyIndexTest` pin the key's parts, checkout
 independence, native lookups and the kept index.
 
+### D-180: a worker discovers its own units when the suite's files only declare
+
+A worker's manifest already names what it owes: one unit, the file and the id strings. Discovery
+ignored that and rebuilt the entire configured suite before filtering to the slice, so every test
+file was loaded, every data provider executed and every top-level side effect repeated, once per
+worker per unit. Measured on a three-file suite with `--parallel 3`: five loads of each file where
+two answer the same question; 300 trivial files took 10.0 s under `--parallel 8` where the
+sequential run takes 0.23 s. `TestDiscoverer::discoverUnits()` routes the named files through the
+same per-file rules the full pass uses (the dialect comes from the file's content, never its name,
+and a source file carrying inline tests builds through the inline frontend), and the ids come out
+identical. 300 files under `--parallel 8` drop from 10.0 s to 4.6 s.
+
+The sequential run loads every file into one process, and that is the behavior a parallel run must
+reproduce. A test file can lean on what another file did at load time: a function or class it
+declares, a constant it `define()`s, a global it sets, a file it `require`s. A worker that loads
+only its own files sees none of it, and the parallel twin then fails where the sequential run passed
+(✓ measured: Alpha `define()`s a constant, Beta's test reads it, and the parallel run errors with
+"Undefined constant" while the sequential one is green). So the fast path is taken only when both
+checks pass, and otherwise every worker repeats the parent's discovery with the same suite
+selection, suffixes and positional paths, then filters to its units:
+
+- no file references a class or calls a function another discovered file declares (a token scan;
+  function names compared case-insensitively, as PHP does);
+- every file's top level only declares: `declare`, `use`, an unbraced `namespace`, class-likes,
+  named functions, and the dialects' registration calls (`test()`, `it()`, `describe()`,
+  `beforeEach()`, `check()` and the rest), which register tests as a class does.
+
+The second check does not try to follow what a load-time statement changes; it treats any such
+statement as a reason for the slow path. One coupling escapes both checks: a class or function
+another file declares, named in a string and used dynamically (`$f = 'helper'; $f()`). No token
+scan can read that name, so such a suite can still pass sequentially and fail in parallel; it is
+the known limit of this rule, and the parallel run reports it as an error, never as a pass. The
+scan reads the files discovered before impact selection and filters, so a filtered run keeps the
+files its tests lean on.
+
+✓ `WorkerUnitDiscoveryTest` counts discoveries from inside shapes the rule accepts (a data
+provider, an expression inside a registration call) and holds each file to two (the parent's and
+its own worker's) under `--parallel`, `--process-isolation` and `--repeat`, with ids identical to
+the sequential run. ✓ `WorkerCoupledUnitsTest` runs coupled suites (a cross-file function call, a
+case-changed call, a load-order global, a `define()`d constant) serial and parallel and asserts the
+same ids and exit code. ✓ `UnitDependenciesTest` pins the rule on six declaring shapes and ten
+load-time effects.
+
 ---
 
 ## Closing the planned record

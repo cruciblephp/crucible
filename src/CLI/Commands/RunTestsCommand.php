@@ -86,6 +86,7 @@ use LucianoPereira\Crucible\Runner\OutcomeLog;
 use LucianoPereira\Crucible\Runner\Process\DependencyValues;
 use LucianoPereira\Crucible\Runner\Process\EventParser;
 use LucianoPereira\Crucible\Runner\Process\Supervisor;
+use LucianoPereira\Crucible\Runner\Process\UnitDependencies;
 use LucianoPereira\Crucible\Runner\Process\WorkerManifest;
 use LucianoPereira\Crucible\Runner\ProcessSetup;
 use LucianoPereira\Crucible\Runner\PropertyFailures;
@@ -560,6 +561,9 @@ final class RunTestsCommand
             // those differently: fix the tests, or fix the setup.
             return 2;
         }
+
+        // Keep the discovery set before impact selection or filters narrow it.
+        $discoveredGroups = $groups;
 
         // The progress view, chosen AFTER discovery so a Pest.php
         // pest()->printer()->compact() declaration is known (D-066);
@@ -1224,6 +1228,13 @@ final class RunTestsCommand
                 paths: $options->paths,
                 noExtensions: $options->noExtensions,
                 stopOnConfigured: $runnerOptions->stopsOnAnyOutcome(),
+                fullDiscovery: UnitDependencies::hasCoupling(
+                    array_values(array_unique(array_map(static fn(TestGroup $group): string => $group->tests[0]->id->file, $discoveredGroups))),
+                    $workingDirectory,
+                ),
+                onlySuites: $options->testsuite,
+                exceptSuites: $options->excludeTestsuite,
+                suffixes: $options->testSuffixes,
             ))->run($groups, $afterTests);
         } else {
             $summary = $runner->run($groups, $afterTests);
@@ -1698,7 +1709,43 @@ final class RunTestsCommand
         $emitter->subscribe(new NdjsonWriter(STDOUT));
 
         try {
-            $groups = $manifest->filter((new TestDiscoverer())->discover($configuration, $workingDirectory, paths: $manifest->paths));
+            // The manifest's units already name what this worker owes,
+            // so discovery routes exactly those files - the same
+            // per-file rules the parent's pass used, the same ids out -
+            // instead of re-reading and re-requiring the entire
+            // configured suite before discarding all but one file of
+            // it. Every data provider executes once for this worker's
+            // own files, not once per file in the project. A manifest
+            // with no units (the run selected nothing) keeps the
+            // parent's own answer: discover what the CLI paths say.
+            $unitFiles = [];
+
+            foreach ($manifest->units as $unit) {
+                $native = WorkingDirectory::native($workingDirectory->absolute($unit->file));
+
+                if (!in_array($native, $unitFiles, true)) {
+                    $unitFiles[] = $native;
+                }
+            }
+
+            $discoverer = new TestDiscoverer();
+            $groups     = $manifest->filter(
+                !$manifest->fullDiscovery && $unitFiles !== []
+                    ? $discoverer->discoverUnits(
+                        $configuration,
+                        $workingDirectory,
+                        $unitFiles,
+                        inlineScan: $manifest->onlySuites === null && $manifest->paths === [],
+                    )
+                    : $discoverer->discover(
+                        $configuration,
+                        $workingDirectory,
+                        $manifest->onlySuites,
+                        $manifest->exceptSuites,
+                        $manifest->suffixes,
+                        $manifest->paths,
+                    ),
+            );
         } catch (Exception $e) {
             fwrite(STDERR, $e->getMessage() . PHP_EOL);
 
