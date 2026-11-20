@@ -6,79 +6,88 @@
                 "pass",
                 "pass",
                 "pass",
+                "pass",
                 "pass"
             ],
-            "duration": 8.0142e-5
+            "duration": 4.1459e-5
         },
         "tests/ListedTest.php::testFails": {
             "outcomes": [
                 "fail",
                 "fail",
                 "fail",
+                "fail",
                 "fail"
             ],
-            "duration": 0.000448972
+            "duration": 0.000129834
         },
         "tests/ListedTest.php::testIsRisky": {
             "outcomes": [
                 "risky",
                 "risky",
                 "risky",
+                "risky",
                 "risky"
             ],
-            "duration": 1.8915e-5
+            "duration": 4.125e-6
         },
         "tests/ListedTest.php::testRows#first": {
             "outcomes": [
                 "pass",
                 "pass",
                 "pass",
+                "pass",
                 "pass"
             ],
-            "duration": 0.000100615
+            "duration": 5.5917e-5
         },
         "tests/ListedTest.php::testRows#0": {
             "outcomes": [
                 "fail",
                 "fail",
+                "fail",
                 "fail"
             ],
-            "duration": 0.000368389
+            "duration": 9.65e-5
         },
         "tests/ListedTest.php::testRows#1": {
             "outcomes": [
                 "fail",
                 "fail",
                 "fail",
+                "fail",
                 "fail"
             ],
-            "duration": 0.000211964
+            "duration": 5.792e-6
         },
         "tests/ListedTest.php::testWith#0": {
             "outcomes": [
                 "pass",
                 "pass",
                 "pass",
+                "pass",
                 "pass"
             ],
-            "duration": 6.7667e-5
+            "duration": 3.4917e-5
         },
         "tests/ListedTest.php::testWith#named": {
             "outcomes": [
                 "pass",
                 "pass",
                 "pass",
+                "pass",
                 "pass"
             ],
-            "duration": 1.8136e-5
+            "duration": 2.791e-6
         },
         "tests/ListedTest.php::testWith#1": {
             "outcomes": [
                 "pass",
                 "pass",
+                "pass",
                 "pass"
             ],
-            "duration": 1.6078e-5
+            "duration": 2.375e-6
         },
         "tests/ListedTest.php::testRows#2": {
             "outcomes": [

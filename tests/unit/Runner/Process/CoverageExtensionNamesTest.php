@@ -25,10 +25,14 @@ use ReflectionMethod;
 use function dirname;
 use function extension_loaded;
 use function fclose;
+use function get_loaded_extensions;
+use function ini_get;
+use function is_file;
 use function is_resource;
 use function proc_close;
 use function proc_open;
 use function stream_get_contents;
+use function strtolower;
 
 use const PHP_BINARY;
 use const PHP_OS_FAMILY;
@@ -41,9 +45,10 @@ use const PHP_OS_FAMILY;
  * extension_dir — `pcov` finds pcov.so on Linux and php_pcov.dll on
  * Windows. The suffixed `pcov.so` form is a Unix filename, and on
  * Windows the child answered "Unable to load dynamic library" while
- * the bare name resolves: measured with mbstring (a regular extension)
- * and Zend OPcache (the zend-extension mechanism xdebug loads
- * through), both of which this machine has loaded.
+ * the bare name resolves: measured with a loaded extension that is a
+ * shared library (chosen at run time, because some builds compile
+ * every extension in) and Zend OPcache (the zend-extension mechanism
+ * xdebug loads through).
  */
 #[CoversClass(Supervisor::class)]
 #[CoversClass(DriverFactory::class)]
@@ -51,11 +56,13 @@ final class CoverageExtensionNamesTest extends TestCase
 {
     public function testABareExtensionNameResolvesOnThisPlatform(): void
     {
-        if (!extension_loaded('mbstring')) {
-            self::markTestSkipped('mbstring is the stand-in for a dynamic regular extension.');
+        $shared = $this->sharedExtension();
+
+        if ($shared === null) {
+            self::markTestSkipped('No loaded extension is a shared library in extension_dir (this build compiles them in).');
         }
 
-        [$exit, $stdout, $stderr] = $this->php(['-d', 'extension=mbstring', '-r', 'echo "ok";']);
+        [$exit, $stdout, $stderr] = $this->php(['-d', 'extension=' . $shared, '-r', 'echo "ok";']);
 
         self::assertSame(0, $exit, $stderr);
         self::assertStringContainsString('ok', $stdout);
@@ -84,11 +91,13 @@ final class CoverageExtensionNamesTest extends TestCase
             self::markTestSkipped('The .so form fails to resolve on Windows; Unix builds it can load.');
         }
 
-        if (!extension_loaded('mbstring')) {
-            self::markTestSkipped('mbstring is the stand-in for a dynamic regular extension.');
+        $shared = $this->sharedExtension();
+
+        if ($shared === null) {
+            self::markTestSkipped('No loaded extension is a shared library in extension_dir.');
         }
 
-        [, , $stderr] = $this->php(['-d', 'extension=mbstring.so', '-r', 'echo "ok";']);
+        [, , $stderr] = $this->php(['-d', 'extension=' . $shared . '.so', '-r', 'echo "ok";']);
 
         self::assertStringContainsString(
             'Unable to load dynamic library',
@@ -151,6 +160,29 @@ final class CoverageExtensionNamesTest extends TestCase
         } else {
             self::assertContains('zend_extension=xdebug', $arguments);
         }
+    }
+
+    /**
+     * A loaded extension that exists as a file in extension_dir, so a bare
+     * `-d extension=NAME` has something to resolve. Builds that compile an
+     * extension in (Homebrew's mbstring) have none, and the test has
+     * nothing to say about them.
+     *
+     * @return ?non-empty-string
+     */
+    private function sharedExtension(): ?string
+    {
+        $directory = (string) ini_get('extension_dir');
+
+        foreach (get_loaded_extensions() as $name) {
+            $name = strtolower($name);
+
+            if ($name !== '' && (is_file($directory . '/' . $name . '.so') || is_file($directory . '/php_' . $name . '.dll'))) {
+                return $name;
+            }
+        }
+
+        return null;
     }
 
     /**
