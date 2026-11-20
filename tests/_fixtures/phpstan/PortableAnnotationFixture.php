@@ -17,10 +17,9 @@ use stdClass;
 /*
  * Analyzed by AssertAnnotationParityTest with NO extension included,
  * never executed: every narrowing below comes from the portable
- * docblocks on Assert alone (D-173) — the answers an analyser that has
+ * docblocks on Assert alone (D-178): the answers an analyser that has
  * never heard of Crucible reads straight from the tags, the way Mago
- * and Psalm read them, and the incumbent's own Assert has answered
- * since it grew the same 48 tags.
+ * and Psalm read them.
  *
  * One root parameter per case, no copies: PHPStan follows a narrowed
  * copy back onto the variable it came from, so a shared seed would

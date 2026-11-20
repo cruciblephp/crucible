@@ -7178,6 +7178,39 @@ extends, attribute flags, enum cases), read by the test from the file's own text
 generator. The Mockery names wait for the same treatment in a follow-up; a `crucible stubs` command
 is unnecessary while the file ships with the package.
 
+### D-178: the assert narrowing is a portable docblock, not only an extension's answer
+
+A user's Mago run over a migrated suite gave 2,738 errors once `phpunit/phpunit` was gone. The other
+half of them (D-177 took the class names) was narrowing: it lived entirely in the PHPStan
+extension, so an analyser that cannot load one read none of it, `assertIsString($x)` left `$x`
+mixed, and every later use of it was a type error. The narrowing is already written down once, in
+`AssertConditions` (D-049): `assertIsString($x)` guarantees `is_string($x)`. `Assert` now carries the
+same fact as `@phpstan-assert`/`@psalm-assert` docblocks, so the analysers that read tags get it
+without the extension. The tag for an is-family method is the type of its function (`is_string` is
+`string`, `is_array` is `array<mixed>`), the negated family the same type behind a `!`; the
+closed-resource pair and the contains-only family, which the table never spoke for, are named for
+what they prove (`assertContainsOnlyInt` is `iterable<int>`).
+
+PHPStan keeps its extension. Tags and extension intersect, so precision survives: the `array{}`
+answer for an empty-list narrowing is unchanged by the `list<mixed>` tag beside it, which the
+black-box fixtures and probe 30 pin. Nine methods stay extension-only because no portable tag says
+what they prove: `empty()` is not a type (`assertEmpty`, `assertNotEmpty`), `!==` against an
+expression has no negated-equals tag (`assertNotSame`), and count, key and property knowledge is a
+shaped array or a has-offset, not a type (`assertCount`, `assertArrayHasKey`,
+`assertObjectHasProperty` and their negatives). `assertSame` and `assertInstanceOf` use a template
+(`@phpstan-assert =ExpectedType $actual`); Psalm's tag has no `=` form, so its twin narrows to
+`ExpectedType`, which `===` makes sound for both.
+
+✓ `AssertAnnotationParityTest` pins the three-way accounting. Every tag is an exact docblock line.
+The is-family tags are derived from `AssertConditions`' own table in the test, so a tag that
+disagrees with `is_x()` fails by name. The table's three narrowing lists are reflected, so a method
+added to the extension lands in the gate the moment it is added, as annotated or as extension-only.
+The extension-only nine are locked tag-free. And the portability claim is proven black-box with the
+same `Analysis::run` the conformance suite uses and no extension included: `PortableAnnotationFixture`
+narrows to `string`, `int|string`, `int|numeric-string`, `false`, `stdClass`, `list<mixed>`,
+`resource`, `'const'`, `array<0|1, int>` and `array<0|1, stdClass>` from the docblocks alone.
+Before the change that run fails on the very first method.
+
 ---
 
 ## Closing the planned record

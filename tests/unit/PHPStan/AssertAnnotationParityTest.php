@@ -25,9 +25,11 @@ use function in_array;
 use function is_array;
 use function is_string;
 use function sort;
+use function strlen;
+use function substr;
 
 /**
- * The portable assert annotations (D-173): every narrowing Crucible's
+ * The portable assert annotations (D-178): every narrowing Crucible's
  * PHPStan extension provides is also declared on Assert as a tag
  * `@phpstan-assert`/`@psalm-assert`, so an analyser that cannot load a
  * PHPStan extension — Mago, Psalm — reads the narrowing straight from
@@ -42,10 +44,13 @@ final class AssertAnnotationParityTest extends TestCase
 {
     /**
      * The annotation each method carries, as the exact docblock lines.
-     * The set is the incumbent's own 48 (PHPUnit 12.5.40's Assert) —
-     * the tags the reporter's Mago run proved — on Crucible's
-     * signatures. PHPStan reads the `@phpstan-assert` form; Psalm and
-     * the analysers that speak its vocabulary read `@psalm-assert`.
+     * Each follows from what the method guarantees: the is-family from
+     * AssertConditions' own table (`assertIsString` guarantees
+     * `is_string`, so it carries `string`; the derivation test below
+     * holds the two together), the contains-only family and the
+     * closed-resource pair from their names. PHPStan reads the
+     * `@phpstan-assert` form; Psalm and the analysers that speak its
+     * vocabulary read `@psalm-assert`.
      *
      * @var array<non-empty-string, list<non-empty-string>>
      */
@@ -122,7 +127,7 @@ final class AssertAnnotationParityTest extends TestCase
     ];
 
     /**
-     * The annotated methods the extension has never narrowed (F-10's
+     * The annotated methods the extension has never narrowed (the
      * closed-resource pair; the contains-only family, which
      * AssertConditions has never spoken for): the tags are all these
      * have, on every analyser alike.
@@ -191,6 +196,36 @@ final class AssertAnnotationParityTest extends TestCase
         sort($expected);
 
         self::assertSame($expected, $derived, 'A method moved between the annotation and extension worlds without updating the list.');
+    }
+
+    public function testTheIsFamilyTagsAgreeWithTheNarrowingTable(): void
+    {
+        // The tags are not a second opinion: assertIsX guarantees is_x(),
+        // and AssertConditions says so. The type the tag names is that
+        // function's own type (`is_string` is `string`), with array and
+        // iterable carrying their element type, and the negated family
+        // the same type behind a `!`.
+        $reflection = new ReflectionClass(AssertConditions::class);
+
+        foreach (['IS_FUNCTIONS' => '', 'IS_NOT_FUNCTIONS' => '!'] as $constant => $negation) {
+            $table = $reflection->getConstant($constant);
+
+            self::assertIsArray($table);
+
+            foreach ($table as $method => $function) {
+                self::assertIsString($method);
+                self::assertIsString($function);
+
+                $type = substr($function, strlen('is_'));
+                $type = in_array($type, ['array', 'iterable'], true) ? $type . '<mixed>' : $type;
+
+                self::assertSame(
+                    ['@phpstan-assert ' . $negation . $type . ' $actual', '@psalm-assert ' . $negation . $type . ' $actual'],
+                    self::ANNOTATIONS[$method] ?? null,
+                    $method . ' carries a tag that disagrees with ' . $function . '() in the narrowing table.',
+                );
+            }
+        }
     }
 
     public function testTheExtensionOnlyMethodsCarryNoAssertAnnotation(): void

@@ -657,8 +657,8 @@ abstract class Assert
     }
 
     /**
-     * A closed resource is a resource; the incumbent narrows to the
-     * supertype too, and no portable tag says "closed".
+     * A closed resource is a resource, and no portable tag says "closed",
+     * so the tag names the supertype.
      *
      * @phpstan-assert resource $actual
      * @psalm-assert resource $actual
@@ -934,8 +934,8 @@ abstract class Assert
     }
 
     /**
-     * A closed resource is a resource; the incumbent narrows to the
-     * supertype too, and no portable tag says "closed".
+     * A closed resource is a resource, and no portable tag says "closed",
+     * so the tag names the supertype.
      *
      * @phpstan-assert iterable<resource> $haystack
      * @psalm-assert iterable<resource> $haystack
