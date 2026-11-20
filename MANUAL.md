@@ -102,6 +102,26 @@ Some settings worth knowing early:
 
 A CLI option always beats the same setting here.
 
+### Environment and PHP settings
+
+`->ini()`, `->constant()` and `->env()` configure the process the suite runs in. They apply
+**before** the bootstrap — INI, constants, environment, then the bootstrap — as PHPUnit's
+`<php><ini>`, `<const>` and `<env>` do:
+
+```php
+return Crucible::configure()
+    ->ini('memory_limit', '512M')
+    ->constant('APP_DEBUG', false)
+    ->env('APP_ENV', 'test')
+    ->bootstrap('tests/bootstrap.php');
+```
+
+That order is what a Symfony bootstrap needs: `Dotenv::bootEnv()` in `tests/bootstrap.php` reads
+the configured `APP_ENV` instead of loading `.env.dev`. `->env()` keeps a value the environment
+already defines unless `force: true`, and never writes `$_SERVER`; `->constant()` defines the
+constant before the bootstrap, so a bootstrap that `define()`s the same name finds it already
+defined and should guard its own write with `defined()`.
+
 ---
 
 ## 3. Writing tests
@@ -821,6 +841,12 @@ compatibility layer fails fast instead, naming the class. Either order says the 
 the shim is obsolete now, so delete it — the same for any other class declared under a name
 the aliases cover (`LogicalOr`, `LogicalNot`, the doubles, ...).
 
+Two orderings a Symfony migration depends on. Configuration's `->ini()`, `->constant()` and
+`->env()` apply before the bootstrap, so `Dotenv::bootEnv()` sees the configured `APP_ENV` (see
+§2). And pre-run output goes to the terminal stream, so the banner and the configuration notes no
+longer set `headers_sent()`; a test that boots a kernel with a native session no longer fails on
+them.
+
 If step 3 isn't green, run `./vendor/bin/crucible compat-check` before digging in by hand.
 While the incumbent is still installed (it's the oracle being compared against), it runs your
 real suite through both engines and reports every test that passes on the incumbent but fails on
@@ -1021,3 +1047,11 @@ in `~/.zshrc` after `compinit`, or autoloaded from a file on `$fpath`.
 The script is generated from the parser itself, not written alongside it, so it cannot offer
 an option the binary rejects or hide one it takes. Every alias is included, which means the
 PHPUnit spellings complete too.
+
+---
+
+## Credits
+
+1.3.2's Symfony, Doctrine and analyser work came from Thomas (lekoala), through the
+[issue #2](https://github.com/cruciblephp/crucible/issues/2) report and the 19 pull requests
+behind it. Thank you.

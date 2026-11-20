@@ -407,7 +407,10 @@ against Crucible's own class only._
 
 Most of this release is the work of Thomas (lekoala), who moved a Symfony 8.1 / Doctrine /
 PostgreSQL suite to Crucible, wrote down what broke (issue #2), and sent 19 pull requests that fix
-it. Thank you.
+it. The recommendations in that issue are the spine of the release: terminal-stream output,
+env/ini before the bootstrap, `LogicalAnd`, the around-test hook for DAMA, analyser stubs and
+portable assert tags. The two item-6 requests (`--testsuite` path intersection and per-class
+`--profile`) remain open. Thank you.
 
 | Shipped | Records |
 |---|---|

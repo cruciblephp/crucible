@@ -168,6 +168,17 @@ and defects-first scheduling, VMVM-style state isolation, Ekstazi-style impact s
 
 ---
 
+## Credits
+
+Crucible 1.3.2 is mostly the work of [Thomas (lekoala)](https://github.com/lekoala), who moved a
+Symfony 8.1 / Doctrine / PostgreSQL suite from PHPUnit to Crucible, wrote down what broke in
+[issue #2](https://github.com/cruciblephp/crucible/issues/2), and sent the 19 pull requests that
+fix most of it. The recommendations in that issue — terminal-stream output, env/ini before the
+bootstrap, `LogicalAnd`, the around-test hook for DAMA, analyser stubs and portable assert tags —
+shaped the release. Thank you.
+
+---
+
 **The code is MIT.** The name "Crucible" and the Crucible logo are trademarks of Luciano
 Federico Pereira and are **not** covered by that licence — see [LICENSE](LICENSE). Fork the
 software freely; do not ship it under this name or mark.
