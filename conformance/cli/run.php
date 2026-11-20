@@ -32,7 +32,7 @@ $root = \dirname(__DIR__, 2);
 /** @var array<non-empty-string, array{project: non-empty-string, argv: list<string>}> $cases */
 $cases = require __DIR__ . '/cases.php';
 
-require \dirname(__DIR__) . '/process.php';
+require __DIR__ . '/../process.php';
 
 $given     = $_SERVER['argv'] ?? [];
 $arguments = \array_values(\array_filter(\array_slice(\is_array($given) ? $given : [], 1), \is_string(...)));

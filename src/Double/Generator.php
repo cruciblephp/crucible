@@ -428,7 +428,7 @@ final class Generator
         // (Countable::count(): int) — invisible to getReturnType();
         // omitting them makes every generated override a deprecation.
         $returnType = $method->getReturnType() ?? $method->getTentativeReturnType();
-        $returns    = $returnType !== null ? ': ' . $this->typeCode($returnType, $reflection) : '';
+        $returns    = $returnType instanceof ReflectionType ? ': ' . $this->typeCode($returnType, $reflection) : '';
 
         $signature = sprintf(
             '    public %sfunction %s(%s)%s',
@@ -516,7 +516,7 @@ final class Generator
     {
         $type = $parameter->getType();
 
-        $code = ($type !== null ? $this->typeCode($type, $reflection) . ' ' : '')
+        $code = ($type instanceof ReflectionType ? $this->typeCode($type, $reflection) . ' ' : '')
             . ($parameter->isPassedByReference() ? '&' : '')
             . ($parameter->isVariadic() ? '...' : '')
             . '$' . $parameter->getName();

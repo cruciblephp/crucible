@@ -36,6 +36,6 @@ final readonly class Image implements Block
 
     public static function sample(): self
     {
-        return new self((string) base64_decode(self::SAMPLE_JPEG, true));
+        return new self(base64_decode(self::SAMPLE_JPEG, true));
     }
 }

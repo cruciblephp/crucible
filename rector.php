@@ -88,11 +88,4 @@ return RectorConfig::configure()
         \Rector\Php81\Rector\Array_\ArrayToFirstClassCallableRector::class => [
             __DIR__ . '/tests/unit/Dialect/Pest/PestRegistryTest.php',
         ],
-        // Rector cannot see through the trait-composed urlPart(): string
-        // and would add a (string) cast PHPStan then flags as useless —
-        // the two tools deadlock on this one file (5th rector-vs-code
-        // gotcha, see D-046 for the pattern).
-        \Rector\Php81\Rector\FuncCall\NullToStrictStringFuncCallArgRector::class => [
-            __DIR__ . '/src/Browser/Playwright/PageAssertions.php',
-        ],
     ]);

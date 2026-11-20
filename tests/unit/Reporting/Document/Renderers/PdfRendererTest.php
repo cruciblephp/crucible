@@ -289,6 +289,6 @@ final class PdfRendererTest extends TestCase
 
     private function jpeg(): string
     {
-        return (string) base64_decode(self::FIXTURE_JPEG, true);
+        return base64_decode(self::FIXTURE_JPEG, true);
     }
 }

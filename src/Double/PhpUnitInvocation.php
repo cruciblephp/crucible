@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\Double;
 
 use BackedEnum;
 use ReflectionMethod;
+use ReflectionType;
 use UnitEnum;
 
 use function bin2hex;
@@ -87,7 +88,7 @@ final class PhpUnitInvocation
 
         $type = $method?->getReturnType() ?? $method?->getTentativeReturnType();
 
-        return sprintf('%s::%s(%s)%s', $class, $name, implode(', ', $exported), $type === null ? '' : ': ' . ltrim((string) $type, '?'));
+        return sprintf('%s::%s(%s)%s', $class, $name, implode(', ', $exported), $type instanceof ReflectionType ? ': ' . ltrim((string) $type, '?') : '');
     }
 
     /** How PHPUnit names the parameter at $index: `$name`, or the position past the declared ones. */

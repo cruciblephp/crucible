@@ -10,7 +10,6 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible;
 
-use function dirname;
 use function file_get_contents;
 use function is_string;
 use function preg_replace;
@@ -51,7 +50,7 @@ final class Version
         static $logo = null;
 
         if (!is_string($logo)) {
-            $svg  = @file_get_contents(dirname(__DIR__) . '/assets/crucible.svg');
+            $svg  = @file_get_contents(__DIR__ . '/../assets/crucible.svg');
             $logo = is_string($svg) ? trim((string) preg_replace('/^<\?xml[^>]*\?>\s*/', '', $svg)) : '';
         }
 
