@@ -2,6 +2,29 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.3.2 — 2026-11-20
+
+Thanks to Thomas (lekoala), who moved a Symfony 8.1 / Doctrine / PostgreSQL suite from PHPUnit to Crucible, reported what broke in issue #2, and sent the 19 pull requests most of this release is made from.
+
+- Fixed `->env()`, `->ini()` and `->constant()` being applied after the bootstrap, so Symfony's `Dotenv::bootEnv()` saw no `APP_ENV` and loaded the dev environment: they apply before it, as PHPUnit's do. A bootstrap that `define()`s a constant also set with `->constant()` now finds it defined
+- Fixed a bootstrap given as a Windows absolute path, `C:\…` or a UNC share, never being loaded
+- Fixed the start banner and the messages before a run marking HTTP headers as sent, so a test booting a kernel that starts a native session failed with "headers have already been sent": they are written to the terminal stream, as PHPUnit's printer writes
+- Added `LogicalAnd`, and `PHPUnit\Framework\Constraint\LogicalAnd` and `LogicalOr` as aliases, so Symfony's `assertResponseRedirects()`, `assertSelectorTextContains()` and the rest work; delete a project's own shim of either, which now collides with the alias
+- Added `->aroundEachTest()` and the `AroundEachTest` extension role: a callable around each test's whole lifecycle, in the process that runs it, so a rolled-back transaction (what dama/doctrine-test-bundle does) closes in a `finally` even when `setUp()` throws
+- Added `stubs/phpunit.php`, the PHPUnit names the compatibility layer aliases, declared for Mago, Psalm and other analysers that run no PHP
+- Added `@phpstan-assert` and `@psalm-assert` to `Assert`, so `assertIsString($x)` and the rest narrow in analysers that cannot load the PHPStan extension; PHPStan keeps the extension's answers
+- Changed a test that leaves an error handler installed, or removes one it did not install, to be risky; under `--fail-on-risky` it fails the run. The next test starts from the handlers the previous one was given
+- Changed `--parallel` workers to discover only the files their units name, after loading what the parent's discovery loaded, so a worker has every function and class the sequential run has; a suite whose test files do anything at load time but declare keeps full discovery. 300 files under `--parallel 8` went from 6.7–7.5 s to 4.3–5.2 s
+- Fixed `--dirty` selecting nothing on a red suite after a regenerated classmap, a reversed loader order or a file that appears ahead of another in a PSR-4 directory; fixed the dependency index never persisting on Windows, and ignoring `--cache-directory`
+- Fixed `--dirty` and `--changed` missing renames, untracked files above a nested working directory, and filenames with spaces or newlines
+- Fixed a run narrowed by `--dirty` or `--test-suffix` being treated as complete, which dropped stored data of tests it did not run
+- Fixed a Pest file named `*Test.php` not being selected when the `Pest.php` or `Datasets/` above it changed
+- Fixed a Vitest suite not running when its lockfile, `package.json`, Vite or Vitest configuration or `tsconfig.json` changed, and a shared module outside every suite's directory being dropped: it is passed to each suite's `related`
+- Fixed a parallel worker that finished without reporting a test, or reported one it was not given, still letting the run count as complete; `--repeat` repetitions are each accounted for
+- Fixed a coverage worker on Windows starting without its driver: it is loaded by the bare name, `extension=pcov` or `zend_extension=xdebug`, which every platform resolves
+- Fixed the OTR log declaring version 0.1.0 of the `php` namespace, which was never published: it declares 0.0.1, which the schema imports
+- Changed a worker to read the run history only when ordering by `defects` or `duration`
+
 ## v1.3.0 — 2026-11-15
 
 - Added a file and line to every problem in the console, TestDox, Markdown and PDF reports: an assertion names the line in the test file, and an error names the line where it was thrown

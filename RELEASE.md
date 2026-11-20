@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-15 (D-001..D-168, 1.3.0). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-20 (D-001..D-180, 1.3.2). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -402,6 +402,28 @@ against Crucible's own class only._
 | A problem names the file and line worth opening: an assertion names the test file's line, an error the line it was thrown at, in the console, TestDox, Markdown and PDF reports | `Reporting\FailureLocation`, `Reporting\Document\ProblemEntry`, `Reporting\ConsoleReporter` |
 | Named coverage targets, in `crucible.php` or as `--coverage-target Name=path`, each judged on its own slice | `Coverage\CoverageTarget`, `Coverage\CoverageTargetSet`, `Configuration\Builder::coverageTarget()` |
 | `--coverage-min` (alias `--mins`): `Name:pct`, `Name1,Name2:pct` or `@file`, with the target's own floor winning over the option and `--min` | `Coverage\CoverageTargetSet`, `CLI\PostRunReport::coverageTargetFloors()` |
+
+## 1.3.2
+
+Most of this release is the work of Thomas (lekoala), who moved a Symfony 8.1 / Doctrine /
+PostgreSQL suite to Crucible, wrote down what broke (issue #2), and sent 19 pull requests that fix
+it. Thank you.
+
+| Shipped | Records |
+|---|---|
+| `env()`, `ini()` and constants apply before the bootstrap, as PHPUnit's do, so a bootstrap that boots an application reads the configured environment (D-169) | `Runner\ProcessSetup::phpSettings()` |
+| Pre-run CLI output goes through the terminal stream, so it no longer marks HTTP headers as sent (D-170) | `Console\Output\CliOutput`, `CLI\Application`, `CLI\Commands\RunTestsCommand` |
+| `LogicalAnd`, and `LogicalAnd` and `LogicalOr` under PHPUnit's names, for Symfony's BrowserKit and DomCrawler assertions (D-171) | `Assert\Constraint\LogicalAnd`, `Compat\PhpUnitCompatibility` |
+| `->aroundEachTest()` and the around-test extension role: a per-test bracket in the process that runs the test, for rolled-back transactions (D-172) | `Extension\AroundEachTest`, `Configuration\Builder::aroundEachTest()`, `Runner\TestRunner` |
+| A worker reads the run history only for `defects` and `duration` ordering (D-173) | `Configuration\ExecutionOrder::needsHistory()` |
+| A coverage worker loads its driver by the bare name every platform resolves (D-174) | `Runner\Process\Supervisor::phpArguments()`, `Coverage\DriverFactory` |
+| The OTR log declares the published `php` namespace, 0.0.1 (D-175) | `Reporting\Subscriber\Subscribers\OtrSubscriber` |
+| A test that leaves an error handler behind, or removes one it did not install, is risky, and the next test starts from the stack the previous one was given (D-176) | `Runner\IssueCollector`, `Runner\TestRunner` |
+| `stubs/phpunit.php`: the aliased PHPUnit names declared for analysers that run no PHP, generated from the alias map (D-177) | `Compat\Stubs\PhpUnitDeclarations` |
+| `@phpstan-assert` and `@psalm-assert` on `Assert`, derived from the extension's narrowing table (D-178) | `Assert\Assert`, `PHPStan\AssertConditions` |
+| The dependency index keys on the Composer resolution and persists on Windows; a changed file names what it shadows (D-179) | `Impact\ImpactFingerprint`, `Impact\DependencyIndex`, `Impact\DependencyGraph::shadowedBy()` |
+| A worker discovers its own units after loading what the parent's discovery loaded (D-180) | `Runner\Process\UnitDependencies`, `Runner\TestDiscoverer::discoverUnits()` |
+| `--dirty` and `--test-suffix` narrow the plan and leave stored test data alone; renames and nested-directory runs reach the change set; a Pest `*Test.php` is selected when its `Pest.php` changes; a Vitest suite runs whole when its lockfile or configuration changes; every worker result is accounted for | `CLI\Commands\RunTestsCommand`, `Impact\ChangedFiles`, `Impact\ImpactSelection`, `Impact\VitestImpact`, `Runner\Process\Supervisor` |
 
 ## Design inputs honored
 
