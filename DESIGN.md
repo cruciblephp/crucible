@@ -7124,16 +7124,15 @@ produces the already-loaded notice either way; a child that must load its own no
 platform. The test picks its shared extension at run time and skips on a build that compiles every
 extension in.
 
-### D-175: the PHP extension of the OTR log declares the namespace the schema knows
+### D-175: the PHP extension of the OTR log declares the namespace the target schema imports
 
-The OTR subscriber stamped its `php:` extension with `0.1.0`, a version of the
-`https://schema.phpunit.de/otr/php/` namespace that has never been published. The published schema
-imports `otr/php/0.0.1` and declares `phpVersion` and `threadModel` there, so once the reference
-schema is installed (the one condition `OtrSchemaTest` skips on), validation fails demanding
-elements the emitted namespace cannot provide. Measured with the schema present: the test fails
-with "No matching global element declaration available" for both `php:` elements; after the
-one-line alignment it validates the whole mixed run. The interop format is only as correct as the
-schema it answers to.
+The OTR subscriber emits `https://schema.phpunit.de/otr/php/0.1.0`, the namespace PHPUnit 13.4.8's
+`otr.xsd` imports and where it declares `phpVersion` and `threadModel`. A proposed change to
+`0.0.1`, measured against an older incumbent, does not validate against the schema the supported
+target publishes: with the oracle installed, `OtrSchemaTest` fails with "No matching global
+element declaration available" for both `php:` elements. The namespace stays `0.1.0`, and the test
+validates the whole mixed run against the oracle's schema. The interop format is only as correct
+as the schema it answers to.
 
 ### D-176: the issue window brackets the handler stack, and a test that disturbs it is risky
 

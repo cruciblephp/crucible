@@ -417,7 +417,6 @@ it. Thank you.
 | `->aroundEachTest()` and the around-test extension role: a per-test bracket in the process that runs the test, for rolled-back transactions (D-172) | `Extension\AroundEachTest`, `Configuration\Builder::aroundEachTest()`, `Runner\TestRunner` |
 | A worker reads the run history only for `defects` and `duration` ordering (D-173) | `Configuration\ExecutionOrder::needsHistory()` |
 | A coverage worker loads its driver by the bare name every platform resolves (D-174) | `Runner\Process\Supervisor::phpArguments()`, `Coverage\DriverFactory` |
-| The OTR log declares the published `php` namespace, 0.0.1 (D-175) | `Reporting\Subscriber\Subscribers\OtrSubscriber` |
 | A test that leaves an error handler behind, or removes one it did not install, is risky, and the next test starts from the stack the previous one was given (D-176) | `Runner\IssueCollector`, `Runner\TestRunner` |
 | `stubs/phpunit.php`: the aliased PHPUnit names declared for analysers that run no PHP, generated from the alias map (D-177) | `Compat\Stubs\PhpUnitDeclarations` |
 | `@phpstan-assert` and `@psalm-assert` on `Assert`, derived from the extension's narrowing table (D-178) | `Assert\Assert`, `PHPStan\AssertConditions` |

@@ -22,7 +22,6 @@ Thanks to Thomas (lekoala), who moved a Symfony 8.1 / Doctrine / PostgreSQL suit
 - Fixed a Vitest suite not running when its lockfile, `package.json`, Vite or Vitest configuration or `tsconfig.json` changed, and a shared module outside every suite's directory being dropped: it is passed to each suite's `related`
 - Fixed a parallel worker that finished without reporting a test, or reported one it was not given, still letting the run count as complete; `--repeat` repetitions are each accounted for
 - Fixed a coverage worker on Windows starting without its driver: it is loaded by the bare name, `extension=pcov` or `zend_extension=xdebug`, which every platform resolves
-- Fixed the OTR log declaring version 0.1.0 of the `php` namespace, which was never published: it declares 0.0.1, which the schema imports
 - Changed a worker to read the run history only when ordering by `defects` or `duration`
 
 ## v1.3.0 — 2026-11-15
