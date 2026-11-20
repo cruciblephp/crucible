@@ -165,7 +165,9 @@ readonly class WithoutErrorHandler extends \LucianoPereira\Crucible\Attributes\W
 namespace PHPUnit\Framework\Constraint;
 
 abstract class Constraint extends \LucianoPereira\Crucible\Assert\Constraint\Constraint {}
+class LogicalAnd extends \LucianoPereira\Crucible\Assert\Constraint\LogicalAnd {}
 class LogicalNot extends \LucianoPereira\Crucible\Assert\Constraint\LogicalNot {}
+class LogicalOr extends \LucianoPereira\Crucible\Assert\Constraint\LogicalOr {}
 
 namespace PHPUnit\Framework\MockObject;
 
