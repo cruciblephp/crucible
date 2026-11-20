@@ -79,9 +79,23 @@ final class WorkerUnitDiscoveryTest extends TestCase
             use LucianoPereira\Crucible\Configuration\Crucible;
 
             return Crucible::configure()
+                ->bootstrap('bootstrap.php')
                 ->testSuite('unit', 'tests')
                 ->source(include: ['src'])
                 ->build();
+            PHP);
+
+        // Source resolves through Composer, as in a real project: a
+        // worker that never runs Calculator's unit still gets the class
+        // the way every process does, so it need not be preloaded.
+        file_put_contents($this->project . '/bootstrap.php', <<<'PHP'
+            <?php
+
+            declare(strict_types=1);
+
+            $loader = new \Composer\Autoload\ClassLoader();
+            $loader->addClassMap(['Calculator' => __DIR__ . '/src/Calculator.php']);
+            $loader->register();
             PHP);
 
         // Every fixture counts its discovery from inside a shape the

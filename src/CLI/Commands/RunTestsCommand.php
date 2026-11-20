@@ -540,14 +540,30 @@ final class RunTestsCommand
 
         $viewListsIssues = false;
 
-        $discover = static fn(): array => (new TestDiscoverer())->discover(
-            $configuration,
-            $workingDirectory,
-            $options->testsuite,
-            $options->excludeTestsuite,
-            $options->testSuffixes,
-            $options->paths,
-        );
+        // A run that will spawn workers watches its own discovery, so each
+        // worker can load what it loaded and discover only its units
+        // (D-180). A sequential run has no worker to tell, and pays nothing.
+        $workerDiscovery = UnitDependencies::full();
+        $observe         = ($options->parallel ?? 1) > 1 || $options->processIsolation;
+
+        $discover = static function () use ($configuration, $workingDirectory, $options, $observe, &$workerDiscovery): array {
+            $discover = static fn(): array => (new TestDiscoverer())->discover(
+                $configuration,
+                $workingDirectory,
+                $options->testsuite,
+                $options->excludeTestsuite,
+                $options->testSuffixes,
+                $options->paths,
+            );
+
+            if (!$observe) {
+                return $discover();
+            }
+
+            [$groups, $workerDiscovery] = UnitDependencies::observe($discover, $workingDirectory, $configuration->source);
+
+            return $groups;
+        };
 
         try {
             $groups = $opened instanceof MapView ? $discover() : $this->discoveryMark()->sweepWhile($discover);
@@ -561,9 +577,6 @@ final class RunTestsCommand
             // those differently: fix the tests, or fix the setup.
             return 2;
         }
-
-        // Keep the discovery set before impact selection or filters narrow it.
-        $discoveredGroups = $groups;
 
         // The progress view, chosen AFTER discovery so a Pest.php
         // pest()->printer()->compact() declaration is known (D-066);
@@ -1228,10 +1241,8 @@ final class RunTestsCommand
                 paths: $options->paths,
                 noExtensions: $options->noExtensions,
                 stopOnConfigured: $runnerOptions->stopsOnAnyOutcome(),
-                fullDiscovery: UnitDependencies::hasCoupling(
-                    array_values(array_unique(array_map(static fn(TestGroup $group): string => $group->tests[0]->id->file, $discoveredGroups))),
-                    $workingDirectory,
-                ),
+                fullDiscovery: $workerDiscovery->fullDiscovery,
+                preload: $workerDiscovery->preload,
                 onlySuites: $options->testsuite,
                 exceptSuites: $options->excludeTestsuite,
                 suffixes: $options->testSuffixes,
@@ -1728,9 +1739,21 @@ final class RunTestsCommand
                 }
             }
 
+            $ownUnits = !$manifest->fullDiscovery && $unitFiles !== [];
+
+            // What the parent's discovery loaded, loaded here first and in
+            // its order, so this process declares what the sequential run
+            // declares before any test can name it (D-180). Each file only
+            // declares; the parent checked.
+            if ($ownUnits) {
+                foreach ($manifest->preload as $file) {
+                    require_once WorkingDirectory::native($workingDirectory->absolute($file));
+                }
+            }
+
             $discoverer = new TestDiscoverer();
             $groups     = $manifest->filter(
-                !$manifest->fullDiscovery && $unitFiles !== []
+                $ownUnits
                     ? $discoverer->discoverUnits(
                         $configuration,
                         $workingDirectory,

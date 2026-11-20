@@ -219,6 +219,126 @@ final class WorkerCoupledUnitsTest extends TestCase
         self::assertSame($this->ranIds($sequential), $this->ranIds($parallel));
     }
 
+    public function testAFunctionNamedOnlyInAStringIsThereInParallel(): void
+    {
+        // The gap no scan can close: Beta builds the name at run time. Both
+        // files only declare, so the workers keep their own units - and
+        // still have Alpha's function, because each preloads what the
+        // parent's discovery loaded.
+        file_put_contents($this->project . '/tests/AlphaTest.php', <<<'PHP'
+            <?php
+
+            use LucianoPereira\Crucible\Attributes\DataProvider;
+            use LucianoPereira\Crucible\Framework\TestCase;
+
+            function alpha_helper(): string
+            {
+                return 'from alpha';
+            }
+
+            final class AlphaTest extends TestCase
+            {
+                public static function rows(): array
+                {
+                    file_put_contents(__DIR__ . '/../counters.log', "load alpha\n", FILE_APPEND);
+
+                    return [['from alpha']];
+                }
+
+                #[DataProvider('rows')]
+                public function testAlphaDeclaresIt(string $expected): void
+                {
+                    self::assertSame($expected, alpha_helper());
+                }
+            }
+            PHP);
+        file_put_contents($this->project . '/tests/BetaTest.php', <<<'PHP'
+            <?php
+
+            use LucianoPereira\Crucible\Framework\TestCase;
+
+            final class BetaTest extends TestCase
+            {
+                public function testBetaCallsItByAComputedName(): void
+                {
+                    $name = 'alpha' . '_helper';
+
+                    self::assertSame('from alpha', $name());
+                }
+            }
+            PHP);
+
+        [$sequentialExit, , $sequential]    = $this->crucible([]);
+        [$parallelExit, $stdout, $parallel] = $this->crucible(['--parallel', '2']);
+
+        self::assertSame(0, $sequentialExit);
+        self::assertSame(0, $parallelExit, $stdout);
+        self::assertSame($this->ranIds($sequential), $this->ranIds($parallel));
+
+        // Alpha's provider ran in the parent and in Alpha's own worker
+        // only: Beta's worker preloaded the file without discovering it.
+        self::assertSame([2, 0], $this->counters(), 'The workers kept their own units.');
+    }
+
+    public function testAFunctionInPestPhpSendsTheWorkersToFullDiscovery(): void
+    {
+        // Pest loads Pest.php itself, per directory, with require: a worker
+        // cannot preload it. A function declared there is one a worker
+        // running another directory's unit may lack, so every worker
+        // repeats the parent's discovery.
+        mkdir($this->project . '/tests/Feature');
+        file_put_contents($this->project . '/tests/Feature/Pest.php', <<<'PHP'
+            <?php
+
+            function feature_helper(): string
+            {
+                return 'from pest';
+            }
+            PHP);
+        file_put_contents($this->project . '/tests/Feature/GreetingTest.php', <<<'PHP'
+            <?php
+
+            \test('the helper answers', function (): void {
+                \expect(feature_helper())->toBe('from pest');
+            });
+            PHP);
+        file_put_contents($this->project . '/tests/AlphaTest.php', <<<'PHP'
+            <?php
+
+            use LucianoPereira\Crucible\Attributes\DataProvider;
+            use LucianoPereira\Crucible\Framework\TestCase;
+
+            final class AlphaTest extends TestCase
+            {
+                public static function rows(): array
+                {
+                    file_put_contents(__DIR__ . '/../counters.log', "load alpha\n", FILE_APPEND);
+
+                    return [['from pest']];
+                }
+
+                #[DataProvider('rows')]
+                public function testAlphaUsesItByName(string $expected): void
+                {
+                    $name = 'feature' . '_helper';
+
+                    self::assertSame($expected, $name());
+                }
+            }
+            PHP);
+        unlink($this->project . '/tests/BetaTest.php');
+
+        [$sequentialExit, , $sequential]    = $this->crucible([]);
+        [$parallelExit, $stdout, $parallel] = $this->crucible(['--parallel', '2']);
+
+        self::assertSame(0, $sequentialExit);
+        self::assertSame(0, $parallelExit, $stdout);
+        self::assertSame($this->ranIds($sequential), $this->ranIds($parallel));
+
+        // Full discovery: the parent and both workers ran Alpha's provider.
+        self::assertSame(3, $this->counters()[0]);
+    }
+
     public function testCoupledWorkersPreserveFileOrderAndTheSelectedSuites(): void
     {
         file_put_contents($this->project . '/tests/AlphaTest.php', <<<'PHP'

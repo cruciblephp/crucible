@@ -111,10 +111,11 @@ final class Supervisor
      * @param list<non-empty-string> $paths        the run's test paths (D-152), carried into every manifest so a worker discovers what the parent did
      * @param bool              $noExtensions     CLI --no-extensions, carried into every manifest (D-172) so a worker registers no configured extension either — the around-test role included
      * @param bool              $stopOnConfigured  a stop-on option is active, so a worker's early halt is an acknowledged cancellation
-     * @param bool                   $fullDiscovery replay discovery in the original order for a coupled suite
+     * @param bool                   $fullDiscovery every worker repeats the parent's whole discovery (D-180); the default, because only a parent that watched its own discovery can say a worker need not
      * @param ?list<non-empty-string> $onlySuites
      * @param list<non-empty-string>  $exceptSuites
      * @param list<non-empty-string>  $suffixes
+     * @param list<non-empty-string>  $preload       what each worker requires before discovering its own units (D-180)
      */
     public function __construct(
         private readonly Emitter $emitter,
@@ -143,10 +144,11 @@ final class Supervisor
         private readonly array $paths = [],
         private readonly bool $noExtensions = false,
         private readonly bool $stopOnConfigured = false,
-        private readonly bool $fullDiscovery = false,
+        private readonly bool $fullDiscovery = true,
         private readonly ?array $onlySuites = null,
         private readonly array $exceptSuites = [],
         private readonly array $suffixes = [],
+        private readonly array $preload = [],
     ) {}
 
     /**
@@ -564,6 +566,7 @@ final class Supervisor
                         $this->onlySuites,
                         $this->exceptSuites,
                         $this->suffixes,
+                        $this->preload,
                     ),
                     $planned->expected,
                     $this->phpArguments(),

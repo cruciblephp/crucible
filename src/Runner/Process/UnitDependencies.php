@@ -10,42 +10,76 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Runner\Process;
 
-use LucianoPereira\Crucible\Dialect\PhpUnit\ClassLocator;
+use Closure;
+use Composer\Autoload\ClassLoader;
+use LucianoPereira\Crucible\Configuration\Source;
+use LucianoPereira\Crucible\Dialect\Inline\InlineBuilder;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
-use LucianoPereira\Crucible\Impact\ReferenceScanner;
 use PhpToken;
+use ReflectionClass;
+use ReflectionFunction;
 
+use function array_diff;
+use function array_diff_key;
+use function array_values;
+use function basename;
 use function count;
+use function explode;
 use function file_get_contents;
+use function get_declared_classes;
+use function get_declared_interfaces;
+use function get_declared_traits;
+use function get_defined_constants;
+use function get_defined_functions;
+use function get_included_files;
 use function in_array;
-use function is_file;
+use function is_array;
+use function is_string;
 use function ltrim;
-use function strrpos;
-use function strtolower;
+use function realpath;
+use function rtrim;
+use function spl_autoload_functions;
+use function str_ends_with;
+use function str_starts_with;
+use function strlen;
 use function substr;
 use function trim;
 
+use const DIRECTORY_SEPARATOR;
+
 /**
- * Whether a worker may discover only the files its units name, or must
- * repeat the parent's whole discovery (D-180).
+ * What a worker must load before it discovers only its own units, or
+ * whether it must repeat the parent's whole discovery (D-180).
  *
- * The sequential run loads every test file into one process, so a file
- * can lean on whatever another one did at load time. A worker that loads
- * only its own files sees none of it. Two checks decide, and either one
- * sends the workers to full discovery:
+ * The sequential run discovers every test file in one process, so a test
+ * can use any function, class or constant another file declared, by name
+ * or through a string (`$f = 'helper'; $f()`), and can lean on whatever
+ * another file did at load time. A worker that loads only its own files
+ * must end up with the same process, or it is no longer the sequential
+ * run's twin.
  *
- * - a file references a class or calls a function another file declares;
- * - a file's top level does anything but declare: a `define()`, a
- *   global, a `require`, an `ini_set()`, a top-level `const`. What one
- *   of those statements changes cannot be followed by reading names, so
- *   the rule does not try. The dialects' own registration calls
- *   (`test()`, `it()`, `describe()`, `check()` and the rest) are
- *   declarations in this sense: they register tests, as a class does.
+ * Reading names cannot get there: a string can name anything. So the
+ * parent does not read; it watches its own discovery and records what
+ * it added - the files it loaded, the functions and classes they
+ * declared, the constants defined. Then:
  *
- * One coupling escapes both: a class or function another file declares,
- * named in a string and used dynamically (`$f = 'helper'; $f()`). No
- * token scan can read that name, so such a suite can still pass
- * sequentially and fail in parallel.
+ * - every project file discovery loaded must only declare (the token
+ *   rule below), because what a load-time statement changes cannot be
+ *   recorded as a symbol;
+ * - every symbol discovery declared must be one a worker will have too:
+ *   declared by a test file the worker preloads, by vendor code Composer
+ *   loads the same way in every process, or by a source class the
+ *   autoloader resolves to the file that declared it;
+ * - no constant may appear, since nothing says where it came from.
+ *
+ * If all three hold, each worker requires the preload list, in the
+ * order the parent loaded it, and then discovers its own units: its
+ * symbol table is the parent's. If any fails, every worker repeats the
+ * parent's discovery. A Pest file, `Pest.php` and `Datasets/` are never
+ * preloaded, because their dialect loads them itself (with `require`,
+ * per directory), so a function or class declared in one of them sends
+ * workers to full discovery. Source files are never preloaded either: a
+ * cold mutation worker has to load the mutant in their place (D-137).
  */
 final readonly class UnitDependencies
 {
@@ -61,83 +95,58 @@ final readonly class UnitDependencies
         'check', 'property', 'table', 'visit', 'arch',
     ];
 
+    private const string PRELOAD = 'preload';
+
+    private const string SOURCE = 'source';
+
+    private const string DIALECT = 'dialect';
+
     /**
-     * @param list<non-empty-string> $files as TestId carries them
+     * @param list<non-empty-string> $preload project-relative, portable paths, in the order the parent's discovery loaded them
      */
-    public static function hasCoupling(array $files, WorkingDirectory $workingDirectory): bool
+    public function __construct(
+        public bool $fullDiscovery,
+        public array $preload = [],
+    ) {}
+
+    /**
+     * Every worker repeats the parent's discovery: the answer when
+     * nothing was observed.
+     */
+    public static function full(): self
     {
-        /** @var array<string, non-empty-string> $absolute input file => native absolute path */
-        $absolute = [];
+        return new self(true);
+    }
 
-        foreach ($files as $file) {
-            $native = WorkingDirectory::native($workingDirectory->absolute($file));
+    /**
+     * Run $discover and record what it added to this process.
+     *
+     * @template T
+     *
+     * @param Closure(): T $discover
+     *
+     * @return array{T, self}
+     */
+    public static function observe(Closure $discover, WorkingDirectory $workingDirectory, Source $source): array
+    {
+        $files     = get_included_files();
+        $functions = get_defined_functions()['user'];
+        $classes   = self::declaredClassLikes();
+        $constants = get_defined_constants(true)['user'] ?? [];
 
-            if (is_file($native)) {
-                $absolute[$file] = $native;
-            }
+        $result = $discover();
+
+        if (array_diff_key(get_defined_constants(true)['user'] ?? [], $constants) !== []) {
+            return [$result, self::full()];
         }
 
-        if ($absolute === []) {
-            return false;
-        }
-
-        /** @var array<string, list<non-empty-string>> $classes declared class-like => declaring files */
-        $classes = [];
-
-        /** @var array<string, list<non-empty-string>> $functions declared function name => declaring files */
-        $functions = [];
-
-        /** @var array<non-empty-string, list<string>> $references class-like names each file's code references */
-        $references = [];
-
-        /** @var array<non-empty-string, list<string>> $calls function names each file's code invokes */
-        $calls = [];
-
-        $locator = new ClassLocator();
-        $scanner = new ReferenceScanner();
-
-        foreach ($absolute as $native) {
-            $source = file_get_contents($native);
-
-            if ($source === false) {
-                continue;
-            }
-
-            if (!self::isDeclarationOnly($source)) {
-                return true;
-            }
-
-            foreach ($locator->declarationsIn($native) as $class) {
-                $classes[strtolower($class)][] = $native;
-            }
-
-            foreach (self::declaredFunctions($source) as $name) {
-                $functions[strtolower($name)][] = $native;
-            }
-
-            $references[$native] = $scanner->referencesIn($source);
-            $calls[$native]      = self::calledFunctions($source);
-        }
-
-        foreach ($absolute as $native) {
-            foreach ($references[$native] ?? [] as $class) {
-                foreach ($classes[strtolower($class)] ?? [] as $declaredIn) {
-                    if ($declaredIn !== $native) {
-                        return true;
-                    }
-                }
-            }
-
-            foreach ($calls[$native] ?? [] as $name) {
-                foreach ($functions[strtolower($name)] ?? [] as $declaredIn) {
-                    if ($declaredIn !== $native) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
+        return [$result, self::plan(
+            array_values(array_diff(get_included_files(), $files)),
+            array_values(array_diff(get_defined_functions()['user'], $functions)),
+            array_values(array_diff(self::declaredClassLikes(), $classes)),
+            $workingDirectory,
+            $source,
+        )];
     }
 
     /**
@@ -150,8 +159,210 @@ final readonly class UnitDependencies
      */
     public static function isDeclarationOnly(string $source): bool
     {
+        return self::topLevel($source) !== null;
+    }
+
+    /**
+     * @param list<string> $loaded    files discovery loaded, in order
+     * @param list<string> $functions functions discovery declared
+     * @param list<string> $classes   class-likes discovery declared
+     */
+    private static function plan(array $loaded, array $functions, array $classes, WorkingDirectory $workingDirectory, Source $source): self
+    {
+        $real = realpath($workingDirectory->path);
+        $root = rtrim($real === false ? $workingDirectory->path : $real, '/\\') . DIRECTORY_SEPARATOR;
+
+        $sourcePaths = self::sourcePaths($workingDirectory, $source);
+
+        /** @var array<string, string> $roles real path => PRELOAD|SOURCE|DIALECT */
+        $roles = [];
+
+        foreach ($loaded as $file) {
+            $relative = self::inProject($file, $root);
+
+            if ($relative === null) {
+                continue;
+            }
+
+            $contents = file_get_contents($file);
+            $kinds    = $contents === false ? null : self::topLevel($contents);
+
+            if ($contents === false || $kinds === null) {
+                return self::full();
+            }
+
+            $roles[$file] = self::roleOf($file, $relative, $contents, $kinds, $sourcePaths);
+        }
+
+        foreach ($functions as $function) {
+            $file = (new ReflectionFunction($function))->getFileName();
+
+            if (!self::reachable($file, null, $roles, $root)) {
+                return self::full();
+            }
+        }
+
+        foreach ($classes as $class) {
+            $reflection = new ReflectionClass($class);
+
+            if (!$reflection->isInternal() && !self::reachable($reflection->getFileName(), $class, $roles, $root)) {
+                return self::full();
+            }
+        }
+
+        $preload = [];
+
+        foreach ($roles as $file => $role) {
+            $relative = self::inProject($file, $root);
+
+            if ($role === self::PRELOAD && $relative !== null) {
+                $preload[] = WorkingDirectory::portable($relative);
+            }
+        }
+
+        return new self(false, $preload);
+    }
+
+    /**
+     * Whether a worker will have the symbol $file declared: from a file
+     * it preloads, from vendor code, or, for a class in a source file,
+     * through the autoloader that resolves it to that file.
+     *
+     * @param array<string, string> $roles
+     */
+    private static function reachable(string|false $file, ?string $class, array $roles, string $root): bool
+    {
+        $real = $file === false ? false : realpath($file);
+
+        if ($real === false) {
+            // eval()'d code: nothing a worker can load again.
+            return false;
+        }
+
+        if (self::inProject($real, $root) === null) {
+            // Vendor code and code outside the project load the same way
+            // in every process: Composer, not discovery.
+            return true;
+        }
+
+        return match ($roles[$real] ?? null) {
+            self::PRELOAD => true,
+            self::SOURCE  => $class !== null && self::autoloads($class, $real),
+            default       => false,
+        };
+    }
+
+    /**
+     * Whether a registered Composer loader resolves $class to $file.
+     */
+    private static function autoloads(string $class, string $file): bool
+    {
+        foreach (spl_autoload_functions() as $function) {
+            if (!is_array($function) || !$function[0] instanceof ClassLoader) {
+                continue;
+            }
+
+            $found = $function[0]->findFile($class);
+
+            if (is_string($found) && realpath($found) === $file) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, true> $kinds       what the file's top level holds
+     * @param list<string>        $sourcePaths real source include directories (with a trailing separator) and files
+     */
+    private static function roleOf(string $file, string $relative, string $contents, array $kinds, array $sourcePaths): string
+    {
+        if (isset($kinds['registration'])
+            || basename($file) === 'Pest.php'
+            || in_array('Datasets', explode(DIRECTORY_SEPARATOR, $relative), true)
+            || str_ends_with($file, '.pest.php')
+            || str_ends_with($file, '.crucible.php')
+        ) {
+            return self::DIALECT;
+        }
+
+        if (InlineBuilder::hasMarkers($contents)) {
+            return self::SOURCE;
+        }
+
+        foreach ($sourcePaths as $path) {
+            if ($file === $path || (str_ends_with($path, DIRECTORY_SEPARATOR) && str_starts_with($file, $path))) {
+                return self::SOURCE;
+            }
+        }
+
+        return self::PRELOAD;
+    }
+
+    /**
+     * The configured source includes as real paths: directories with a
+     * trailing separator, files without.
+     *
+     * @return list<string>
+     */
+    private static function sourcePaths(WorkingDirectory $workingDirectory, Source $source): array
+    {
+        $paths = [];
+
+        foreach ($source->includeDirectories as $directory) {
+            $real = realpath($workingDirectory->absolute($directory));
+
+            if ($real !== false) {
+                $paths[] = rtrim($real, '/\\') . DIRECTORY_SEPARATOR;
+            }
+        }
+
+        foreach ($source->includeFiles as $file) {
+            $real = realpath($workingDirectory->absolute($file));
+
+            if ($real !== false) {
+                $paths[] = $real;
+            }
+        }
+
+        return $paths;
+    }
+
+    /**
+     * $file relative to the project, or null outside it or under any
+     * vendor directory.
+     */
+    private static function inProject(string $file, string $root): ?string
+    {
+        if (!str_starts_with($file, $root)) {
+            return null;
+        }
+
+        $relative = substr($file, strlen($root));
+
+        return $relative === '' || in_array('vendor', explode(DIRECTORY_SEPARATOR, $relative), true) ? null : $relative;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function declaredClassLikes(): array
+    {
+        return [...get_declared_classes(), ...get_declared_interfaces(), ...get_declared_traits()];
+    }
+
+    /**
+     * What the source's top level holds - `declaration`, `registration` -
+     * or null when it holds anything else.
+     *
+     * @return ?array<string, true>
+     */
+    private static function topLevel(string $source): ?array
+    {
         $tokens = PhpToken::tokenize($source);
         $count  = count($tokens);
+        $kinds  = [];
         $i      = 0;
 
         while ($i < $count) {
@@ -167,7 +378,7 @@ final readonly class UnitDependencies
 
             if ($token->is(T_INLINE_HTML)) {
                 if (trim($token->text) !== '') {
-                    return false;
+                    return null;
                 }
 
                 $i++;
@@ -182,7 +393,8 @@ final readonly class UnitDependencies
             }
 
             if ($token->is([T_DECLARE, T_USE, T_CLASS, T_INTERFACE, T_TRAIT, T_ENUM])) {
-                $i = self::pastStatement($tokens, $i);
+                $kinds['declaration'] = true;
+                $i                    = self::pastStatement($tokens, $i);
 
                 continue;
             }
@@ -193,13 +405,13 @@ final readonly class UnitDependencies
                 // `namespace\name()` is a call, not a declaration, and a
                 // braced namespace hides its own top level in a block.
                 if ($next === null || !$tokens[$next]->is([T_STRING, T_NAME_QUALIFIED])) {
-                    return false;
+                    return null;
                 }
 
                 $after = self::nextSignificant($tokens, $next);
 
                 if ($after === null || $tokens[$after]->text !== ';') {
-                    return false;
+                    return null;
                 }
 
                 $i = $after + 1;
@@ -215,10 +427,11 @@ final readonly class UnitDependencies
                 }
 
                 if ($next === null || !$tokens[$next]->is(T_STRING)) {
-                    return false;
+                    return null;
                 }
 
-                $i = self::pastStatement($tokens, $i);
+                $kinds['declaration'] = true;
+                $i                    = self::pastStatement($tokens, $i);
 
                 continue;
             }
@@ -229,16 +442,17 @@ final readonly class UnitDependencies
                 $next = self::nextSignificant($tokens, $i);
 
                 if ($next !== null && $tokens[$next]->text === '(') {
-                    $i = self::pastStatement($tokens, $i);
+                    $kinds['registration'] = true;
+                    $i                     = self::pastStatement($tokens, $i);
 
                     continue;
                 }
             }
 
-            return false;
+            return null;
         }
 
-        return true;
+        return $kinds;
     }
 
     /**
@@ -297,132 +511,5 @@ final readonly class UnitDependencies
         }
 
         return null;
-    }
-
-    /**
-     * Every function the source declares at file/namespace scope -
-     * the only ones a call in another file can reach by name. A
-     * function nested inside a class or block is not a global name.
-     *
-     * @return list<non-empty-string>
-     */
-    private static function declaredFunctions(string $source): array
-    {
-        $names  = [];
-        $tokens = PhpToken::tokenize($source);
-        $count  = count($tokens);
-        $depth  = 0;
-
-        for ($i = 0; $i < $count; $i++) {
-            $token = $tokens[$i];
-
-            if ($token->text === '{') {
-                $depth++;
-            } elseif ($token->text === '}') {
-                $depth--;
-            }
-
-            if ($depth !== 0 || !$token->is(T_FUNCTION)) {
-                continue;
-            }
-
-            for ($j = $i + 1; $j < $count; $j++) {
-                if ($tokens[$j]->is(T_STRING)) {
-                    if ($tokens[$j]->text !== '') {
-                        $names[] = $tokens[$j]->text;
-                    }
-
-                    break;
-                }
-
-                if (!$tokens[$j]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
-                    break;
-                }
-            }
-        }
-
-        return $names;
-    }
-
-    /**
-     * Every name the source invokes as a function call: an identifier
-     * directly followed by `(` that is not a member, method or
-     * declaration name. Unqualified calls resolve against the current
-     * namespace then the global scope, and qualified calls carry the
-     * namespace - every form ends in a bare name, which is what the
-     * declared-function map is keyed on.
-     *
-     * @return list<non-empty-string>
-     */
-    private static function calledFunctions(string $source): array
-    {
-        $names  = [];
-        $tokens = PhpToken::tokenize($source);
-        $count  = count($tokens);
-
-        for ($i = 0; $i < $count; $i++) {
-            $token = $tokens[$i];
-
-            if (!$token->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_NAME_RELATIVE])) {
-                continue;
-            }
-
-            // A call is `name (`. Anything else after the name - an
-            // argument list of another kind, a constant use, `::` -
-            // makes it something else.
-            $isCall = false;
-
-            for ($j = $i + 1; $j < $count; $j++) {
-                if ($tokens[$j]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
-                    continue;
-                }
-
-                $isCall = $tokens[$j]->text === '(';
-
-                break;
-            }
-
-            if (!$isCall) {
-                continue;
-            }
-
-            // The previous significant token decides what the name
-            // is: a member or method (`->name(`, `?->name(`,
-            // `::name(`), the declaration itself (`function name(`),
-            // a class (`new Name(`) or a constant are not function
-            // calls.
-            for ($k = $i - 1; $k >= 0; $k--) {
-                if ($tokens[$k]->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
-                    continue;
-                }
-
-                if ($tokens[$k]->is([
-                    T_OBJECT_OPERATOR,
-                    T_NULLSAFE_OBJECT_OPERATOR,
-                    T_DOUBLE_COLON,
-                    T_FUNCTION,
-                    T_NEW,
-                    T_CONST,
-                    T_CLASS,
-                    T_INTERFACE,
-                    T_TRAIT,
-                    T_ENUM,
-                ])) {
-                    continue 2;
-                }
-
-                break;
-            }
-
-            $text = $token->text;
-            $cut  = strrpos($text, '\\');
-            $bare = $cut === false ? $text : substr($text, $cut + 1);
-
-            if ($bare !== '') {
-                $names[] = $bare;
-            }
-        }
-
-        return $names;
     }
 }
