@@ -113,6 +113,7 @@ final class DoubleTest extends TestCase
         $mailer->method('queueSize')->willThrowException(new RuntimeException('down'));
         $this->expectException(RuntimeException::class);
         $mailer->queueSize();
+        $this->fail('queueSize() was expected to throw.');
     }
 
     public function testAbstractClassDoubleStubsAllPublicMethods(): void
