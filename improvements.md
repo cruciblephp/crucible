@@ -1,5 +1,9 @@
 # Crucible PHP — Improvements
 
+> **Historical, 2026-07-23.** This is the record of one code-quality pass, kept because the
+> findings and their resolutions are useful history. The current gate numbers and status are in
+> `README.md` and `RELEASE.md`; do not read the counts below as current.
+
 Findings from a code-quality pass (PHPStan level max, Pint/PER-CS 2.0, self-hosted suite,
 dependency audit, and manual review) on 2026-07-23. Nothing here blocks release — all
 automated gates are green. These are the actionable structural items.

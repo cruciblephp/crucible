@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\CLI;
 
 use LucianoPereira\Crucible\CLI\Commands\CompatCheckCommand;
 use LucianoPereira\Crucible\CLI\Commands\CompletionCommand;
+use LucianoPereira\Crucible\CLI\Commands\DoctorCommand;
 use LucianoPereira\Crucible\CLI\Commands\ExtensionsCommand;
 use LucianoPereira\Crucible\CLI\Commands\FlakesCommand;
 use LucianoPereira\Crucible\CLI\Commands\InitCommand;
@@ -175,6 +176,10 @@ final class Application
 
         if ($options->phpstanInit) {
             return (new PhpstanInitCommand())->execute($options, $workingDirectory);
+        }
+
+        if ($options->doctor) {
+            return (new DoctorCommand())->execute($workingDirectory);
         }
 
         if ($options->lintInline) {
@@ -355,6 +360,7 @@ final class Application
               crucible migrate-config      Convert phpunit.xml(.dist) to a crucible.php and exit
               crucible flakes [--rounds N]  Hunt order-dependent tests via seeded random rounds
               crucible phpstan-init        Wire Crucible's PHPStan extension into phpstan.neon
+              crucible doctor              Check a project's PHPUnit/PHPStan/Laravel migration state
               crucible lint-inline         Analyse @crucible doctests with PHPStan via shadow files
               crucible mutation-index      Emit the per-line covering-tests index (JSON) for a mutation tool
               crucible mutate              Mutation-test the covered source and report the score (needs --coverage first)
@@ -427,6 +433,8 @@ final class Application
               --coverage-openclover <file>  Write OpenClover XML coverage to <file> (CI interop)
               --coverage-php <file>     Write the coverage data to <file> as a PHP file that returns it
               --dirty                   Run only tests affected by uncommitted work (staged, unstaged, untracked)
+              --last-failed             Run only tests that failed or errored in the last recorded run (Vitest gets --last-failed)
+              --doctor                  Check the project's PHPUnit/PHPStan/Laravel migration state
               --fail-on-flaky           Exit non-zero when a test passed only on retry
               --min <percent>           Fail the run below this line-coverage percentage (collects coverage on its own)
               --path-coverage           Also collect path coverage, whole routes through a function (needs xdebug)

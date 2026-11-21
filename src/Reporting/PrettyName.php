@@ -55,7 +55,7 @@ final readonly class PrettyName
             $name = substr($name, 0, -4);
         }
 
-        return $name !== '' ? $name : $file;
+        return $name !== '' ? Visible::text($name) : Visible::text($file);
     }
 
     /**
@@ -87,7 +87,7 @@ final readonly class PrettyName
             $pretty .= self::dataset($id->dataset);
         }
 
-        return $pretty;
+        return Visible::text($pretty);
     }
 
     /**

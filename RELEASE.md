@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-20 (D-001..D-180, 1.3.2). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-21 (D-001..D-186, 1.4.0). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -10,13 +10,57 @@ observable behavior targets **drop-in compatibility with PHPUnit 13 suites**. PH
 copied from it or from any other project. Sole copyright over every line is a project
 invariant.
 
+---
+
+## v1.4.0 — 2026-11-21
+
+The release after the PHP 8.6 / PHPUnit 13.4.8 / Pest 5.3.7 / Vitest 5.1.1 cycle. The floor
+stays PHP 8.3; 8.6 is an experimental CI target.
+
+- **PHP 8.6 experimental target.** The self-hosted suite, PHPStan, Rector and the
+  generated-code tier pass on 8.6.0. Two 8.6 deprecations fixed: `ReflectionMethod::invoke()`
+  with an object for a static method (`CurrentTest::call`) and the one-argument
+  `ReflectionMethod` constructor (`Observer::describe`, now `createFromMethodName()`). Ubuntu-only,
+  non-blocking, no xdebug (no stable 8.6 build), Pint kept with its upstream `spl_object_hash()`
+  warning. D-181.
+- **Class-level skips are skips.** `markTestSkipped()` and `markTestIncomplete()` are public
+  static like PHPUnit's, and a `setUpBeforeClass()` that calls either marks every test in the
+  class skipped instead of erroring it. `--fail-on-skipped` exits non-zero. Verified on PHPUnit
+  13.4.8. D-182.
+- **A Vitest file-level failure is a failure.** A crashed file or a throwing `beforeAll()` is one
+  `test file` failure, and a non-zero Vitest exit with an all-green report is a failed suite
+  event. Verified on Vitest 5.1.1: 1 passed, 2 failed, 1 skipped, exit 1. D-183.
+- **Visible names.** Control characters and ANSI escapes in test and data-set names print as
+  `\u{XXXX}` in the human-facing views, matching PHPUnit 13.4.8. D-184.
+- **Selection reaches the JS suite.** `--shard M/N` forwards to Vitest, and `--last-failed`
+  narrows the PHP result-cache selection and forwards Vitest's own flag. D-185.
+- **The Laravel edge has a doctor.** `crucible doctor` checks PHPUnit in migration mode, the
+  Testbench meta package, duplicate `phpstan-phpunit`/`pest-plugin-phpstan`, a leftover
+  `phpunit.xml`, double-included PHPStan wiring, and a `composer.json` that disables package
+  discovery. `phpstan-init` names a duplicate extension too. D-186.
+- **`php artisan test` is the engine's surface.** The bridge mirrors the engine's options —
+  `--last-failed`, `--profile`, repeated `--testsuite`/`--group`, coverage targets/floors,
+  display/fail-on switches — forwards every declared option by name, and accepts tokens after
+  `--` verbatim. D-186.
+- **Laravel error-handler hygiene.** A full handler-stack flush restores the saved handlers
+  without a risky verdict; a popped capture that leaves a frame is still risky. Verified on the
+  real Laravel Feature suite. D-176 (amended).
+- **Comparative.** PHPUnit 13.4.8 conformance: all 19 fixture suites conform. Pest 5.3.7 still
+  has the `toThrow()` interface-as-message bug, so `Quirk::ThrowInterfaceAsMessage` stays.
+
+Gate: `composer check` on PHP 8.5 — **1992 tests, 1950 passed, 0 failed/errors/risky**, 41
+skipped, 1 untested; on PHP 8.6.0 — **1949 passed, 40 skipped, 3 untested**.
+`analyse:generated`, Pint, Rector and PHPStan clean. The Laravel bridge lane ran against a real
+`livewire-oracle`: `CrucibleServiceProvider` 3/3 and `BrowserKernelHandler` 5/5.
+
+---
+
 ## The proof
 
-- **Self-hosted since Phase 4**: Crucible's own suite (1512 tests across four dialects,
-  **1510 passed, 2 skipped** under `-d xdebug.mode=coverage`; two of the four skips a plain
-  run reports are that one flag, and the other two are inverted — they run only when
-  phpcpd-next is absent, so an installed oracle is what skips them, never an incomplete
-  feature) runs on Crucible; `phpunit/phpunit` was removed from dev dependencies — zero
+- **Self-hosted since Phase 4**: Crucible's own suite (1992 tests across four dialects,
+  **1950 passed, 41 skipped** on the PHP 8.5 gate; **1949 passed, 40 skipped** on 8.6 — the
+  skips are oracle- and coverage-dependent, named by the suite, never silent) runs on
+  Crucible; `phpunit/phpunit` was removed from dev dependencies — zero
   PHPUnit code in the tree or in vendor.
 - **Executable conformance**: 19 fixture suites run against the real oracles — the `phpunit`
   binary, and for the mocking lane the real `mockery/mockery` with its own PHPUnit — and

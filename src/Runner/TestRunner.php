@@ -193,19 +193,27 @@ final readonly class TestRunner
                 ($group->beforeAll)();
             }
         } catch (Throwable $throwable) {
-            // A failing before-all errors every test in the group.
+            // A skip or incomplete from a before-all is a CLASS outcome, as
+            // PHPUnit reports it: every test is skipped, not errored. ✓ PHPUnit
+            // 13.4.8: setUpBeforeClass() calling markTestSkipped() or
+            // markTestIncomplete() prints S and counts every test as skipped.
+            $skipped = $throwable instanceof SkippedTestError || $throwable instanceof IncompleteTestError;
+            $outcome = $skipped ? Outcome::Skipped : Outcome::Errored;
+            $reason  = $skipped && $throwable->getMessage() !== '' ? $throwable->getMessage() : null;
+
             foreach ($group->tests as $definition) {
                 $this->emitter->emit(new TestStarted($definition->id));
                 $this->emitter->emit(new TestFinished(
                     $definition->id,
-                    Outcome::Errored,
+                    $outcome,
                     0.0,
-                    $this->failureFrom($throwable),
+                    $skipped ? null : $this->failureFrom($throwable),
+                    reason: $reason,
                 ));
-                $counts['error']++;
+                $counts[$outcome->value]++;
             }
 
-            return $this->shouldStop(Outcome::Errored);
+            return $this->shouldStop($outcome);
         }
 
         // Seeded, not empty: under process isolation a prerequisite ran

@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Vitest;
 
 use LucianoPereira\Crucible\Event\Emitter;
+use LucianoPereira\Crucible\Event\Failure;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunSummary;
 use LucianoPereira\Crucible\Event\TestFinished;
@@ -20,6 +21,7 @@ use LucianoPereira\Crucible\Runner\NameFilter;
 use LucianoPereira\Crucible\Runner\Process\NullDevice;
 use LucianoPereira\Crucible\Test\TestId;
 
+use function array_any;
 use function array_filter;
 use function array_values;
 use function file_get_contents;
@@ -28,13 +30,11 @@ use function is_file;
 use function is_resource;
 use function json_decode;
 use function proc_close;
-use function proc_get_status;
 use function proc_open;
 use function sys_get_temp_dir;
 use function tempnam;
 use function trim;
 use function unlink;
-use function usleep;
 
 /**
  * Orchestrates a JavaScript suite through Vitest (D-079) and folds its
@@ -52,8 +52,6 @@ use function usleep;
  */
 final readonly class VitestRunner
 {
-    private const int POLL_MICROSECONDS = 10_000;
-
     private FoldIn $fold;
 
     public function __construct(Emitter $emitter)
@@ -103,6 +101,14 @@ final readonly class VitestRunner
             $command[] = '--testNamePattern=' . $filter->vitestPattern();
         }
 
+        if ($suite->shard !== null) {
+            $command[] = '--shard=' . $suite->shard;
+        }
+
+        if ($suite->lastFailed) {
+            $command[] = '--last-failed';
+        }
+
         // argv form — no shell. stdout is discarded (the JSON rides the
         // outputFile); stderr is captured for the diagnostic. A missing
         // binary is handled by the is_resource check below, so its
@@ -121,11 +127,7 @@ final readonly class VitestRunner
             return $this->fold->couldNotRun(new TestId($suite->directory, 'vitest'), 'Vitest could not be started — is it installed in ' . $directory . '?');
         }
 
-        while (proc_get_status($process)['running']) {
-            usleep(self::POLL_MICROSECONDS);
-        }
-
-        proc_close($process);
+        $exit = proc_close($process);
 
         $json    = is_file($report) ? file_get_contents($report) : false;
         $decoded = $json === false ? null : json_decode($json, true);
@@ -145,6 +147,22 @@ final readonly class VitestRunner
         // suite outside the working directory keeps absolute paths,
         // which `--related` resolves just as well.
         $events = VitestReport::translate($decoded, $workingDirectory->path);
+
+        // The exit code is the backstop for a failure the JSON did not
+        // name: a crashed worker or a config error can leave a report of
+        // passing tests while Vitest exits non-zero. A failed event already
+        // fails the run, so this does not double-count.
+        if ($exit !== 0 && !array_any($events, static fn(TestFinished $event): bool => $event->outcome === Outcome::Failed || $event->outcome === Outcome::Errored)) {
+            $message = 'Vitest exited with code ' . $exit . ($tail !== '' ? ":\n" . $tail : '.');
+
+            $events[] = new TestFinished(
+                new TestId($suite->directory, 'vitest'),
+                Outcome::Failed,
+                0.0,
+                new Failure($message),
+                reason: $message,
+            );
+        }
 
         // Vitest reports the tests -t left out as skipped. They were not
         // selected, so they are not reported at all; a skipped test the

@@ -43,7 +43,8 @@ composer require --dev cruciblephp/crucible
 ```
 
 Crucible needs **PHP 8.3+** and `ext-mbstring`. Nothing else at runtime — coverage extensions
-are optional and only needed when you ask for coverage.
+are optional and only needed when you ask for coverage. PHP 8.6 is exercised as an experimental
+target in CI; the supported floor remains 8.3.
 
 If the project already has a `phpunit.xml`, don't hand-write the configuration:
 
@@ -451,7 +452,13 @@ crucible --changed          # vs HEAD
 crucible --changed=main     # vs a ref
 crucible --dirty            # uncommitted work: staged, unstaged and untracked
 crucible --related src/Cart.php
+crucible --last-failed      # what failed or errored in the last recorded run
 ```
+
+`--last-failed` reads the result cache's most recent outcome per test. With no failed test in
+the selection it runs the full selection, as Vitest does; it needs the result cache, so
+`--do-not-cache-result` refuses it rather than silently ignoring it. The Vitest suites receive
+their own `--last-failed` at the same time.
 
 A test is selected when the transitive closure of the file declaring it intersects the
 change set. Anything that cannot be reasoned about — a deletion, a changed `composer.json` —
@@ -659,6 +666,15 @@ crucible --filter Cart                       # PHP tests matching Cart; the JS s
 crucible --testsuite unit,vitest --filter Cart   # both, filtered: Vitest gets the pattern as its own
 ```
 
+A sharded run forwards `--shard M/N` to Vitest, so the JS suite is sharded with the PHP suite
+instead of repeating whole in every shard. A crashed file, or a `beforeAll()` that throws, is a
+failed `test file` event — not a silent pass — and a non-zero Vitest exit with an all-green
+report becomes a failed suite event.
+
+Test names and data-set names in the human-facing views make control characters visible:
+a data set containing ESC prints as `\u{001B}`, matching PHPUnit 13.4.8, so a stray escape
+cannot recolor a terminal or hide in a logfile.
+
 ---
 
 ## 13. Reporting and CI
@@ -683,7 +699,9 @@ Crucible's own PHPStan extension needs no wiring with `phpstan/extension-install
 declares it, and the installer loads it. Without the installer, `crucible phpstan-init` writes the
 one include line. It covers what a migrated suite had from phpstan-phpunit and pest-plugin-phpstan
 — assertions narrow, `expect()` is generic and its type matchers narrow the chain, `$this` is typed
-in Pest closures — held line by line against both by probe 30. And some things neither does:
+in Pest closures — held line by line against both by probe 30. `crucible doctor` reports the common
+friction: either of those two extensions still installed (they duplicate this one), the extension
+wired twice, and the PHPStan version floor. And some things neither does:
 
 - after `expect($x)->toBeString();` the variable `$x` itself is a string, not only the chain;
 - dataset rows, `#[TestWith]`, `#[TestWithJson]`, `#[Check]` and `table()` rows are checked
@@ -876,6 +894,24 @@ anything it changed.
 A real Laravel 13 application runs green through exactly these steps — factories,
 `RefreshDatabase`, Laravel's own constraints, mocks, `--parallel` — with the `composer
 remove` as the only change to the project.
+
+### Checking the migration
+
+```bash
+./vendor/bin/crucible doctor
+```
+
+It reports what still needs attention: PHPUnit installed (migration mode), the
+`orchestra/testbench` meta package that requires it (switch to `testbench-core`),
+`phpstan-phpunit` or `pest-plugin-phpstan` still installed (they duplicate Crucible's extension),
+a `phpunit.xml` not yet migrated, the PHPStan extension missing or included twice, and a
+`composer.json` that disables package discovery for the bridge. It exits 1 only for a problem that
+breaks the drop-in story; migration-mode notes do not fail it.
+
+On a Laravel application the package's service provider registers `php artisan test`. The bridge
+mirrors the engine's options — including `--last-failed`, `--profile`, repeated
+`--testsuite`/`--group`, coverage targets and the display/fail-on switches — and appends tokens
+after `--` verbatim, so a new engine flag does not need a release of the bridge.
 
 ### Doctrine: replacing DAMA DoctrineTestBundle
 

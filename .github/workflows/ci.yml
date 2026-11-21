@@ -59,8 +59,9 @@ concurrency:
 
 jobs:
   gate:
-    name: 'Style, static analysis, and the self-hosted suite (PHP ${{ matrix.php-version }}, ${{ matrix.os }})'
+    name: "Style, static analysis, and the self-hosted suite (PHP ${{ matrix.php-version }}, ${{ matrix.os }}${{ matrix.experimental && ' (experimental)' || '' }})"
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
@@ -69,11 +70,22 @@ jobs:
         # ran on a newer PHP is not a verified floor. 8.4 is the declared
         # range's own midpoint — tested for real, not inferred from the
         # two ends bracketing it.
+        #
+        # 8.6 is D-181's experimental target: Ubuntu only, non-blocking, and
+        # no xdebug — there is no stable 8.6 build yet, and coverage stays
+        # on 8.5. Pint's PHAR emits an upstream spl_object_hash() deprecation
+        # on 8.6 but still exits 0; the job is left to show it rather than
+        # hide the target.
         php-version: ['8.3', '8.4', '8.5']
         # windows-latest: previously untested — a claimed "PHP 8.3+,
         # nothing else at runtime" floor is not verified for developers
         # who run PHP natively on Windows, not just under WSL.
         os: [ubuntu-latest, windows-latest]
+        experimental: [false]
+        include:
+          - php-version: '8.6'
+            os: ubuntu-latest
+            experimental: true
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -87,7 +99,7 @@ jobs:
           # that passes on 3.5.3. Re-pin once a stable 3.6 is out and
           # has been watched to pass. Windows keeps the default — it
           # never runs the coverage step.
-          extensions: ${{ matrix.os == 'ubuntu-latest' && 'mbstring, xdebug-3.5.3' || 'mbstring' }}
+          extensions: ${{ matrix.php-version == '8.6' && 'mbstring' || matrix.os == 'ubuntu-latest' && 'mbstring, xdebug-3.5.3' || 'mbstring' }}
           # xdebug, not pcov: the pcov build the runners install (1.0.12)
           # segfaults on any real collection under PHP 8.4 and 8.5 —
           # reproduced locally with pcov as the ONLY loaded extension
@@ -95,7 +107,7 @@ jobs:
           # The first CI run died on it in both versions. xdebug is slower
           # but collects, and it lets the xdebug-driver tests run here
           # instead of skipping.
-          coverage: xdebug
+          coverage: ${{ matrix.php-version == '8.6' && 'none' || 'xdebug' }}
           tools: composer:v2
 
       # Composer's own cache directory differs by OS (Windows is not

@@ -26,6 +26,7 @@ use function rtrim;
 use function str_starts_with;
 use function strlen;
 use function substr;
+use function trim;
 
 /**
  * Translates a decoded Vitest JSON report (D-079) into Crucible
@@ -59,6 +60,7 @@ final class VitestReport
             $path     = is_string($file['name'] ?? null) ? $file['name'] : '';
             $relative = str_starts_with($path, $prefix) ? substr($path, strlen($prefix)) : $path;
             $tests    = is_array($file['assertionResults'] ?? null) ? $file['assertionResults'] : [];
+            $failed   = false;
 
             foreach ($tests as $test) {
                 if (!is_array($test)) {
@@ -69,7 +71,26 @@ final class VitestReport
 
                 if ($event instanceof TestFinished) {
                     $events[] = $event;
+                    $failed   = $failed || $event->outcome === Outcome::Failed;
                 }
+            }
+
+            // A crashed file, or a beforeAll/afterAll that threw, is a
+            // FILE-level failure: Vitest 5.1.1 writes `status: failed` and a
+            // `message`, with no assertionResults (a crash) or only skipped
+            // ones (a setup error). Mapping only assertionResults would fold
+            // that file in as nothing - a silent pass. One event names the
+            // file; a failed assertion already fails the run, so it is not
+            // duplicated.
+            $message = is_string($file['message'] ?? null) ? trim($file['message']) : '';
+
+            if (!$failed && $relative !== '' && ($file['status'] ?? null) === 'failed') {
+                $events[] = new TestFinished(
+                    new TestId($relative, 'test file'),
+                    Outcome::Failed,
+                    0.0,
+                    new Failure($message !== '' ? $message : 'The Vitest test file failed.'),
+                );
             }
         }
 

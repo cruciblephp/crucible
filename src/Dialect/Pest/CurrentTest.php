@@ -62,9 +62,12 @@ final class CurrentTest
      */
     public static function call(string $method, array $arguments): mixed
     {
-        $instance = self::get();
+        $instance   = self::get();
+        $reflection = new ReflectionMethod($instance, $method);
 
-        return (new ReflectionMethod($instance, $method))->invoke($instance, ...$arguments);
+        // PHP 8.6 deprecates passing an object to invoke() for a static
+        // method; the object parameter is meaningless there.
+        return $reflection->invoke($reflection->isStatic() ? null : $instance, ...$arguments);
     }
 
     /**

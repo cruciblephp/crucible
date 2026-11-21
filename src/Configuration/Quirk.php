@@ -50,8 +50,9 @@ enum Quirk: string
      * thrown: `toThrow(InvalidArgumentException::class)` passes and so
      * does `not->toThrow(Throwable::class)`, which cannot both hold, since
      * PHP's `instanceof` makes every InvalidArgumentException a Throwable.
-     * By default Crucible matches an interface as a type, in the string
-     * form and the closure form alike. D-143.
+     * ✓ Re-measured on Pest 5.3.7 (2026-11-21): still present, so the
+     * quirk stays. By default Crucible matches an interface as a type, in
+     * the string form and the closure form alike. D-143.
      */
     case ThrowInterfaceAsMessage = 'quirk_throw_interface_as_message';
 

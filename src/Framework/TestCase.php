@@ -562,12 +562,12 @@ abstract class TestCase extends Assert
 
     // --- Explicit outcomes -----------------------------------------------------
 
-    final protected function markTestSkipped(string $message = ''): never
+    final public static function markTestSkipped(string $message = ''): never
     {
         throw new SkippedTestError($message);
     }
 
-    final protected function markTestIncomplete(string $message = ''): never
+    final public static function markTestIncomplete(string $message = ''): never
     {
         throw new IncompleteTestError($message);
     }

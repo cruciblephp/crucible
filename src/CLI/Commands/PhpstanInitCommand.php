@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\CLI\Commands;
 
+use Composer\InstalledVersions;
 use FilesystemIterator;
 use LucianoPereira\Crucible\CLI\CliOptions;
 use LucianoPereira\Crucible\CLI\Phpstan;
@@ -46,6 +47,13 @@ final class PhpstanInitCommand
 {
     public function execute(CliOptions $options, WorkingDirectory $workingDirectory): int
     {
+        foreach (['phpstan/phpstan-phpunit', 'pestphp/pest-plugin-phpstan'] as $duplicate) {
+            if (InstalledVersions::isInstalled($duplicate)) {
+                print 'Note: ' . $duplicate . ' duplicates Crucible\'s extension; remove it with '
+                    . 'composer remove --dev ' . $duplicate . PHP_EOL;
+            }
+        }
+
         try {
             $loaded = (new Loader())->load($workingDirectory, $options->configuration);
         } catch (Exception $e) {

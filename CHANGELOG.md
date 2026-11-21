@@ -2,6 +2,19 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.4.0 — 2026-11-21
+
+- Added PHP 8.6 as an experimental CI target: the self-hosted suite, PHPStan, Rector and the generated-code tier pass on 8.6.0. Fixed the two 8.6 deprecations it exposed: `ReflectionMethod::invoke()` with an object for a static method (`CurrentTest::call`) and the one-argument `ReflectionMethod` constructor (`Observer::describe`, now `createFromMethodName()`)
+- Fixed a class-level `markTestSkipped()`/`markTestIncomplete()` in `setUpBeforeClass()` erroring every test instead of skipping them, and made both methods public static as PHPUnit's are. PHPUnit 13.4.8 prints `S` and counts every test in the class as skipped; `--fail-on-skipped` now exits non-zero
+- Fixed a Vitest file-level failure being folded in as nothing: a crashed file or a throwing `beforeAll()` is now one `test file` failure, and a non-zero Vitest exit with an all-green report is a failed suite event. Measured on Vitest 5.1.1: 4 tests, 1 passed, 2 failed, 1 skipped, exit 1
+- Added `crucible doctor`: checks `vendor/bin/crucible`, `crucible.php`, a leftover `phpunit.xml`, migration-mode PHPUnit, the Testbench meta package, duplicate `phpstan-phpunit`/`pest-plugin-phpstan`, the PHPStan extension wiring (including a double include), and a `composer.json` that disables the bridge's package discovery. Exits 1 only for a problem that breaks the drop-in story
+- Completed the `php artisan test` bridge: the signature now mirrors the engine's options — `--last-failed`, `--profile`, repeated `--testsuite`/`--group`/`--exclude-testsuite`/`--covers`/`--uses`/`--test-suffix`, coverage targets/floors, display and fail-on switches — forwards every declared option by name, and appends tokens after `--` verbatim. `phpstan-init` now names a duplicate `phpstan-phpunit`/`pest-plugin-phpstan`
+- Added `--last-failed`: PHP tests whose most recent result-cache outcome failed or errored, and Vitest's own `--last-failed` for the JS suites. A clean recorded run falls back to the full selection; `--do-not-cache-result` refuses the flag instead of silently ignoring it
+- Added `--shard` to the JS suite: the same `M/N` reaches `vitest --shard=M/N`, so a sharded CI run does not repeat the whole JS suite in every shard
+- Added visible control characters in human-facing names: a data set containing ESC prints as `\u{001B}`, not as a raw terminal escape, matching PHPUnit 13.4.8
+- Changed a window that flushes the whole error-handler stack to restore the saved handlers without a risky verdict: Laravel's `TestCase::tearDown()` calls `HandleExceptions::flushState()`, which pops until null and re-enables only PHPUnit's handler, so every framework-booting test on a Crucible-only install was reported as "removed error handlers other than its own". A silent zero-mask frame below the capture keeps a popped capture (a partial removal, still risky) distinct from the full flush
+- Re-ran the conformance lane against PHPUnit 13.4.8: all fixtures conform, so the 13.4.4-13.4.8 fixes need no Crucible change. Re-measured `Quirk::ThrowInterfaceAsMessage` on Pest 5.3.7: the interface-as-message bug is still present, so the quirk stays
+
 ## v1.3.2 — 2026-11-20
 
 Thanks to Thomas (lekoala) for the Symfony 8.1 / Doctrine / PostgreSQL migration, the issue #2 report, and the pull requests that addressed several of its items. The two item-6 requests (`--testsuite` path intersection and per-class `--profile`) remain open.

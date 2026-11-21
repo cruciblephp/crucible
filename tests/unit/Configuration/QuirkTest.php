@@ -61,8 +61,9 @@ final class QuirkTest extends TestCase
         (new Expectation($boom))->toThrow(Throwable::class);
         (new Expectation($boom))->toThrow(static function (Throwable $e): void {});
 
-        // Pest 4.7.8's answers, each measured: the interface name is read
-        // as a fragment of the message 'boom', which it is not part of.
+        // Pest 4.7.8's answers, each measured, and re-measured on 5.3.7
+        // (2026-11-21, still present): the interface name is read as a
+        // fragment of the message 'boom', which it is not part of.
         Expectation::configure([Quirk::ThrowInterfaceAsMessage]);
 
         (new Expectation($boom))->not()->toThrow(Throwable::class);

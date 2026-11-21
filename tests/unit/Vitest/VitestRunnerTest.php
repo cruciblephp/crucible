@@ -131,4 +131,44 @@ final class VitestRunnerTest extends TestCase
         self::assertSame('^cart (adds|removes)', (new NameFilter('/^cart (adds|removes)/i'))->vitestPattern());
         self::assertSame('x+', (new NameFilter('{x+}'))->vitestPattern());
     }
+
+    public function testAShardedSuiteForwardsTheShardToVitest(): void
+    {
+        [$argv] = $this->run((new VitestSuite($this->directory, $this->directory . '/vitest'))->sharded('2/3'));
+
+        self::assertContains('--shard=2/3', $argv);
+    }
+
+    public function testOnlyLastFailedIsForwardedToVitest(): void
+    {
+        [$argv] = $this->run((new VitestSuite($this->directory, $this->directory . '/vitest'))->onlyLastFailed(true));
+
+        self::assertContains('--last-failed', $argv);
+    }
+
+    public function testANonZeroExitWithAnAllGreenReportStillFailsTheRun(): void
+    {
+        // The backstop: a crashed worker or config error can leave a report
+        // of passing tests while Vitest exits non-zero.
+        $report = [
+            'testResults' => [[
+                'name'             => $this->directory . '/ok.test.js',
+                'status'           => 'passed',
+                'assertionResults' => [['fullName' => 'ok runs', 'status' => 'passed']],
+            ]],
+        ];
+
+        file_put_contents($this->directory . '/vitest-fail', '#!' . PHP_BINARY . "\n<?php\n"
+            . 'file_put_contents(__DIR__ . "/argv.json", json_encode(array_slice($argv, 1)));' . "\n"
+            . 'foreach ($argv as $arg) { if (str_starts_with($arg, "--outputFile=")) { file_put_contents(substr($arg, 13), ' . var_export(json_encode($report), true) . '); } }' . "\n"
+            . 'exit(1);' . "\n");
+        chmod($this->directory . '/vitest-fail', 0o755);
+
+        [$argv, $log] = $this->run(new VitestSuite($this->directory, $this->directory . '/vitest-fail'));
+
+        $failed = $log->of(Outcome::Failed);
+
+        self::assertCount(1, $failed);
+        self::assertStringContainsString('exited with code 1', (string) $failed[0]['reason']);
+    }
 }

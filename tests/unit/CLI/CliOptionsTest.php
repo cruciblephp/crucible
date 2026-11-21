@@ -72,6 +72,11 @@ final class CliOptionsTest extends TestCase
         $this->assertSame(['flaky'], $options->excludeGroups);
     }
 
+    public function testTheDoctorCommandIsAShortCommand(): void
+    {
+        $this->assertTrue($this->parse(['doctor'])->doctor);
+    }
+
     public function testBooleanFlagsParseToTrueNotNull(): void
     {
         $options = $this->parse(['--stop-on-failure', '--fail-on-risky', '--do-not-cache-result']);

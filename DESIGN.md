@@ -6515,7 +6515,9 @@ a `Throwable`. Crucible's string form already matched interfaces before this rel
 record. Now the divergence is named: `Quirk::ThrowInterfaceAsMessage` restores Pest's reading for
 both forms, and Crucible corrects it by default. That makes it the first quirk since the
 enum was emptied, and `QuirkTest`'s "no quirk is declared" became "this is the only one", with
-the quirk's effect pinned against Pest's measured answers.
+the quirk's effect pinned against Pest's measured answers. Re-measured on Pest 5.3.7 on
+2026-11-21: `toThrow(Throwable::class)` still fails and `not->toThrow(Throwable::class)` still
+passes, so the quirk remains.
 
 ### D-144: what a `beforeEach` puts on `$this`, for PHPStan
 
@@ -7144,6 +7146,17 @@ handlers and restores any bootstrap handlers the test popped, and the runner rep
 tested code removed error handlers other than its own". Both cases use the existing risky outcome
 and respect `--fail-on-risky`, so a suite that failed on neither before can fail on this now.
 
+A FULL flush is the exception, and a silent zero-mask frame below the capture makes the two shapes
+distinguishable. A test that pops the capture leaves the sentinel, so the stack is not empty and the
+removal is reported. A framework that flushes the stack (Laravel's `TestCase::tearDown()` through
+`HandleExceptions::flushState()`, which pops until null and re-enables only
+`PHPUnit\Runner\ErrorHandler` - absent in a Crucible-only install) removes the sentinel too, so the
+drain restores the saved callables without a verdict. The sentinel is registered with a zero mask,
+so PHP never calls it and it changes no error handling. The residual case is a test that flushes the
+entire stack itself: with the sentinel gone it is indistinguishable from a framework flush and is
+treated as clean. Isolation still holds - the saved callables are restored - but that verdict is not
+claimed.
+
 PHP exposes each callable but gives no way to read its registered error levels. Saving the stack
 means popping it and reinstalling the callables with the default mask, so a handler registered
 with a narrower mask loses it for the run.
@@ -7305,6 +7318,123 @@ Control: with the preload switched off, the computed-name case fails with "Call 
 function alpha_helper()". ✓ `WorkerUnitDiscoveryTest` holds each file to two discoveries, the
 parent's and its own worker's, under `--parallel`, `--process-isolation` and `--repeat`.
 ✓ `UnitDependenciesTest` pins the token rule on six declaring shapes and ten load-time effects.
+
+---
+
+### D-181: PHP 8.6 is an experimental target
+
+PHP 8.6.0 (2026-11-19) is a new stable line, but the release train is days old and two of its
+deprecations reached Crucible. The floor stays 8.3. CI runs 8.6 on Ubuntu as a non-blocking
+experimental matrix entry, without xdebug (there is no stable 8.6 build) and without claiming the
+coverage driver. The gate is the self-hosted suite, PHPStan, Rector and `analyse:generated`; Pint
+runs and prints an upstream `spl_object_hash()` deprecation from its own PHAR, but exits 0.
+
+✓ Measured on PHP 8.6.0 (Sury 8.6.0-3, a local CLI extracted without root): `composer check` 1976
+tests, 1924 passed, 0 failed/errors/risky, 49 skipped (oracles absent), 3 untested; PHPStan and
+Rector clean; `analyse:generated` clean. The first run had one failure that was the local build's
+missing PDO extension (`PDOException` class not found), not Crucible; with `pdo` loaded it passed.
+That run exposed 8 deprecations in two places, both fixed:
+
+- `CurrentTest::call()` passed the instance to `ReflectionMethod::invoke()` for static methods;
+  8.6 deprecates that. It passes null when `isStatic()` now.
+- `Observer::describe()` used the one-argument `ReflectionMethod` constructor; 8.6 deprecates it.
+  It uses `createFromMethodName()`, available since 8.3.
+
+Pest 5.3.4 fixed the same reflection deprecation upstream, so this is an ecosystem-wide 8.6 change,
+not a Pest-only one. Pint's PHAR is the one upstream 8.6 quirk kept: its bundled Laravel container
+calls `spl_object_hash()`, deprecated in 8.6, and 1.29.3 is current. It does not fail the run, so
+the experimental job keeps Pint and shows the warnings rather than hiding the target.
+
+The same cycle re-ran the conformance lane against PHPUnit 13.4.8 (all fixtures conform) and the
+Pest matcher quirk against 5.3.7 (`ThrowInterfaceAsMessage` still reproduces: `toThrow(Throwable::
+class)` fails, `not->toThrow(Throwable::class)` passes). Neither removed a Crucible quirk; both
+kept the current answers honest against the releases that now exist.
+
+### D-182: a class-level skip is a skip, and the mark methods are static
+
+PHPUnit's `markTestSkipped()` and `markTestIncomplete()` are public static; Crucible's were final
+protected instance methods. A static `setUpBeforeClass()` calling `self::markTestSkipped()` therefore
+errored with "Non-static method ... cannot be called statically", and the runner's before-all catch
+turned any throwable into an error for every test. ✓ Measured on PHPUnit 13.4.8: a class whose
+`setUpBeforeClass()` calls either method prints `S` and counts every test as skipped, including two
+tests in the class. Fixed both halves: the methods are public static, and the before-all catch maps
+`SkippedTestError` and `IncompleteTestError` to `Outcome::Skipped` with the message as the reason
+instead of `Outcome::Errored`. The CLI fixture then reports `Tests: 2, Passed: 1, Skipped: 1` and
+`--fail-on-skipped` exits 1, as the incumbent does. ✓ `TestRunnerTest` pins both exception types:
+two tests, both skipped, the same reason, no failure. A plain before-all exception still errors
+every test in the group.
+
+### D-183: a Vitest file-level failure is not a silent pass
+
+Vitest 5.1.1's JSON can report a file-level failure: `status: "failed"`, a `message`, and no
+`assertionResults` (a top-level throw) or only skipped ones (a `beforeAll()` error). The translator
+walked only `assertionResults`, so the file folded in as nothing or as a skip, and the runner
+discarded Vitest's exit code. ✓ Measured on Vitest 5.1.1 with a top-level throw and with a throwing
+`beforeAll()`: the JSON carries `success: false`, `numFailedTestSuites: 1` and the message;
+Crucible reported 1 passed / 0 failed before the fix. The translator now emits one `test file`
+failure for a failed file with no failed assertion, and the runner turns a non-zero exit with no
+failed event into a failed suite event - the backstop for a worker or config failure that leaves a
+green report. ✓ The real fixture now reports 4 tests: 1 passed, 2 failed (the crashed file and the
+setup-error file), 1 skipped, exit 1. Unit tests pin both JSON shapes and the exit-code backstop.
+
+What Vitest 5.1.0/5.1.1 offer that the bridge does not use yet, recorded as ideas rather than
+implemented here:
+
+- `--last-failed` and `--since-last-run` (5.1.0). Crucible's impact selection uses
+  `vitest related <files>` for changes and its own result cache for defects-first ordering; it has
+  no run-only-failed switch for either half.
+- Per-retry/repeat attempt results (5.1.0). The JSON now exposes each attempt; the bridge reads
+  `assertionResults` only, so Crucible's `retried`/attempt model stays PHP-only.
+- `--shard` (5.1.1 applies it before the run starts). Crucible's `--shard` never reaches Vitest, so
+  a sharded CI run repeats the whole JS suite in every shard.
+- JS coverage (V8 subprocess coverage, 5.1.0/5.1.1). Crucible's coverage report is PHP-only; the JS
+  half is not folded into it.
+
+### D-184: control characters are visible in human-facing names
+
+PHPUnit 13.4.8 prints a data-set name containing an ESC as `\u{001B}[31mred`; Crucible wrote the
+raw escape into `--testdox-text`, where a terminal can recolor the rest of the line and a logfile
+hides it. `Visible::text()` replaces every C0 control character and DEL with `\u{XXXX}`, and
+`PrettyName` applies it to the file section and the pretty test name (dataset included), so the
+console, TestDox text/HTML and the document views agree. The JSON event stream keeps the raw
+string and lets JSON escaping carry it; this is for the text a person reads. ✓ Measured against
+PHPUnit 13.4.8: same `\u{001B}` spelling for the same fixture. `ReportersTest` pins the spelling.
+
+### D-185: the JS suite follows the run's selection
+
+Two Vitest 5.1.0/5.1.1 selections now reach the JS half. `--shard M/N` is forwarded as
+`vitest --shard=M/N`, so a sharded CI run does not repeat the whole JS suite in every shard.
+`--last-failed` keeps only PHP tests whose most recent result-cache outcome was a failure or an
+error, and forwards Vitest's own `--last-failed`; when the cache has no failed test in the
+selection it runs the full selection, as Vitest does. A run with `--do-not-cache-result`
+refuses `--last-failed` rather than silently ignoring it. `--since-last-run`, per-attempt results
+and folded JS coverage remain open: each needs a baseline or a report shape the bridge does not
+have yet. ✓ `VitestRunnerTest` pins both argv flags; `LastFailedRunTest` records a failed test,
+then asserts the second run executes only it, and that a clean recorded run falls back to the full
+selection with the note.
+
+### D-186: the Laravel edge has a doctor, and the bridge mirrors the engine
+
+The engine's Laravel story was still painful at the edges, not in the engine. Two changes.
+
+`php artisan test` was a curated subset: a flag added to the engine needed a second forwarding
+branch here, and `--last-failed`, `--profile`, coverage targets and the display/fail-on switches
+were absent. The bridge's signature now mirrors the engine's surface, and `handle()` forwards every
+declared option by name — arrays for the repeatable options — with Laravel-only flags (`--env`,
+`--without-tty`, the database-recreation switches) accepted and left to Laravel, and tokens after
+`--` appended verbatim. A new engine flag still needs its declaration, but not a second branch.
+
+`crucible doctor` answers the migration's edge state in one command: `vendor/bin/crucible`,
+`crucible.php`, a leftover `phpunit.xml`, PHPUnit in migration mode, the `orchestra/testbench`
+meta package (which requires PHPUnit) versus `testbench-core`, duplicate
+`phpstan/phpstan-phpunit`/`pestphp/pest-plugin-phpstan`, the extension missing or included twice,
+and a `composer.json` whose `extra.laravel.dont-discover` turns the bridge off. It exits 1 only for
+a problem that breaks the drop-in story; migration-mode notes and warnings do not fail it.
+`phpstan-init` repeats the duplicate-extension warning at the point it wires the extension.
+
+✓ `DoctorCommandTest` covers clean, duplicate extensions, Testbench, double include and the
+discovery opt-out; `DocumentedOptionsTest` keeps the command in `--help` and HELP.md. The full gate
+on 8.5/8.6 is 1992 tests, 0 failed and 0 risky.
 
 ---
 

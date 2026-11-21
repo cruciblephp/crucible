@@ -330,6 +330,92 @@ final class IssueCollectorTest extends TestCase
         self::assertStringStartsWith('OK:', $stdout);
     }
 
+    public function testAFullFlushRestoresTheStackWithoutAVerdict(): void
+    {
+        // Laravel's TestCase::tearDown() calls HandleExceptions::flushState(),
+        // which pops every handler - including this window's capture - and
+        // re-enables only PHPUnit's when PHPUnit is installed. A bare child
+        // process owns its whole stack, so it can run that shape without
+        // disturbing the host suite's own window.
+        $repoRoot = dirname(__DIR__, 3);
+        $script   = sys_get_temp_dir() . '/crucible-error-handler-flush-' . uniqid() . '.php';
+
+        file_put_contents($script, <<<PHP
+            <?php
+
+            declare(strict_types=1);
+
+            require '{$repoRoot}/vendor/autoload.php';
+
+            use LucianoPereira\\Crucible\\Filesystem\\WorkingDirectory;
+            use LucianoPereira\\Crucible\\Runner\\IssueCollector;
+
+            \$seen = [];
+            \$bootstrap = static function (int \$level, string \$message) use (&\$seen): bool {
+                \$seen[] = \$message;
+
+                return true;
+            };
+
+            set_error_handler(\$bootstrap);
+
+            \$collector = new IssueCollector([], new WorkingDirectory('{$repoRoot}'));
+            \$collector->install();
+
+            // The framework teardown: pop until the stack is empty.
+            while (get_error_handler() !== null) {
+                restore_error_handler();
+            }
+
+            \$collector->drain();
+
+            \$probe = static fn (): bool => true;
+            \$top = set_error_handler(\$probe);
+            restore_error_handler();
+
+            if (\$top !== \$bootstrap) {
+                fwrite(STDOUT, 'FAIL: the flushed bootstrap was not restored.');
+                exit(1);
+            }
+
+            if (\$collector->hygiene() !== null) {
+                fwrite(STDOUT, 'FAIL: the verdict was ' . var_export(\$collector->hygiene(), true));
+                exit(1);
+            }
+
+            trigger_error('after the flush', E_USER_NOTICE);
+
+            if (\$seen !== ['after the flush']) {
+                fwrite(STDOUT, 'FAIL: the restored handler did not see the next error.');
+                exit(1);
+            }
+
+            fwrite(STDOUT, 'OK: the full flush was restored without a verdict');
+            exit(0);
+            PHP);
+
+        $process = proc_open(
+            [PHP_BINARY, $script],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+
+        if (!is_resource($process)) {
+            self::fail('The flush fixture could not be started.');
+        }
+
+        $stdout = (string) stream_get_contents($pipes[1]);
+        stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        $exit = proc_close($process);
+        @unlink($script);
+
+        self::assertSame(0, $exit, $stdout);
+        self::assertStringStartsWith('OK:', $stdout);
+    }
+
     public function testADrainIsNotFooledByAReinstalledFloorCallable(): void
     {
         // The spoofable-floor case cannot live in this process either:

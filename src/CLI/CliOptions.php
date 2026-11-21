@@ -59,10 +59,10 @@ final readonly class CliOptions
         '--update-baseline',
         '--watch', '--coverage', '--coverage-branch', '--path-coverage', '--strict-coverage',
         '--update-snapshots', '-u',
-        '--todos', '--no-wip', '--debug', '--profile', '--dirty',
+        '--todos', '--no-wip', '--debug', '--profile', '--dirty', '--last-failed',
         '--list-tests', '--list-groups', '--list-suites', '--list-test-files',
         '--list-test-ids', '--list-tests-xml',
-        '--auto-fix', '--revert',
+        '--auto-fix', '--revert', '--doctor',
         '--preview', '--json',
         '--no-logging', '--no-extensions', '--no-configuration',
         '--no-useless-test-reports', '--check-version',
@@ -154,7 +154,7 @@ final readonly class CliOptions
         '--update-deprecations-baseline' => '--update-baseline',
     ];
 
-    private const array COMMANDS = ['migrate-config', 'flakes', 'phpstan-init', 'lint-inline', 'mutation-index', 'mutate', 'compat-check', 'extensions', 'manual', 'completion'];
+    private const array COMMANDS = ['migrate-config', 'flakes', 'phpstan-init', 'doctor', 'lint-inline', 'mutation-index', 'mutate', 'compat-check', 'extensions', 'manual', 'completion'];
 
     /**
      * @param ?non-empty-string       $configuration
@@ -368,6 +368,8 @@ final readonly class CliOptions
         public bool $debug = false,
         public bool $profile = false,
         public bool $dirty = false,
+        public bool $lastFailed = false,
+        public bool $doctor = false,
         public array $paths = [],
         public bool $observeTypes = false,
         public array $coverageTargets = [],
@@ -926,6 +928,8 @@ final readonly class CliOptions
             debug: isset($flags['--debug']),
             profile: isset($flags['--profile']),
             dirty: isset($flags['--dirty']),
+            lastFailed: isset($flags['--last-failed']),
+            doctor: isset($flags['doctor']) || isset($flags['--doctor']),
             paths: $paths,
             observeTypes: isset($flags['--observe-types']),
             coverageTargets: $noCoverage ? [] : ($lists['--coverage-target'] ?? []),

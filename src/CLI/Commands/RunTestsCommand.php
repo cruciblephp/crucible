@@ -54,6 +54,7 @@ use LucianoPereira\Crucible\Event\Emitter;
 use LucianoPereira\Crucible\Event\EventTextWriter;
 use LucianoPereira\Crucible\Event\IssueKind;
 use LucianoPereira\Crucible\Event\NdjsonWriter;
+use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunSummary;
 use LucianoPereira\Crucible\Exceptions\Exception;
 use LucianoPereira\Crucible\Extension\AroundEachTest;
@@ -917,6 +918,16 @@ final class RunTestsCommand
             $testFiles,
         ))->apply($groups);
 
+        if ($options->lastFailed) {
+            if (!$cacheResult) {
+                CliOutput::line('Option --last-failed needs the result cache; remove --do-not-cache-result.');
+
+                return 1;
+            }
+
+            $groups = $this->lastFailedGroups($groups, $cache);
+        }
+
         // Listing answers a question about the suite rather than running
         // it, so it prints the selection as narrowed and stops — every
         // selecting option above still applies, which is what makes
@@ -935,6 +946,8 @@ final class RunTestsCommand
             ));
         }
 
+        $vitestShard = null;
+
         if ($options->shard !== null) {
             $shard = Shard::fromString($options->shard);
 
@@ -944,8 +957,14 @@ final class RunTestsCommand
                 return 1;
             }
 
-            $groups = $shard->apply($groups);
+            $groups      = $shard->apply($groups);
+            $vitestShard = $shard->index . '/' . $shard->total;
         }
+
+        $vitestSuites = array_map(
+            static fn(VitestSuite $suite): VitestSuite => $suite->sharded($vitestShard)->onlyLastFailed($options->lastFailed),
+            $vitestSuites,
+        );
 
         // A JS-only change (D-080) leaves no PHP group but an affected
         // Vitest suite: the run proceeds so the suite folds in through
@@ -2244,6 +2263,48 @@ final class RunTestsCommand
      * parallel run must behave like its sequential twin).
      *
      */
+    /**
+     * Keep only the tests whose most recent recorded outcome was a
+     * failure or an error. A cache with no failed test in the selection
+     * means there is nothing to narrow (Vitest's own --last-failed runs
+     * everything in that case), so the selection is returned unchanged.
+     *
+     * @param list<TestGroup> $groups
+     *
+     * @return list<TestGroup>
+     */
+    private function lastFailedGroups(array $groups, ResultCache $cache): array
+    {
+        $kept  = [];
+        $found = false;
+
+        foreach ($groups as $group) {
+            $tests = [];
+
+            foreach ($group->tests as $test) {
+                $outcomes = $cache->outcomes($test->id->toString());
+                $last     = $outcomes[0] ?? null;
+
+                if ($last === Outcome::Failed || $last === Outcome::Errored) {
+                    $tests[] = $test;
+                    $found   = true;
+                }
+            }
+
+            if ($tests !== []) {
+                $kept[] = new TestGroup($group->name, $tests, $group->beforeAll, $group->afterAll);
+            }
+        }
+
+        if (!$found) {
+            CliOutput::line('No failed tests in the last recorded run; running the full selection.');
+
+            return $groups;
+        }
+
+        return $kept;
+    }
+
     private function overrides(CliOptions $options, WorkingDirectory $workingDirectory): Overrides
     {
         // Which baseline this run reads, and whether it reads one at all.

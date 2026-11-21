@@ -100,7 +100,16 @@ final class ErrorHandlerHygieneCliTest extends TestCase
                     self::assertTrue(true);
                 }
 
-                public function testRunsCleanAfterBoth(): void
+                public function testFlushesTheWholeStack(): void
+                {
+                    while (get_error_handler() !== null) {
+                        restore_error_handler();
+                    }
+
+                    self::assertTrue(true);
+                }
+
+                public function testRunsCleanAfterTheDisturbances(): void
                 {
                     self::assertTrue(true);
                 }
@@ -144,7 +153,13 @@ final class ErrorHandlerHygieneCliTest extends TestCase
 
         self::assertSame(
             'pass',
-            $outcomes['tests/LeakyTest.php::testRunsCleanAfterBoth']['outcome'] ?? null,
+            $outcomes['tests/LeakyTest.php::testFlushesTheWholeStack']['outcome'] ?? null,
+            'A full flush - what Laravel\'s HandleExceptions::flushState() does - is restored without a verdict.',
+        );
+
+        self::assertSame(
+            'pass',
+            $outcomes['tests/LeakyTest.php::testRunsCleanAfterTheDisturbances']['outcome'] ?? null,
             'The window after a disturbed one must still run and pass clean: no misattributed issues.',
         );
 

@@ -175,8 +175,12 @@ final class Observer
 
     private static function describe(string $key): ObservedFunction
     {
-        $reflection = str_contains($key, '::') ? new ReflectionMethod($key) : new ReflectionFunction($key);
-        $names      = [];
+        // PHP 8.6 deprecates the one-argument ReflectionMethod constructor;
+        // createFromMethodName() exists on every version Crucible supports.
+        $reflection = str_contains($key, '::')
+            ? ReflectionMethod::createFromMethodName($key)
+            : new ReflectionFunction($key);
+        $names = [];
 
         foreach ($reflection->getParameters() as $parameter) {
             if (!$parameter->isVariadic()) {

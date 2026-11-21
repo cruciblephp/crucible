@@ -25,6 +25,7 @@ stops the run with exit 2. Unknown options are errors, never ignored. A CLI opti
 | `crucible migrate-config` | Convert `phpunit.xml`(`.dist`) into a `crucible.php` and exit — the one sanctioned XML read |
 | `crucible flakes [--rounds N]` | Hunt order-dependent tests with seeded random rounds |
 | `crucible phpstan-init` | Wire Crucible's PHPStan extension into `phpstan.neon` |
+| `crucible doctor` | Check the project's PHPUnit/PHPStan/Laravel migration state |
 | `crucible lint-inline` | Analyse `@crucible` doctests with PHPStan through shadow files |
 | `crucible mutation-index` | Emit the per-line covering-tests index as JSON, for a mutation tool |
 | `crucible mutate` | Mutation-test the covered source and report the score (run `--coverage` first) |
@@ -58,6 +59,8 @@ rather than risking a test that silently did not run.
 | `--changed[=<ref>]` | Tests affected by changes against `<ref>` (default `HEAD`) |
 | `--related <file,...>` | Tests affected by the given file(s) |
 | `--dirty` | Tests affected by uncommitted work — staged, unstaged **and** untracked |
+| `--last-failed` | Tests that failed or errored in the last recorded run; Vitest receives `--last-failed` |
+| `--doctor` | Check the project's PHPUnit/PHPStan/Laravel migration state |
 
 Files outside the dependency graph — assets, templates, translations — are reached with
 declared impact rules in `crucible.php`:

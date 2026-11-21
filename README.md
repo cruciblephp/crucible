@@ -48,7 +48,8 @@ with a stock PHP build.
 | Optional | `ext-xdebug` or `ext-pcov` for coverage · Node for the browser tier · PHPStan `>= 2.3` for the built-in extension |
 
 The floor is deliberate: a suite on 8.3 should not have to move the whole project to a newer
-PHP to change test runner.
+PHP to change test runner. PHP 8.6 is exercised as an experimental target in CI; the supported
+floor remains 8.3.
 
 ---
 
@@ -67,6 +68,38 @@ eval "$(./vendor/bin/crucible completion bash)" # tab completion: bash, zsh or f
 ```
 
 Everything below is a summary. The manual is the real document.
+
+---
+
+## New to Crucible?
+
+Read in this order; every step is runnable.
+
+1. **`MANUAL.md` §1–§3** — install, `crucible --init`, and the three dialects. Do not start
+   with `DESIGN.md`; it is 700+ decision records, not a tutorial.
+2. **`examples/`** — start with `examples/01-phpunit-dialect`, then `02-pest-dialect`. Every
+   sample is executed by the suite, so this is the shortest path from "what is it" to a running
+   test.
+3. **`MANUAL.md` §8–§14** — selection, watch, coverage, the browser tier, JavaScript suites,
+   reporting, and the PHPUnit migration steps.
+4. **`php crucible` in this repository** — the self-hosted suite is the best documentation of
+   what the engine actually does; run one directory while reading its tests.
+5. **`DESIGN.md`** — one decision per entry, with the measurement and the rejected alternative.
+   Read the entry for the area you are touching, not the file from top to bottom.
+6. **`RESEARCH.md` and `ORACLES.md`** — why the engine looks like this, and which real packages
+   the compatibility claims are executed against.
+
+The house rules a newcomer needs before a first change:
+
+- **PHPUnit is the specification, never the source.** No code, templates, doc comments or
+  message text are copied from it; read the docs, run the binary, measure the answer.
+- **No claim without a result.** A behavior change comes with the test, the oracle run or the
+  measurement that proves it; `composer check` is the gate, not a suggestion.
+- **One decision per change.** A non-trivial behavior gets a `D-xxx` entry in `DESIGN.md` with
+  what was measured and what was rejected. `RELEASE.md` is the shipped record.
+- **Oracles are installed, never vendored.** A fresh clone is green with named skips; CI builds
+  the oracles and refuses to let a skip hide a missing proof.
+- **The floor is PHP 8.3.** PHP 8.6 is an experimental CI target, not a new floor.
 
 ---
 
@@ -170,7 +203,7 @@ and defects-first scheduling, VMVM-style state isolation, Ekstazi-style impact s
 
 ## Credits
 
-Crucible 1.3.2 includes work from [Thomas (lekoala)](https://github.com/lekoala), who tested a
+Crucible 1.4.0 includes work from [Thomas (lekoala)](https://github.com/lekoala), who tested a
 Symfony 8.1 / Doctrine / PostgreSQL suite against Crucible, reported what broke in
 [issue #2](https://github.com/cruciblephp/crucible/issues/2), and sent the pull requests that
 addressed several of its items. Thank you.

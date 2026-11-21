@@ -103,6 +103,69 @@ final class VitestReportTest extends TestCase
         $this->assertSame('/elsewhere/app/foo.test.js', $events[0]->test->file);
     }
 
+    public function testACrashedFileWithNoAssertionsBecomesAFailedEvent(): void
+    {
+        // Vitest 5.1.1's JSON for a top-level throw: a failed file with a
+        // message and no assertionResults. Dropping it would be a silent
+        // pass.
+        $events = VitestReport::translate([
+            'testResults' => [[
+                'name'             => '/root/js/tests/crash.test.js',
+                'status'           => 'failed',
+                'message'          => 'top-level crash',
+                'assertionResults' => [],
+            ]],
+        ], '/root/js');
+
+        $this->assertCount(1, $events);
+        $this->assertSame(Outcome::Failed, $events[0]->outcome);
+        $this->assertSame('tests/crash.test.js', $events[0]->test->file);
+        $this->assertSame('test file', $events[0]->test->name);
+        $this->assertNotNull($events[0]->failure);
+        $this->assertStringContainsString('top-level crash', $events[0]->failure->message);
+    }
+
+    public function testASetupErrorAddsTheFileFailureBesideTheSkippedTest(): void
+    {
+        // A beforeAll that throws: the file failed, its only assertion was
+        // never run and is reported as skipped. Both must fold in.
+        $events = VitestReport::translate([
+            'testResults' => [[
+                'name'             => '/root/js/tests/setup.test.js',
+                'status'           => 'failed',
+                'message'          => 'setup boom',
+                'assertionResults' => [
+                    ['fullName' => 'never runs', 'status' => 'skipped'],
+                ],
+            ]],
+        ], '/root/js');
+
+        $this->assertCount(2, $events);
+        $this->assertSame(Outcome::Skipped, $events[0]->outcome);
+        $this->assertSame(Outcome::Failed, $events[1]->outcome);
+        $this->assertSame('test file', $events[1]->test->name);
+        $this->assertNotNull($events[1]->failure);
+        $this->assertStringContainsString('setup boom', $events[1]->failure->message);
+    }
+
+    public function testAFailedAssertionDoesNotAlsoAddAFileFailure(): void
+    {
+        $events = VitestReport::translate([
+            'testResults' => [[
+                'name'             => '/root/js/tests/fail.test.js',
+                'status'           => 'failed',
+                'message'          => 'the file failed',
+                'assertionResults' => [
+                    ['fullName' => 'fails', 'status' => 'failed', 'failureMessages' => ['expected 1 to be 2']],
+                ],
+            ]],
+        ], '/root/js');
+
+        $this->assertCount(1, $events);
+        $this->assertSame(Outcome::Failed, $events[0]->outcome);
+        $this->assertSame('fails', $events[0]->test->name);
+    }
+
     public function testMalformedEntriesAreSkippedNotFatal(): void
     {
         $events = VitestReport::translate([

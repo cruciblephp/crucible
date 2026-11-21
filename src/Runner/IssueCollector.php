@@ -43,7 +43,11 @@ use const E_WARNING;
  * The window captures the pre-test handler stack. Drain removes the
  * collector and any handlers left above it. If the test removed the
  * collector, drain restores the saved callables so a replacement or
- * a deeper removal cannot carry over to the next test.
+ * a deeper removal cannot carry over to the next test. A silent
+ * zero-mask frame below the capture keeps the two drain shapes apart:
+ * a test that pops the capture leaves the sentinel and is reported,
+ * while a full-stack removal (Laravel's `HandleExceptions::flushState()`
+ * pops until null) restores the saved callables without a verdict.
  *
  * Deprecations are attributed on capture (DeprecationScope): a
  * trigger inside the project's own directories is `self`; a trigger
@@ -72,6 +76,15 @@ final class IssueCollector
 
     /** @var ?Closure the window's own capture handler, identified by instance at drain time */
     private ?Closure $handler = null;
+
+    /**
+     * A silent frame below the capture, registered with a zero mask so PHP
+     * never calls it. It exists only to make the two drain shapes
+     * distinguishable: a test that pops the capture leaves this frame (a
+     * partial removal), while a framework that flushes the whole stack removes
+     * it too (a full flush).
+     */
+    private ?Closure $sentinel = null;
 
     /** @var list<callable> handlers installed before the window, deepest first */
     private array $previousHandlers = [];
@@ -106,8 +119,10 @@ final class IssueCollector
         }
 
         $this->handler   = $this->capture(...);
+        $this->sentinel  = static fn(): bool => false;
         $this->verdict   = null;
         $this->installed = true;
+        set_error_handler($this->sentinel, 0);
         set_error_handler($this->handler, self::CAPTURED);
     }
 
@@ -124,19 +139,38 @@ final class IssueCollector
             if ($this->top() === $this->handler) {
                 restore_error_handler();
 
+                // The sentinel sits below the capture; remove it too, so the
+                // saved handlers are exposed exactly as they were installed.
+                if ($this->top() === $this->sentinel) {
+                    restore_error_handler();
+                }
+
                 if ($lifted !== []) {
                     $this->verdict = self::HANDLERS_LEFT;
                 }
             } else {
+                // The capture is gone. If the stack is empty as well, a
+                // framework flushed everything: Laravel's
+                // HandleExceptions::flushHandlersState() pops until null and
+                // re-enables only PHPUnit's handler when PHPUnit is present.
+                // The sentinel is what makes that distinguishable from a test
+                // that popped the capture alone - that leaves the sentinel, so
+                // the stack is not empty. Restore the saved callables either
+                // way; report only a partial removal.
+                $fullFlush = $lifted === [];
+
                 foreach ($this->previousHandlers as $handler) {
                     set_error_handler($handler);
                 }
 
-                $this->verdict = self::HANDLERS_REMOVED;
+                if (!$fullFlush) {
+                    $this->verdict = self::HANDLERS_REMOVED;
+                }
             }
 
             $this->installed        = false;
             $this->handler          = null;
+            $this->sentinel         = null;
             $this->previousHandlers = [];
         }
 

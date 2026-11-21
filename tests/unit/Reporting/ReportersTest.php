@@ -39,6 +39,7 @@ use LucianoPereira\Crucible\Reporting\Subscriber\SubscriberRegistry;
 use LucianoPereira\Crucible\Reporting\Subscriber\Subscribers\JUnitSubscriber;
 use LucianoPereira\Crucible\Reporting\TeamCityReporter;
 use LucianoPereira\Crucible\Reporting\TestDoxReporter;
+use LucianoPereira\Crucible\Reporting\Visible;
 use LucianoPereira\Crucible\Test\TestId;
 use LucianoPereira\Crucible\Version;
 
@@ -66,6 +67,7 @@ use function unlink;
 #[CoversClass(PdfReportFormat::class)]
 #[CoversClass(MarkdownReportFormat::class)]
 #[CoversClass(PrettyName::class)]
+#[CoversClass(Visible::class)]
 #[CoversClass(RunReportDocument::class)]
 #[CoversClass(ProfileReporter::class)]
 final class ReportersTest extends TestCase
@@ -935,5 +937,12 @@ final class ReportersTest extends TestCase
         rewind($stream);
 
         self::assertSame('', (string) stream_get_contents($stream), 'An empty run has nothing to profile.');
+    }
+
+    public function testControlCharactersInANameAreShownAsEscapes(): void
+    {
+        $id = new TestId('tests/AnsiTest.php', 'testRed', "\e[31mred");
+
+        $this->assertSame('Red with data set "\u{001B}[31mred"', PrettyName::ofTest($id));
     }
 }

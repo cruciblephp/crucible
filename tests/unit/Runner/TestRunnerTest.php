@@ -23,6 +23,7 @@ use LucianoPereira\Crucible\Event\Listener;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunFinished;
 use LucianoPereira\Crucible\Event\TestFinished;
+use LucianoPereira\Crucible\Framework\IncompleteTestError;
 use LucianoPereira\Crucible\Framework\SkippedTestError;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Metadata\MetadataCollection;
@@ -64,6 +65,11 @@ final class TestRunnerTest extends TestCase
 
     private function runFixture(): void
     {
+        $this->runGroup($this->group);
+    }
+
+    private function runGroup(TestGroup $group): void
+    {
         $emitter = new Emitter(new FrozenClock(new DateTimeImmutable('2026-07-14T12:00:00+00:00')));
 
         /** @var ArrayObject<int, Envelope> $log */
@@ -83,7 +89,7 @@ final class TestRunnerTest extends TestCase
             }
         });
 
-        (new TestRunner($emitter))->run([$this->group]);
+        (new TestRunner($emitter))->run([$group]);
 
         $this->envelopes = [...$log];
     }
@@ -160,6 +166,43 @@ final class TestRunnerTest extends TestCase
         $this->assertContains('setUp', DemoTest::$lifecycle);
         $first = DemoTest::$lifecycle;
         $this->assertSame(['setUp', 'testPasses', 'tearDown'], [$first[0], $first[1], $first[2]]);
+    }
+
+    public function testASkipOrIncompleteFromABeforeAllSkipsEveryTestInTheGroup(): void
+    {
+        // ✓ PHPUnit 13.4.8: setUpBeforeClass() calling markTestSkipped
+        // or markTestIncomplete prints S and counts every test as
+        // skipped, not errored.
+        foreach ([new SkippedTestError('whole class'), new IncompleteTestError('half done')] as $thrown) {
+            $this->envelopes = [];
+
+            $group = new TestGroup(
+                'Skipped',
+                [
+                    new TestDefinition(new TestId('tests/Skipped.php', 'testOne'), static fn(): null => null, MetadataCollection::from()),
+                    new TestDefinition(new TestId('tests/Skipped.php', 'testTwo'), static fn(): null => null, MetadataCollection::from()),
+                ],
+                static fn(): never => throw $thrown,
+            );
+
+            $this->runGroup($group);
+
+            $finished = [];
+
+            foreach ($this->envelopes as $envelope) {
+                if ($envelope->event instanceof TestFinished) {
+                    $finished[] = $envelope->event;
+                }
+            }
+
+            $this->assertCount(2, $finished);
+
+            foreach ($finished as $event) {
+                $this->assertSame(Outcome::Skipped, $event->outcome);
+                $this->assertSame($thrown->getMessage(), $event->reason);
+                $this->assertNull($event->failure);
+            }
+        }
     }
 
     public function testStreamDisciplineFirstAndLastEvents(): void

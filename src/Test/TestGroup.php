@@ -17,7 +17,9 @@ use Closure;
  * Dialect-neutral: a phpunit-dialect class, a pest describe() block,
  * and a source file of inline checks all map onto this one shape.
  *
- * A failing beforeAll errors every test in the group.
+ * A failing beforeAll errors every test in the group; a
+ * markTestSkipped()/markTestIncomplete() in it skips every test, as the
+ * incumbent reports a class-level skip.
  */
 final readonly class TestGroup
 {

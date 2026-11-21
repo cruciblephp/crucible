@@ -37,6 +37,8 @@ final readonly class VitestSuite
      * @param list<non-empty-string> $related   absolute changed-file paths for `vitest related`; [] = the whole suite
      * @param non-empty-string       $name      what `--testsuite` and `--exclude-testsuite` call it
      * @param ?non-empty-string      $filter    the run's --filter, when this suite was named with --testsuite
+     * @param ?non-empty-string      $shard     the run's M/N --shard, forwarded to Vitest so a sharded run does not repeat the whole JS suite
+     * @param bool                   $lastFailed forward --last-failed, so Vitest runs its own failed subset too
      */
     public function __construct(
         public string $directory = '.',
@@ -44,6 +46,8 @@ final readonly class VitestSuite
         public array $related = [],
         public string $name = 'vitest',
         public ?string $filter = null,
+        public ?string $shard = null,
+        public bool $lastFailed = false,
     ) {}
 
     /**
@@ -51,7 +55,7 @@ final readonly class VitestSuite
      */
     public function relatedTo(array $related): self
     {
-        return new self($this->directory, $this->binary, $related, $this->name, $this->filter);
+        return new self($this->directory, $this->binary, $related, $this->name, $this->filter, $this->shard, $this->lastFailed);
     }
 
     /**
@@ -59,6 +63,19 @@ final readonly class VitestSuite
      */
     public function filtered(string $filter): self
     {
-        return new self($this->directory, $this->binary, $this->related, $this->name, $filter);
+        return new self($this->directory, $this->binary, $this->related, $this->name, $filter, $this->shard, $this->lastFailed);
+    }
+
+    /**
+     * @param ?non-empty-string $shard
+     */
+    public function sharded(?string $shard): self
+    {
+        return new self($this->directory, $this->binary, $this->related, $this->name, $this->filter, $shard, $this->lastFailed);
+    }
+
+    public function onlyLastFailed(bool $lastFailed): self
+    {
+        return new self($this->directory, $this->binary, $this->related, $this->name, $this->filter, $this->shard, $lastFailed);
     }
 }
