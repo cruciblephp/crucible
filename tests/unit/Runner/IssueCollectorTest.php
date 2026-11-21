@@ -363,7 +363,16 @@ final class IssueCollectorTest extends TestCase
             \$collector->install();
 
             // The framework teardown: pop until the stack is empty.
-            while (get_error_handler() !== null) {
+            // get_error_handler() is new in 8.5; a probe is the portable read.
+            while (true) {
+                \$probe = static fn (): bool => true;
+                \$top = set_error_handler(\$probe);
+                restore_error_handler();
+
+                if (\$top === null) {
+                    break;
+                }
+
                 restore_error_handler();
             }
 

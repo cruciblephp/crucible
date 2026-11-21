@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-21 (D-001..D-186, 1.4.0). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-21 (D-001..D-187, 1.4.1). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -9,6 +9,18 @@ observable behavior targets **drop-in compatibility with PHPUnit 13 suites**. PH
 *specification* — never the *source*: no code, templates, doc comments, or message text are
 copied from it or from any other project. Sole copyright over every line is a project
 invariant.
+
+---
+
+## v1.4.1 — 2026-11-21
+
+A test-only portability fix for the 1.4.0 gate. No runtime behavior changed.
+
+- **PHP 8.3/8.4 gate.** The new handler-stack tests read `get_error_handler()`, which exists
+  only from PHP 8.5, and one nowdoc fixture contained the word `PHP`. The collector already
+  read the stack with a portable probe; the tests now use the same probe and the fixture
+  comment no longer contains the delimiter. The full gate on 8.3 and 8.4 is green: 1992 tests,
+  0 failed, 0 risky. D-187.
 
 ---
 

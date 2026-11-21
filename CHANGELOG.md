@@ -2,6 +2,11 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.4.1 — 2026-11-21
+
+- Fixed the 1.4.0 gate on PHP 8.3/8.4: the new handler-stack tests called `get_error_handler()`, which is PHP 8.5+, and one nowdoc fixture contained its own delimiter word. The collector already read the stack with a portable probe; the tests now do the same. No runtime behavior change
+- Re-ran the full gate on 8.3 and 8.4: 1992 tests, 0 failed, 0 risky on both; 8.5/8.6 unchanged
+
 ## v1.4.0 — 2026-11-21
 
 - Added PHP 8.6 as an experimental CI target: the self-hosted suite, PHPStan, Rector and the generated-code tier pass on 8.6.0. Fixed the two 8.6 deprecations it exposed: `ReflectionMethod::invoke()` with an object for a static method (`CurrentTest::call`) and the one-argument `ReflectionMethod` constructor (`Observer::describe`, now `createFromMethodName()`)

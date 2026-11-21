@@ -102,7 +102,17 @@ final class ErrorHandlerHygieneCliTest extends TestCase
 
                 public function testFlushesTheWholeStack(): void
                 {
-                    while (get_error_handler() !== null) {
+                    // get_error_handler() is new in 8.5; read the stack with a
+                    // probe, then pop the real frame.
+                    while (true) {
+                        $probe = static fn (): bool => true;
+                        $top = set_error_handler($probe);
+                        restore_error_handler();
+
+                        if ($top === null) {
+                            break;
+                        }
+
                         restore_error_handler();
                     }
 

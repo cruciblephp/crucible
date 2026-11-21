@@ -7436,6 +7436,16 @@ a problem that breaks the drop-in story; migration-mode notes and warnings do no
 discovery opt-out; `DocumentedOptionsTest` keeps the command in `--help` and HELP.md. The full gate
 on 8.5/8.6 is 1992 tests, 0 failed and 0 risky.
 
+### D-187: the handler-stack tests read the stack portably
+
+The 1.4.0 CI gate failed on PHP 8.3/8.4 in two new tests, and the engine was not at fault. The
+child-process fixture called `get_error_handler()`, which exists only from PHP 8.5, so 8.3/8.4
+fataled with 255; the CLI fixture's nowdoc also contained the word `PHP`, so Rector's
+`SensitiveHereNowDocRector` rewrote its delimiter on those versions. The collector already reads
+the top with a probe (`set_error_handler($probe)`, then `restore_error_handler()`); the tests now
+use the same probe and pop the real frame after it, and the fixture comment no longer contains the
+delimiter. ✓ Full gate on 8.3.37 and 8.4.28: 1992 tests, 0 failed, 0 risky. No runtime change.
+
 ---
 
 ## Closing the planned record
