@@ -200,7 +200,7 @@ final class TypeDeletionImpactTest extends TestCase
     {
         $phpstan = dirname(__DIR__, 3) . '/vendor/bin/phpstan';
 
-        file_put_contents($this->project . '/crucible.php', sprintf(<<<'PHP'
+        file_put_contents($this->project . '/crucible.php', sprintf(<<<'SOURCE'
             <?php
 
             declare(strict_types=1);
@@ -211,7 +211,7 @@ final class TypeDeletionImpactTest extends TestCase
                 ->testSuite('unit', 'tests/Unit')
                 ->typeTests('tests/Types', phpstan: %s)
                 ->build();
-            PHP, var_export($phpstan, true)));
+            SOURCE, var_export($phpstan, true)));
 
         file_put_contents($this->project . '/phpstan.neon.dist', <<<'NEON'
             parameters:
@@ -220,7 +220,7 @@ final class TypeDeletionImpactTest extends TestCase
                     - src
             NEON);
 
-        file_put_contents($this->project . '/src/Widget.php', <<<'PHP'
+        file_put_contents($this->project . '/src/Widget.php', <<<'SOURCE'
             <?php
 
             declare(strict_types=1);
@@ -235,9 +235,9 @@ final class TypeDeletionImpactTest extends TestCase
                     return [1, 2];
                 }
             }
-            PHP);
+            SOURCE);
 
-        file_put_contents($this->project . '/tests/Unit/WidgetTest.php', <<<'PHP'
+        file_put_contents($this->project . '/tests/Unit/WidgetTest.php', <<<'SOURCE'
             <?php
 
             declare(strict_types=1);
@@ -251,9 +251,9 @@ final class TypeDeletionImpactTest extends TestCase
                     self::assertTrue(true);
                 }
             }
-            PHP);
+            SOURCE);
 
-        file_put_contents($this->project . '/tests/Types/Widget.types.php', <<<'PHP'
+        file_put_contents($this->project . '/tests/Types/Widget.types.php', <<<'SOURCE'
             <?php
 
             declare(strict_types=1);
@@ -263,7 +263,7 @@ final class TypeDeletionImpactTest extends TestCase
             use function PHPStan\Testing\assertType;
 
             assertType('list<int>', Widget::ids());
-            PHP);
+            SOURCE);
 
         file_put_contents($this->project . '/README.md', "base\n");
         file_put_contents($this->project . '/Makefile', "all:\n");
