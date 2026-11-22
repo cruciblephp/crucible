@@ -43,7 +43,7 @@ final class NdjsonWriter implements Listener
      *                              output on the same stream cannot corrupt a frame
      *                              (CB-23); empty = plain NDJSON
      */
-    public function __construct(private $stream, private string $marker = '') {}
+    public function __construct(private $stream, private readonly string $marker = '') {}
 
     public function handle(Envelope $envelope): void
     {
