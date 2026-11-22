@@ -216,7 +216,7 @@ final class EnvironmentPathImpactTest extends TestCase
     {
         file_put_contents(
             $this->project . '/' . $file,
-            (string) file_get_contents($this->project . '/' . $file) . "\n// edited\n",
+            file_get_contents($this->project . '/' . $file) . "\n// edited\n",
         );
     }
 
