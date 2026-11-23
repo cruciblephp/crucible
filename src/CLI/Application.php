@@ -49,7 +49,6 @@ use function strlen;
 use function version_compare;
 
 use const PHP_EOL;
-use const STDOUT;
 
 final class Application
 {
@@ -69,7 +68,7 @@ final class Application
             return 1;
         }
 
-        // Worker mode prints nothing: stdout is the NDJSON protocol.
+        // Worker mode prints nothing: the NDJSON protocol has its own channel.
         if ($options->worker) {
             return (new RunTestsCommand())->worker();
         }

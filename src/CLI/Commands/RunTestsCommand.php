@@ -88,6 +88,7 @@ use LucianoPereira\Crucible\Runner\Process\DependencyValues;
 use LucianoPereira\Crucible\Runner\Process\EventParser;
 use LucianoPereira\Crucible\Runner\Process\Supervisor;
 use LucianoPereira\Crucible\Runner\Process\UnitDependencies;
+use LucianoPereira\Crucible\Runner\Process\WorkerEventChannel;
 use LucianoPereira\Crucible\Runner\Process\WorkerManifest;
 use LucianoPereira\Crucible\Runner\ProcessSetup;
 use LucianoPereira\Crucible\Runner\PropertyFailures;
@@ -742,16 +743,18 @@ final class RunTestsCommand
                 $files[] = $absolute;
             }
 
+            // The paths as the run received them. ImpactSelection
+            // resolves them against the project root at its own
+            // boundary, together with the change set; resolving one
+            // here and one there is how a relative --configuration
+            // came to never match (D-036).
+            /** @var list<non-empty-string> $environment */
             $environment = [$loaded->path];
 
             $configuredBootstrap = $options->bootstrap ?? $configuration->bootstrap;
 
-            if ($configuredBootstrap !== null) {
-                $bootstrap = realpath($workingDirectory->absolute($configuredBootstrap));
-
-                if ($bootstrap !== false) {
-                    $environment[] = $bootstrap;
-                }
+            if ($configuredBootstrap !== null && $configuredBootstrap !== '') {
+                $environment[] = $configuredBootstrap;
             }
 
             // Coverage-observed edges (D-041), when a coverage run has
@@ -857,7 +860,7 @@ final class RunTestsCommand
             // type suites out rather than start an analysis for nothing.
             // Deletions count too: the defining file is already gone, so
             // checking only the remaining paths answered green for a run
-            // whose type assertion had just gone red (CB-24).
+            // whose type assertion had just gone red.
             if ($typeSuites !== [] && !$this->typesCanChange($files, $changed->deleted)) {
                 $typeSuites = [];
             }
@@ -1501,7 +1504,7 @@ final class RunTestsCommand
      * by its name alone — the file is gone before this runs — and an
      * entry the name cannot settle (no extension at all: a directory, a
      * gitlink, a suffix-less config) keeps the suites, because a false
-     * green is the failure this filter exists to prevent (CB-24).
+     * green is the failure this filter exists to prevent.
      *
      * @param list<non-empty-string> $files   the changed files that still exist, absolute
      * @param list<non-empty-string> $deleted the deleted ones, repository-relative
@@ -1687,20 +1690,14 @@ final class RunTestsCommand
      * installed they require an explicit opt-in, which fails fast if
      * PHPUnit classes are already loaded. Runs before the bootstrap so
      * the aliases win the namespace. Returns the user-facing note
-     * instead of printing it — worker processes must keep stdout for
-     * the protocol.
+     * instead of printing it — worker processes must keep their
+     * protocol channel separate from user output.
      */
     private function applyCompatibilityPolicy(Configuration $configuration): ?string
     {
         return ProcessSetup::compatibility($configuration);
     }
 
-    /**
-     * Worker mode: manifest on stdin, NDJSON events on stdout, and
-     * nothing else — no banner, no reporter. The exit code does not
-     * carry test results; the run:finish event is the completion
-     * handshake the supervisor trusts.
-     */
     /**
      * The wordmark, set up to sweep with a label beside it.
      *
@@ -1716,6 +1713,13 @@ final class RunTestsCommand
         return $splash;
     }
 
+    /**
+     * Worker mode: manifest on stdin, NDJSON events on the channel named
+     * by `CRUCIBLE_WORKER_EVENTS` (fd 3 on POSIX, a file on Windows), and
+     * nothing else — no banner, no reporter. The exit code does not carry
+     * test results; the run:finish event is the completion handshake the
+     * supervisor trusts.
+     */
     public function worker(): int
     {
         $postRun  = new PostRunReport();
@@ -1781,8 +1785,13 @@ final class RunTestsCommand
         // as NDJSON and the supervisor stamps the report from its own
         // emitter. Verified by running --parallel --reproducible twice
         // and comparing the reports byte for byte.
+        // The event channel is separate from both user streams: fd 3
+        // on POSIX, a file on Windows. A raw write to STDOUT or STDERR
+        // can no longer be mistaken for a frame. A manually started
+        // `--worker` has no channel in its environment and keeps the
+        // old stdout stream.
         $emitter = new Emitter(new SystemClock());
-        $emitter->subscribe(new NdjsonWriter(STDOUT));
+        $emitter->subscribe(new NdjsonWriter(WorkerEventChannel::openFromEnvironment() ?? STDOUT));
 
         try {
             // The manifest's units already name what this worker owes,

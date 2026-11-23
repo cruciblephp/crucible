@@ -15,7 +15,6 @@ use LucianoPereira\Crucible\Runner\ProcessSetup;
 use LucianoPereira\Crucible\Test\TestId;
 
 use function fclose;
-use function feof;
 use function fgets;
 use function fwrite;
 use function getenv;
@@ -24,9 +23,8 @@ use function proc_close;
 use function proc_get_status;
 use function proc_open;
 use function proc_terminate;
-use function rtrim;
-use function str_ends_with;
 use function stream_set_blocking;
+use function strpos;
 use function substr;
 use function trim;
 use function usleep;
@@ -35,14 +33,22 @@ use const PHP_BINARY;
 
 /**
  * One spawned worker: `php crucible --worker`, manifest written to stdin
- * (then closed — the worker reads to EOF), NDJSON events read from
- * stdout line by line, stderr drained for crash diagnostics. All
- * reads are non-blocking; the Supervisor multiplexes many workers
- * over stream_select.
+ * (then closed — the worker reads to EOF), NDJSON events read from a
+ * dedicated event channel, stdout drained (user output) and stderr
+ * drained for crash diagnostics and D-124 attribution.
+ *
+ * The channel is separate from both user streams on purpose: a raw
+ * `fwrite(STDOUT)` or `fwrite(STDERR)` can never be mistaken for a frame,
+ * and no sentinel has to be taught to the reader. On POSIX it is fd 3;
+ * on Windows, where the child cannot address an inherited handle by
+ * number, it is a file read by offset (see {@see WorkerEventChannel}).
+ *
+ * All reads are non-blocking; the Supervisor multiplexes the pipes over
+ * stream_select and reads a file channel on the same turn.
  */
 final class WorkerProcess
 {
-    private string $stdoutBuffer = '';
+    private string $eventsBuffer = '';
 
     private string $stderrTail = '';
 
@@ -50,15 +56,33 @@ final class WorkerProcess
 
     private bool $finished = false;
 
+    private bool $exited = false;
+
+    /**
+     * The first terminal status the process reported. proc_get_status()
+     * answers a signal only to the call that first observes the exit: a
+     * second read reports -1, which made close() lose the signal that
+     * atEof() had already seen (WSL).
+     *
+     * @var ?array{exitcode: int, signaled: bool, termsig: int}
+     */
+    private ?array $terminal = null;
+
     private ?int $signal = null;
 
     /**
-     * @param resource     $process
-     * @param resource     $stdout
-     * @param resource     $stderr
-     * @param list<TestId> $expected the test ids this worker must finish
+     * @param resource             $process
+     * @param resource             $stdout
+     * @param resource             $stderr
+     * @param list<TestId>         $expected the test ids this worker must finish
      */
-    private function __construct(private $process, private $stdout, private $stderr, public readonly array $expected) {}
+    private function __construct(
+        private $process,
+        private $stdout,
+        private $stderr,
+        private readonly WorkerEventChannel $events,
+        public readonly array $expected,
+    ) {}
 
     /**
      * @param non-empty-string        $crucibleBinary path of the crucible entry script
@@ -69,6 +93,9 @@ final class WorkerProcess
      * @param array<string, string>   $env          extra environment for the child, merged over the
      *                                              inherited environment (the mutation worker injects
      *                                              its mutant this way); empty = plain inheritance
+     * @param ?WorkerEventChannel     $events       the protocol channel; null = the platform's
+     *                                              (fd 3 on POSIX, a file on Windows), injectable so
+     *                                              both readers are exercised on one machine
      */
     public static function spawn(
         string $crucibleBinary,
@@ -77,16 +104,21 @@ final class WorkerProcess
         array $expected,
         array $phpArguments = [],
         array $env = [],
+        ?WorkerEventChannel $events = null,
     ): ?self {
+        $events ??= WorkerEventChannel::forPlatform();
+
         $process = proc_open(
             [PHP_BINARY, ...$phpArguments, $crucibleBinary, '--worker'],
-            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], ...$events->descriptors()],
             $pipes,
             $workingDirectory->path,
-            self::environment($env),
+            self::environment([...$env, WorkerEventChannel::ENV => $events->spec()]),
         );
 
         if (!is_resource($process)) {
+            $events->close();
+
             return null;
         }
 
@@ -96,7 +128,9 @@ final class WorkerProcess
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
-        return new self($process, $pipes[1], $pipes[2], $expected);
+        $events->bind($pipes);
+
+        return new self($process, $pipes[1], $pipes[2], $events, $expected);
     }
 
     /**
@@ -132,8 +166,52 @@ final class WorkerProcess
     }
 
     /**
-     * Complete NDJSON lines currently available, without blocking.
-     * Partial lines stay buffered until their newline arrives.
+     * The event pipe when the channel is selectable; null for a file.
+     *
+     * @return ?resource
+     */
+    public function events()
+    {
+        return $this->events->selectable();
+    }
+
+    public function eventsAreSelectable(): bool
+    {
+        return $this->events->isSelectable();
+    }
+
+    /**
+     * The next complete NDJSON event, without blocking. A partial line
+     * stays buffered until its newline arrives.
+     */
+    public function nextLine(): ?string
+    {
+        while (true) {
+            $newline = strpos($this->eventsBuffer, "\n");
+
+            if ($newline !== false) {
+                $line               = substr($this->eventsBuffer, 0, $newline);
+                $this->eventsBuffer = substr($this->eventsBuffer, $newline + 1);
+
+                if ($line !== '') {
+                    return $line;
+                }
+
+                continue;
+            }
+
+            $chunk = $this->events->read();
+
+            if ($chunk === '') {
+                return null;
+            }
+
+            $this->eventsBuffer .= $chunk;
+        }
+    }
+
+    /**
+     * Every complete event currently available, one frame at a time.
      *
      * @return list<string>
      */
@@ -141,22 +219,28 @@ final class WorkerProcess
     {
         $lines = [];
 
-        while (($chunk = fgets($this->stdout)) !== false) {
-            $this->stdoutBuffer .= $chunk;
-
-            if (!str_ends_with($this->stdoutBuffer, "\n")) {
-                continue;
-            }
-
-            $line               = rtrim($this->stdoutBuffer, "\n");
-            $this->stdoutBuffer = '';
-
-            if ($line !== '') {
-                $lines[] = $line;
-            }
+        while (($line = $this->nextLine()) !== null) {
+            $lines[] = $line;
         }
 
         return $lines;
+    }
+
+    /**
+     * Reads and discards what the worker wrote to stdout — a direct
+     * `fwrite(STDOUT)`, bootstrap output, the test's raw reprint. It is
+     * user output, never protocol, and draining it keeps the pipe from
+     * filling.
+     */
+    public function drainStdout(): void
+    {
+        if (!is_resource($this->stdout)) {
+            return;
+        }
+
+        while (fgets($this->stdout) !== false) {
+            // Discarded by policy: a worker's stdout is not forwarded.
+        }
     }
 
     /**
@@ -178,9 +262,11 @@ final class WorkerProcess
     }
 
     /**
-     * Everything drained since the last call. A pipe is written in
-     * order, so draining when a test:finish line is read collects all
-     * the test wrote before it finished.
+     * Everything drained since the last call. The worker writes a test's
+     * stderr before it emits the finish frame, so draining when that
+     * frame is read collects the test's process output. The event channel
+     * carries no user bytes, so text the same process writes after the
+     * frame is still its own, never a protocol frame.
      */
     public function takeStderr(): string
     {
@@ -210,9 +296,24 @@ final class WorkerProcess
         return $this->finished;
     }
 
+    /**
+     * Whether the worker is done and its channels fully read. The first
+     * call after the process exits answers false so the caller reads the
+     * bytes it wrote before exiting; the next one answers true.
+     */
     public function atEof(): bool
     {
-        return feof($this->stdout);
+        if ($this->exited) {
+            return true;
+        }
+
+        if ($this->terminalStatus() === null) {
+            return false;
+        }
+
+        $this->exited = true;
+
+        return false;
     }
 
     /**
@@ -241,17 +342,21 @@ final class WorkerProcess
      */
     public function close(): int
     {
+        $this->drainStdout();
         $this->drainStderr();
 
         fclose($this->stdout);
         fclose($this->stderr);
 
-        $status = proc_get_status($this->process);
+        $this->events->close();
 
-        while ($status['running']) {
-            usleep(1_000);
-            $status = proc_get_status($this->process);
-        }
+        do {
+            $status = $this->terminalStatus();
+
+            if ($status === null) {
+                usleep(1_000);
+            }
+        } while ($status === null);
 
         $exit = proc_close($this->process);
 
@@ -262,5 +367,30 @@ final class WorkerProcess
         }
 
         return $exit;
+    }
+
+    /**
+     * The status of a process that is no longer running, cached: the
+     * first call is the only one that carries the signal.
+     *
+     * @return ?array{exitcode: int, signaled: bool, termsig: int}
+     */
+    private function terminalStatus(): ?array
+    {
+        if ($this->terminal !== null) {
+            return $this->terminal;
+        }
+
+        $status = proc_get_status($this->process);
+
+        if ($status['running']) {
+            return null;
+        }
+
+        return $this->terminal = [
+            'exitcode' => $status['exitcode'],
+            'signaled' => $status['signaled'],
+            'termsig'  => $status['termsig'],
+        ];
     }
 }

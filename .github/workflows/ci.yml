@@ -276,3 +276,31 @@ jobs:
       # the skip check above exists.
       - name: Analyse the Laravel, Livewire and Pest bridges
         run: php phpstan/oracles.php bridges
+
+  # A commit that cannot be read is not a contribution yet. `git diff
+  # --check` catches a leftover conflict marker (the thing a green
+  # `composer check` cannot see) and trailing whitespace / blank lines
+  # at EOF. It runs against the PR's own diff, so it only judges what
+  # the change introduces.
+  hygiene:
+    name: "Diff hygiene (conflict markers, whitespace)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: No conflict markers or whitespace errors in the change
+        shell: bash
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            git diff --check "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+            exit 0
+          fi
+
+          if [ -z "${{ github.event.before }}" ] || [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            git show --check --oneline HEAD
+            exit 0
+          fi
+
+          git diff --check "${{ github.event.before }}..${GITHUB_SHA}"

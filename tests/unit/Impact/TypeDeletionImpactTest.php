@@ -48,7 +48,7 @@ use const PHP_BINARY;
  * The type tier under impact selection: a deleted PHP file takes the
  * symbol its `*.types.php` assertion talks about with it, so a narrowed
  * run that keeps only the surviving paths answers green while the full
- * run is red (CB-24, D-130).
+ * run is red (D-130).
  *
  * Deletions are the one change whose role has to be read from the name
  * alone, so the filter keeps the suites for PHP source, for PHPStan's
@@ -127,7 +127,7 @@ final class TypeDeletionImpactTest extends TestCase
         $this->requirePhpstan();
 
         // A rename is a deletion of the old name plus an addition of the
-        // new one (CB-13). The addition does not look like PHP source, so
+        // new one. The addition does not look like PHP source, so
         // only the old name makes the tier run — and the symbol is gone.
         $this->git('mv src/Widget.php src/Widget.php.disabled');
 
@@ -151,6 +151,25 @@ final class TypeDeletionImpactTest extends TestCase
 
         self::assertSame(1, $exit);
         self::assertSame('fail', $this->outcomeOf($finished, self::TYPE_ID), 'The type suite was dropped with the analyser configuration.');
+    }
+
+    public function testEditingTheAnalyserConfigurationKeepsTheTypeSuite(): void
+    {
+        $this->requirePhpstan();
+
+        // The other half of the same rule: phpstan.neon.dist is the
+        // analyser's configuration whether it is deleted or edited. The
+        // old filter only matched names ending in .neon, so an edit to
+        // this one dropped the analysis and the narrowed run went green.
+        file_put_contents(
+            $this->project . '/phpstan.neon.dist',
+            file_get_contents($this->project . '/phpstan.neon.dist') . "\n# edited\n",
+        );
+
+        [$exit, , $finished] = $this->crucible(['--dirty']);
+
+        self::assertSame(0, $exit);
+        self::assertSame('pass', $this->outcomeOf($finished, self::TYPE_ID), 'The type suite was dropped with the analyser configuration.');
     }
 
     public function testADeletedEntryWithNoExtensionKeepsTheTypeSuite(): void
@@ -200,7 +219,7 @@ final class TypeDeletionImpactTest extends TestCase
     {
         $phpstan = dirname(__DIR__, 3) . '/vendor/bin/phpstan';
 
-        file_put_contents($this->project . '/crucible.php', sprintf(<<<'PHP'
+        file_put_contents($this->project . '/crucible.php', sprintf(<<<'SOURCE'
             <?php
 
             declare(strict_types=1);
@@ -211,7 +230,7 @@ final class TypeDeletionImpactTest extends TestCase
                 ->testSuite('unit', 'tests/Unit')
                 ->typeTests('tests/Types', phpstan: %s)
                 ->build();
-            PHP, var_export($phpstan, true)));
+            SOURCE, var_export($phpstan, true)));
 
         file_put_contents($this->project . '/phpstan.neon.dist', <<<'NEON'
             parameters:
@@ -220,7 +239,7 @@ final class TypeDeletionImpactTest extends TestCase
                     - src
             NEON);
 
-        file_put_contents($this->project . '/src/Widget.php', <<<'PHP'
+        file_put_contents($this->project . '/src/Widget.php', <<<'SOURCE'
             <?php
 
             declare(strict_types=1);
@@ -235,9 +254,9 @@ final class TypeDeletionImpactTest extends TestCase
                     return [1, 2];
                 }
             }
-            PHP);
+            SOURCE);
 
-        file_put_contents($this->project . '/tests/Unit/WidgetTest.php', <<<'PHP'
+        file_put_contents($this->project . '/tests/Unit/WidgetTest.php', <<<'SOURCE'
             <?php
 
             declare(strict_types=1);
@@ -251,9 +270,9 @@ final class TypeDeletionImpactTest extends TestCase
                     self::assertTrue(true);
                 }
             }
-            PHP);
+            SOURCE);
 
-        file_put_contents($this->project . '/tests/Types/Widget.types.php', <<<'PHP'
+        file_put_contents($this->project . '/tests/Types/Widget.types.php', <<<'SOURCE'
             <?php
 
             declare(strict_types=1);
@@ -263,7 +282,7 @@ final class TypeDeletionImpactTest extends TestCase
             use function PHPStan\Testing\assertType;
 
             assertType('list<int>', Widget::ids());
-            PHP);
+            SOURCE);
 
         file_put_contents($this->project . '/README.md', "base\n");
         file_put_contents($this->project . '/Makefile', "all:\n");

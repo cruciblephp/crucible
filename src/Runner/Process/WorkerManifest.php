@@ -34,7 +34,8 @@ use const JSON_UNESCAPED_SLASHES;
  * load, the work to run, and the ordering to apply — everything a
  * worker needs to reproduce its slice of the run deterministically,
  * as plain JSON. The manifest is the entire input protocol; the
- * NDJSON event stream on stdout is the entire output protocol.
+ * NDJSON event stream on the worker's own event channel is the entire
+ * output protocol.
  */
 final readonly class WorkerManifest
 {

@@ -47,6 +47,7 @@ use function hrtime;
 use function in_array;
 use function is_array;
 use function is_file;
+use function is_resource;
 use function json_decode;
 use function max;
 use function random_bytes;
@@ -606,7 +607,12 @@ final class Supervisor
             $this->await($active);
 
             foreach ($active as $key => $worker) {
-                foreach ($worker->readLines() as $line) {
+                // stdout carries only user output now, never a frame;
+                // draining it keeps the pipe from filling and its
+                // readiness is still one of the loop's wakeups.
+                $worker->drainStdout();
+
+                while (($line = $worker->nextLine()) !== null) {
                     if ($this->parser->isRunFinished($line)) {
                         $worker->markFinished();
                         $reportedTotals[$key] = $this->parser->reportedTotal($line);
@@ -859,17 +865,34 @@ final class Supervisor
      */
     private function await(array $active): void
     {
-        $read = [];
+        $read        = [];
+        $fileChannel = false;
 
         foreach ($active as $worker) {
             $read[] = $worker->stdout();
             $read[] = $worker->stderr();
+
+            if ($worker->eventsAreSelectable()) {
+                $events = $worker->events();
+
+                if (is_resource($events)) {
+                    $read[] = $events;
+                }
+
+                continue;
+            }
+
+            // A file channel cannot be selected on; poll it on the
+            // same turn rather than waiting the full pipe timeout.
+            $fileChannel = true;
         }
 
         $write  = null;
         $except = null;
 
-        @stream_select($read, $write, $except, 0, (int) (self::SELECT_TIMEOUT_SECONDS * 1_000_000));
+        $timeout = $fileChannel ? 0.001 : self::SELECT_TIMEOUT_SECONDS;
+
+        @stream_select($read, $write, $except, 0, (int) ($timeout * 1_000_000));
     }
 
     /**

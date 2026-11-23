@@ -715,12 +715,13 @@ needed no second protocol.
 - **Input protocol = `WorkerManifest`** (JSON on stdin): configuration path, work units
   (file + optional declared names), ordering + seed. Identities only — the worker
   rediscovers and rebuilds tests on its side; **nothing is ever `serialize()`d across the
-  process boundary**. Output protocol = the NDJSON event stream on stdout; there is no
-  third channel (stderr is drained purely for crash diagnostics).
+  process boundary**. Output protocol = the NDJSON event stream on a channel of its own:
+  descriptor 3 on POSIX, a per-worker file on Windows (D-189). stdout and stderr stay the
+  project's, so no user write is ever parsed as a frame.
 - **`crucible --worker`** prints nothing else: no banner, no reporter. The exit code carries
   no verdict — the worker's `run:finish` event is the completion handshake. User `echo`s
-  are absorbed by output buffering (the NdjsonWriter writes to the STDOUT *resource*,
-  which bypasses PHP's output buffer), so test output cannot corrupt the protocol.
+  stay on stdout, which the supervisor drains; stderr is drained for crash diagnostics and
+  D-124 attribution. Neither shares a byte stream with the protocol.
 - **`Supervisor`** plans in-process vs worker execution, spawns `php crucible --worker` per
   unit (proc_open, non-blocking pipes, stream_select multiplexing), parses worker lines
   back into event objects (`EventParser`, tolerant: unparseable lines are skipped), and
@@ -1376,15 +1377,24 @@ intersects the change set. Watch mode is slice 2 and builds on this.
   shape (Jest's `--findRelatedTests`).
 - **Widening rules** (when in doubt, run everything, and say why): any deletion; any
   change to composer.json/composer.lock, the loaded configuration file, or the
-  bootstrap. Non-PHP changes are **named, not silently dropped** ("N non-PHP change(s)
-  are outside the dependency graph") and select nothing — the Vitest/Jest reading;
-  data-file dependencies are what `--related` is for.
+  bootstrap. The environment paths are resolved **at the selection boundary**,
+  exactly as the change set is — against the project root, symlink-resolved, in
+  native separators — because `--configuration` returns an explicit path exactly as
+  typed (a relative one never matched a canonical change-set path), and a path that
+  cannot be resolved (a broken bootstrap symlink) widens with a note rather than
+  vanishing from the comparison. Non-PHP changes are **named, not silently dropped**
+  ("N non-PHP change(s) are outside the dependency graph") and select nothing — the
+  Vitest/Jest reading; data-file dependencies are what `--related` is for.
 - **Wiring**: selection runs right after discovery, before the name/group filters and
   sharding, which narrow further. Zero affected tests → "No tests are affected by the
   given changes." and **exit 0** (distinct from "No tests found", exit 1 — an empty
   impact set is a success, not a misconfiguration). CLI: `--changed` follows the
   `--colors` optional-value pattern (bare or `=`, never consumes the next argument);
-  `--related` is repeatable.
+  `--related` is repeatable. ✓ `EnvironmentPathImpactTest`: an edit to the
+  auto-discovered configuration, a relative or absolute `--configuration`, or a
+  configured/relative/absolute bootstrap runs both tests; a configuration nobody loaded
+  selects nothing; a broken bootstrap symlink widens (POSIX). Verified on Windows and
+  Linux.
 - **Deferred with reasons**: per-test covered-files maps (pcov) as the second edge
   source — RESEARCH.md scoped the merge design, but coverage is its own phase; the
   graph's `dependenciesOf` is the seam it plugs into. Disk-caching the scan
@@ -7463,7 +7473,7 @@ rather than deferred (the Codeception Cest dialect, RESEARCH.md §5; and the ass
 mapping the retrigger endpoint replaced, D-083) are recorded where they were decided.
 New entries continue as new work lands.
 
-### D-189: the suite walk is a per-directory answer, not a per-case one
+### D-188: the suite walk is a per-directory answer, not a per-case one
 
 The fingerprint's suite component walks from each file's directory up to the root, looking
 for `Pest.php` and `Datasets/*.php` at every level. That walk depends on the DIRECTORY, yet
@@ -7480,3 +7490,33 @@ The dedupe lives for the length of one call and no longer, deliberately: a `Pest
 added between two runs still has to move the key, which is what the regression test pins
 on a many-row group.
 
+### D-189: the worker event stream has a channel of its own
+
+The NDJSON protocol shared a byte stream with whatever the project printed. Output buffering
+hid the problem for `echo`, but a direct `fwrite(STDOUT, 'x')` bypassed it: without a trailing
+newline it glued itself to the next frame, which the supervisor skipped as unparseable — a
+failing test's result disappeared, and the parent reported a lost result instead of the
+failure. A sentinel in a shared stream only makes the collision parseable; user bytes can
+still contain it, and a test that prints binary output is not misbehaving.
+
+The protocol now has a channel nothing else writes to. On POSIX it is descriptor 3, passed
+through `proc_open` and selected with the worker's other streams. On Windows PHP hands the
+child an inherited handle for descriptors beyond 2 but gives it no way to address one, so the
+channel is a per-worker file whose path travels in `CRUCIBLE_WORKER_EVENTS`; the supervisor
+reads it by offset and polls it on the same turn (the file cannot be selected on). A manually
+started `crucible --worker` has no channel in its environment and keeps stdout, as before.
+
+D-124 attribution does not need a shared stream. The worker writes a test's stderr before it
+emits the finish frame, so draining stderr when that frame is read collects the test's
+process output; text the same process writes after the frame is still its own, never a
+protocol frame. stdout is drained and discarded, as it always was. A partial frame at exit
+stays buffered and is never a line.
+
+Rejected: a sentinel in the shared stderr stream (the collision remains possible and the
+reader must be trusted with protocol bytes), and a third descriptor on Windows (the child
+cannot address it). ✓ `WorkerEventTransportTest` covers bootstrap and discovery stdout, an
+isolated test's stderr, a user stderr write without a newline on both the pipe and file
+readers, bytes that spell the old sentinel, and a partial frame at exit. ✓
+`WorkerAccountingTest` pins the original case: a raw `fwrite(STDOUT)` before a failed
+assertion now arrives `fail`, with its message and `complete: true`. ✓ `WorkerProcessTest`
+pins the cached terminal status: a worker killed by a signal still reports it.

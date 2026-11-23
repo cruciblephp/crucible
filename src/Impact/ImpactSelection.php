@@ -18,7 +18,6 @@ use LucianoPereira\Crucible\Test\TestGroup;
 use function array_diff_key;
 use function array_intersect_key;
 use function array_keys;
-use function array_map;
 use function basename;
 use function count;
 use function implode;
@@ -74,8 +73,10 @@ final readonly class ImpactSelection
 
     /**
      * @param non-empty-string       $projectRoot
-     * @param list<non-empty-string> $environmentFiles absolute paths whose change invalidates every test
-     *                                                 (the configuration file, the bootstrap)
+     * @param list<non-empty-string> $environmentFiles paths whose change invalidates every test (the
+     *                                                 configuration file, the bootstrap), absolute or
+     *                                                 relative to the project root; resolved here so
+     *                                                 every caller compares the same identity
      * @param list<ImpactRule>       $rules            declared path → groups rules (D-083); additive only
      * @param list<non-empty-string> $claimedPaths     absolute directories another tier answers for
      *                                                 (the configured Vitest suites, D-080)
@@ -97,6 +98,33 @@ final readonly class ImpactSelection
      */
     public function select(array $groups, ChangedFiles $changed): ImpactResult
     {
+        // The environment paths arrive as the CLI received them: an
+        // explicit --configuration is returned exactly as typed, so it
+        // can be relative. Resolve both sides at this boundary, the way
+        // the change set is resolved, rather than at a call site that
+        // the next caller would have to remember (D-036). A path that
+        // cannot be resolved defines what runs even when its identity
+        // is not what was expected, so it widens instead of vanishing.
+        $environment = [];
+        $unresolved  = [];
+
+        foreach ($this->environmentFiles as $path) {
+            $absolute = WorkingDirectory::isAbsolute($path) ? $path : $this->projectRoot . '/' . $path;
+            $real     = realpath($absolute);
+
+            if ($real === false) {
+                $unresolved[] = $path;
+
+                continue;
+            }
+
+            $environment[] = WorkingDirectory::native($real);
+        }
+
+        if ($unresolved !== []) {
+            return ImpactResult::everything(sprintf('Impact: %s cannot be resolved', $unresolved[0]));
+        }
+
         if ($changed->deleted !== []) {
             return ImpactResult::everything(sprintf(
                 'Impact: %d deleted file(s) — their dependents are invisible to the graph',
@@ -118,7 +146,7 @@ final readonly class ImpactSelection
             $real = realpath($file);
             $real = $real === false ? WorkingDirectory::native($file) : $real;
 
-            if (in_array($real, array_map(WorkingDirectory::native(...), $this->environmentFiles), true)
+            if (in_array($real, $environment, true)
                 || in_array(basename($real), self::MANIFESTS, true)
             ) {
                 return ImpactResult::everything(sprintf('Impact: %s defines the environment', basename($real)));

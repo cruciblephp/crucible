@@ -54,7 +54,8 @@ final class ProcessSetup
      * require an explicit opt-in, which fails fast if PHPUnit classes are
      * already loaded. Runs before the bootstrap so the aliases win the
      * namespace. Returns the user-facing note instead of printing it -
-     * worker processes must keep stdout for the protocol.
+     * worker processes must keep their protocol channel separate from
+     * user output.
      */
     public static function compatibility(Configuration $configuration): ?string
     {

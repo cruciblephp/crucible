@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Event;
 
+use function fflush;
 use function fwrite;
 use function json_encode;
 
@@ -44,5 +45,9 @@ final class NdjsonWriter implements Listener
     public function handle(Envelope $envelope): void
     {
         fwrite($this->stream, json_encode($envelope->toArray(), self::JSON_FLAGS) . "\n");
+
+        // A pipe is unbuffered already; a file-backed channel is not,
+        // and the supervisor reads it by offset as the run progresses.
+        fflush($this->stream);
     }
 }

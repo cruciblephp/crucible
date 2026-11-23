@@ -197,6 +197,29 @@ final class ImpactSelectionTest extends TestCase
         self::assertNull($this->selection([$configuration])->select($this->groups(), $changed)->groups);
     }
 
+    public function testARelativeEnvironmentPathIsResolvedAtTheSelectionBoundary(): void
+    {
+        // The CLI hands over the loaded configuration as the loader
+        // returned it; an explicit --configuration is exactly as typed,
+        // so it can be relative. Selection resolves both sides rather
+        // than asking every caller to remember (D-036).
+        $root    = dirname(__DIR__, 3);
+        $changed = new ChangedFiles([$root . '/crucible.php']);
+
+        self::assertNull($this->selection(['crucible.php'])->select($this->groups(), $changed)->groups);
+    }
+
+    public function testAnUnresolvableEnvironmentPathWidensWithItsName(): void
+    {
+        $result = $this->selection(['missing/bootstrap.php'])->select(
+            $this->groups(),
+            new ChangedFiles([dirname(__DIR__, 3) . '/src/Version.php']),
+        );
+
+        self::assertNull($result->groups);
+        self::assertStringContainsString('missing/bootstrap.php cannot be resolved', implode("\n", $result->notes));
+    }
+
     public function testANonPhpChangeIsReportedInTheNotes(): void
     {
         $changed = new ChangedFiles([dirname(__DIR__, 3) . '/README.md']);
