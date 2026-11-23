@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-21 (D-001..D-187, 1.4.1). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-23 (D-001..D-189, 1.4.2). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -9,6 +9,33 @@ observable behavior targets **drop-in compatibility with PHPUnit 13 suites**. PH
 *specification* — never the *source*: no code, templates, doc comments, or message text are
 copied from it or from any other project. Sole copyright over every line is a project
 invariant.
+
+---
+
+## v1.4.2 — 2026-11-23
+
+Four fixes from the 1.4.1 report set, plus the diff gate that keeps the next review
+honest. Thanks to Thomas (lekoala) for the reports and patches behind #22–#25.
+
+- **Worker events.** A raw `fwrite(STDOUT, 'x')` without a newline could glue itself to the
+  NDJSON frame carrying a failure; the supervisor skipped the line and reported a lost
+  result. Events now travel on the worker's stderr behind `WorkerProcess::EVENT_MARKER`,
+  stdout is drained, and user stderr keeps its write-order attribution for D-124. The
+  terminal status is cached so a signal survives the second `proc_get_status()` call. D-189.
+- **Impact selection paths.** The loaded configuration and configured bootstrap are
+  canonicalized at the selection boundary, the way the change set already is: a relative
+  `--configuration` now widens the run, and a broken bootstrap symlink widens with its name
+  instead of disappearing from the comparison. D-036.
+- **Type suite.** A deletion now counts by name: PHP source, PHPStan's configuration
+  (`phpstan.neon`, `phpstan.neon.dist`, `phpstan.dist.neon`, and included `.neon` files), or a
+  name that cannot settle what it was. An edit to `phpstan.neon.dist` keeps the suite too. D-130.
+- **Fingerprint.** The suite walk is memoized per directory for the length of one call, so a
+  3,000-row fixture walks and globs once per directory instead of once per case: 350 ms → 2.4 ms,
+  with a byte-identical key. D-188.
+- **Gate.** A CI diff-hygiene job rejects leftover conflict markers and whitespace errors in a
+  pull request's own diff.
+
+Full gate: 2016 tests, 0 failed, 0 errors, 0 risky; CI green on PHP 8.3–8.6, Linux and Windows.
 
 ---
 

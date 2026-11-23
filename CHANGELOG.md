@@ -2,6 +2,17 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.4.2 — 2026-11-23
+
+Thanks to Thomas (lekoala) for the reports and patches behind #22–#25.
+
+- Fixed a worker's NDJSON events sharing stdout with whatever the project printed: a raw `fwrite(STDOUT, 'x')` without a trailing newline could swallow the frame carrying a failure, so the failed test was reported as a lost result. Events now travel on the worker's stderr behind a per-frame marker; stdout is drained and user stderr keeps write-order attribution. D-189
+- Fixed `--dirty`/`--changed` narrowing the run when the active configuration was given relatively: the environment paths are now resolved at the impact-selection boundary, and an unresolvable bootstrap widens instead of vanishing from the comparison. D-036
+- Fixed `--dirty`/`--changed` dropping the type suite when a change deletes the PHP source or PHPStan configuration a `*.types.php` assertion names, or edits `phpstan.neon.dist`. D-130
+- Changed the dependency fingerprint to walk the suite configuration once per directory instead of once per test case: 350 ms → 2.4 ms on a 3,000-row fixture, with a byte-identical key. D-188
+- Added a CI diff-hygiene gate for leftover conflict markers and whitespace errors.
+- Full gate: 2016 tests, 0 failed, 0 errors, 0 risky; CI green on PHP 8.3–8.6, Linux and Windows
+
 ## v1.4.1 — 2026-11-21
 
 - Fixed the 1.4.0 gate on PHP 8.3/8.4: the new handler-stack tests called `get_error_handler()`, which is PHP 8.5+, and one nowdoc fixture contained its own delimiter word. The collector already read the stack with a portable probe; the tests now do the same. No runtime behavior change
