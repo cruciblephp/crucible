@@ -72,14 +72,13 @@ final class WorkerProcess
 
     /**
      * @param resource             $process
-     * @param resource             $stdout
-     * @param resource             $stderr
+     * @param ?resource            $stdout null on Windows, where it is the null device
      * @param list<TestId>         $expected the test ids this worker must finish
      */
     private function __construct(
         private $process,
         private $stdout,
-        private $stderr,
+        private readonly WorkerStderrChannel $stderr,
         private readonly WorkerEventChannel $events,
         public readonly array $expected,
     ) {}
@@ -96,6 +95,8 @@ final class WorkerProcess
      * @param ?WorkerEventChannel     $events       the protocol channel; null = the platform's
      *                                              (fd 3 on POSIX, a file on Windows), injectable so
      *                                              both readers are exercised on one machine
+     * @param ?WorkerStderrChannel    $stderr       stderr as the supervisor reads it; null = the
+     *                                              platform's (a pipe on POSIX, a file on Windows)
      */
     public static function spawn(
         string $crucibleBinary,
@@ -105,12 +106,21 @@ final class WorkerProcess
         array $phpArguments = [],
         array $env = [],
         ?WorkerEventChannel $events = null,
+        ?WorkerStderrChannel $stderr = null,
     ): ?self {
         $events ??= WorkerEventChannel::forPlatform();
+        $stderr ??= WorkerStderrChannel::forPlatform();
+
+        // Windows cannot drain a stdout pipe without the risk of blocking
+        // on a write that never ended in a newline; the null device is
+        // the same policy the event channel already applies to stdout.
+        $stdout = DIRECTORY_SEPARATOR === '\\'
+            ? ['file', NullDevice::path(), 'w']
+            : ['pipe', 'w'];
 
         $process = proc_open(
             [PHP_BINARY, ...$phpArguments, $crucibleBinary, '--worker'],
-            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], ...$events->descriptors()],
+            [0 => ['pipe', 'r'], 1 => $stdout, ...$stderr->descriptors(), ...$events->descriptors()],
             $pipes,
             $workingDirectory->path,
             self::environment([...$env, WorkerEventChannel::ENV => $events->spec()]),
@@ -118,6 +128,7 @@ final class WorkerProcess
 
         if (!is_resource($process)) {
             $events->close();
+            $stderr->close();
 
             return null;
         }
@@ -125,12 +136,16 @@ final class WorkerProcess
         fwrite($pipes[0], $manifest->toJson());
         fclose($pipes[0]);
 
-        stream_set_blocking($pipes[1], false);
-        stream_set_blocking($pipes[2], false);
+        $stdoutStream = isset($pipes[1]) && is_resource($pipes[1]) ? $pipes[1] : null;
 
+        if ($stdoutStream !== null) {
+            stream_set_blocking($stdoutStream, false);
+        }
+
+        $stderr->bind($pipes);
         $events->bind($pipes);
 
-        return new self($process, $pipes[1], $pipes[2], $events, $expected);
+        return new self($process, $stdoutStream, $stderr, $events, $expected);
     }
 
     /**
@@ -150,7 +165,7 @@ final class WorkerProcess
     }
 
     /**
-     * @return resource
+     * @return ?resource
      */
     public function stdout()
     {
@@ -158,11 +173,18 @@ final class WorkerProcess
     }
 
     /**
-     * @return resource
+     * The stderr pipe when it is selectable; null for a file.
+     *
+     * @return ?resource
      */
     public function stderr()
     {
-        return $this->stderr;
+        return $this->stderr->selectable();
+    }
+
+    public function stderrIsSelectable(): bool
+    {
+        return $this->stderr->isSelectable();
     }
 
     /**
@@ -250,12 +272,7 @@ final class WorkerProcess
      */
     public function drainStderr(): void
     {
-        // close() drained it one last time; what it held stays pending.
-        if (!is_resource($this->stderr)) {
-            return;
-        }
-
-        while (($chunk = fgets($this->stderr)) !== false) {
+        while (($chunk = $this->stderr->read()) !== '') {
             $this->stderrTail = substr($this->stderrTail . $chunk, -2048);
             $this->stderrPending .= $chunk;
         }
@@ -345,11 +362,6 @@ final class WorkerProcess
         $this->drainStdout();
         $this->drainStderr();
 
-        fclose($this->stdout);
-        fclose($this->stderr);
-
-        $this->events->close();
-
         do {
             $status = $this->terminalStatus();
 
@@ -357,6 +369,15 @@ final class WorkerProcess
                 usleep(1_000);
             }
         } while ($status === null);
+
+        // Close after the child has exited: a file channel is unlinked
+        // here, and Windows will not unlink a file the child still holds.
+        if (is_resource($this->stdout)) {
+            fclose($this->stdout);
+        }
+
+        $this->stderr->close();
+        $this->events->close();
 
         $exit = proc_close($this->process);
 

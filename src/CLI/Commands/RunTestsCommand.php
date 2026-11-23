@@ -52,6 +52,7 @@ use LucianoPereira\Crucible\Dialect\Pest\PestFileSniffer;
 use LucianoPereira\Crucible\Dialect\Pest\PestScopes;
 use LucianoPereira\Crucible\Event\Emitter;
 use LucianoPereira\Crucible\Event\EventTextWriter;
+use LucianoPereira\Crucible\Event\FlushStream;
 use LucianoPereira\Crucible\Event\IssueKind;
 use LucianoPereira\Crucible\Event\NdjsonWriter;
 use LucianoPereira\Crucible\Event\Outcome;
@@ -1791,6 +1792,7 @@ final class RunTestsCommand
         // `--worker` has no channel in its environment and keeps the
         // old stdout stream.
         $emitter = new Emitter(new SystemClock());
+        $emitter->subscribe(new FlushStream(STDERR));
         $emitter->subscribe(new NdjsonWriter(WorkerEventChannel::openFromEnvironment() ?? STDOUT));
 
         try {

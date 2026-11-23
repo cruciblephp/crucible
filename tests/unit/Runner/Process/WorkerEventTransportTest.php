@@ -17,6 +17,7 @@ use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Runner\Process\WorkerEventChannel;
 use LucianoPereira\Crucible\Runner\Process\WorkerManifest;
 use LucianoPereira\Crucible\Runner\Process\WorkerProcess;
+use LucianoPereira\Crucible\Runner\Process\WorkerStderrChannel;
 use LucianoPereira\Crucible\Runner\Process\WorkUnit;
 
 use function array_filter;
@@ -227,6 +228,24 @@ final class WorkerEventTransportTest extends TestCase
         self::assertStringContainsString('"outcome":"pass"', $contents);
     }
 
+    public function testANoNewlineStderrWriteReachesAFileBackedStderr(): void
+    {
+        // The Windows shape, exercised on this machine: stderr is a file
+        // read by offset, so a diagnostic with no trailing newline still
+        // reaches takeStderr() before the finish frame is handled.
+        $worker = $this->spawn(
+            'fwrite(STDERR, "probe says hello");'
+            . 'usleep(50000);'
+            . 'fwrite($events, "{\"event\":\"run:finish\"}\n");',
+            WorkerEventChannel::forPlatform(),
+            WorkerStderrChannel::file(),
+        );
+
+        self::assertSame('{"event":"run:finish"}', $this->nextFrame($worker));
+        self::assertStringContainsString('probe says hello', $this->stderrUntil($worker, 'probe says hello'));
+        self::assertSame(3, $worker->close());
+    }
+
     public function testAUserCanWriteTheOldMarkerBytesWithoutForgingAFrame(): void
     {
         $marker = "\0\x1Ecrucible-worker-event\x1E\0";
@@ -268,7 +287,7 @@ final class WorkerEventTransportTest extends TestCase
             : [WorkerEventChannel::pipe(), WorkerEventChannel::file()];
     }
 
-    private function spawn(string $body, WorkerEventChannel $channel): WorkerProcess
+    private function spawn(string $body, WorkerEventChannel $channel, ?WorkerStderrChannel $stderr = null): WorkerProcess
     {
         $script = tempnam(sys_get_temp_dir(), 'crucible-transport-script-');
 
@@ -299,6 +318,7 @@ final class WorkerEventTransportTest extends TestCase
             [],
             [],
             $channel,
+            $stderr,
         );
 
         self::assertInstanceOf(WorkerProcess::class, $worker);

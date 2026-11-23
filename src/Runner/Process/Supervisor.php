@@ -59,6 +59,7 @@ use function stream_select;
 use function sys_get_temp_dir;
 use function trim;
 use function unlink;
+use function usleep;
 use function usort;
 
 use const PHP_EOL;
@@ -869,8 +870,21 @@ final class Supervisor
         $fileChannel = false;
 
         foreach ($active as $worker) {
-            $read[] = $worker->stdout();
-            $read[] = $worker->stderr();
+            $stdout = $worker->stdout();
+
+            if (is_resource($stdout)) {
+                $read[] = $stdout;
+            }
+
+            if ($worker->stderrIsSelectable()) {
+                $stderr = $worker->stderr();
+
+                if (is_resource($stderr)) {
+                    $read[] = $stderr;
+                }
+            } else {
+                $fileChannel = true;
+            }
 
             if ($worker->eventsAreSelectable()) {
                 $events = $worker->events();
@@ -878,13 +892,17 @@ final class Supervisor
                 if (is_resource($events)) {
                     $read[] = $events;
                 }
-
-                continue;
+            } else {
+                // A file channel cannot be selected on; poll it on the
+                // same turn rather than waiting the full pipe timeout.
+                $fileChannel = true;
             }
+        }
 
-            // A file channel cannot be selected on; poll it on the
-            // same turn rather than waiting the full pipe timeout.
-            $fileChannel = true;
+        if ($read === []) {
+            usleep(1_000);
+
+            return;
         }
 
         $write  = null;
