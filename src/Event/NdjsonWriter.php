@@ -38,16 +38,19 @@ final class NdjsonWriter implements Listener
         | JSON_INVALID_UTF8_SUBSTITUTE;
 
     /**
-     * @param resource $stream an open, writable stream (STDOUT, a file, a pipe)
+     * @param resource      $stream an open, writable stream (STDOUT, a file, a pipe)
+     * @param string        $marker a per-frame prefix the reader splits on, so user
+     *                              output on the same stream cannot corrupt a frame
+     *                              empty = plain NDJSON
      */
-    public function __construct(private $stream) {}
+    public function __construct(private $stream, private readonly string $marker = '') {}
 
     public function handle(Envelope $envelope): void
     {
-        fwrite($this->stream, json_encode($envelope->toArray(), self::JSON_FLAGS) . "\n");
+        fwrite($this->stream, $this->marker . json_encode($envelope->toArray(), self::JSON_FLAGS) . "\n");
 
-        // A pipe is unbuffered already; a file-backed channel is not,
-        // and the supervisor reads it by offset as the run progresses.
+        // A pipe is unbuffered already; a file-backed stream is not, and
+        // the reader must see each frame as it happens.
         fflush($this->stream);
     }
 }

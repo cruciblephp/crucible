@@ -715,14 +715,14 @@ needed no second protocol.
 - **Input protocol = `WorkerManifest`** (JSON on stdin): configuration path, work units
   (file + optional declared names), ordering + seed. Identities only — the worker
   rediscovers and rebuilds tests on its side; **nothing is ever `serialize()`d across the
-  process boundary**. Output protocol = the NDJSON event stream on a channel of its own:
-  descriptor 3 on POSIX, a per-worker file on Windows (D-189). stdout and stderr stay the
-  project's — on Windows stdout is the null device and stderr stays a pipe — so no user write
-  is ever parsed as a frame.
+  process boundary**. Output protocol = the NDJSON event stream on the worker's stderr, every
+  frame prefixed by `WorkerProcess::EVENT_MARKER` (D-189); there is no third channel. stdout
+  carries only user output and the supervisor discards it, while the user's own stderr shares
+  the event pipe in write order — which is what D-124's attribution reads.
 - **`crucible --worker`** prints nothing else: no banner, no reporter. The exit code carries
-  no verdict — the worker's `run:finish` event is the completion handshake. User `echo`s
-  stay on stdout, which the supervisor drains; stderr is drained for crash diagnostics and
-  D-124 attribution. Neither shares a byte stream with the protocol.
+  no verdict — the worker's `run:finish` event is the completion handshake. User `echo`s stay
+  on stdout, which the supervisor drains; the marker, not a newline, delimits a frame, so a
+  raw `fwrite()` without one cannot corrupt the protocol.
 - **`Supervisor`** plans in-process vs worker execution, spawns `php crucible --worker` per
   unit (proc_open, non-blocking pipes, stream_select multiplexing), parses worker lines
   back into event objects (`EventParser`, tolerant: unparseable lines are skipped), and
@@ -7491,36 +7491,31 @@ The dedupe lives for the length of one call and no longer, deliberately: a `Pest
 added between two runs still has to move the key, which is what the regression test pins
 on a many-row group.
 
-### D-189: the worker event stream has a channel of its own
+### D-189: worker events travel on stderr, behind a marker
 
-The NDJSON protocol shared a byte stream with whatever the project printed. Output buffering
-hid the problem for `echo`, but a direct `fwrite(STDOUT, 'x')` bypassed it: without a trailing
-newline it glued itself to the next frame, which the supervisor skipped as unparseable — a
-failing test's result disappeared, and the parent reported a lost result instead of the
-failure. A sentinel in a shared stream only makes the collision parseable; user bytes can
-still contain it, and a test that prints binary output is not misbehaving.
+The NDJSON protocol shared the worker's stdout with whatever the project printed, and output
+buffering was the only thing keeping a test's `echo` out of the stream. A direct
+`fwrite(STDOUT, 'x')` bypassed the buffer: without a trailing newline it glued itself to the next
+frame, which the supervisor skipped as unparseable — a failing test's result disappeared, and the
+parent reported a lost result instead of the failure.
 
-The protocol now has a channel nothing else writes to. On POSIX it is descriptor 3, passed
-through `proc_open` and selected with the worker's other streams. On Windows PHP hands the
-child an inherited handle for descriptors beyond 2 but gives it no way to address one, so the
-channel is a per-worker file whose path travels in `CRUCIBLE_WORKER_EVENTS`; the supervisor
-reads it by offset and polls it on the same turn (the file cannot be selected on). A manually
-started `crucible --worker` has no channel in its environment and keeps stdout, as before.
+Three transports were tried. A third descriptor (`fd 3`) is not portable — Windows cannot pass
+one through `proc_open`. A separate event file plus a marker in the stream lost D-124's
+attribution: reading the file by batches put events ahead of the user text the pipe had not
+delivered yet. So the events share **stderr**, where the user's text already lives, and every
+frame is prefixed with `WorkerProcess::EVENT_MARKER` (`"\0\x1Ecrucible-worker-event\x1E\0"`).
+`nextLine()` splits on the marker, never on a newline the user may not have written, returns
+one frame and leaves everything after it buffered — the text before a frame is exactly the text
+that preceded it in the pipe, so D-124 is preserved without a temporary file. stdout is left to
+the user entirely and drained by `Supervisor::drainStdout()`; `ColdMutantExecutor` reads frames
+the same way. A marker split across two reads keeps its prefix buffered, and a partial frame at
+exit is never reported as a line. `proc_get_status()` carries a signal only to the call that first
+observes the exit, so that terminal status is cached: `atEof()` may read it before `close()`, and
+the crash diagnosis still names the signal (WSL regression, `SIGSEGV` as 11, not -1).
 
-D-124 attribution does not need a shared stream. The worker writes a test's stderr before it
-emits the finish frame, and flushes that stream before every frame, so draining stderr when the
-finish frame is read collects the test's process output; text the same process writes after the
-frame is still its own, never a protocol frame. Stderr is read as **bytes, never as lines**: a
-diagnostic that never ended in a newline is exactly what D-124 has to see. On Windows, where a
-pipe cannot be made non-blocking, a read happens only when `stream_select` reports bytes, so a
-quiet stderr never parks the supervisor; stdout is the null device there. A partial event frame
-at exit stays buffered and is never a line.
-
-Rejected: a sentinel in the shared stderr stream (the collision remains possible and the
-reader must be trusted with protocol bytes), and a third descriptor on Windows (the child
-cannot address it). ✓ `WorkerEventTransportTest` covers bootstrap and discovery stdout, an
-isolated test's stderr, a user stderr write without a newline on both the pipe and file
-readers, a no-newline stderr write on a file-backed reader, bytes that
-spell the old sentinel, and a partial frame at exit. ✓ `WorkerAccountingTest` pins the original case: a raw `fwrite(STDOUT)` before a failed
-assertion now arrives `fail`, with its message and `complete: true`. ✓ `WorkerProcessTest`
-pins the cached terminal status: a worker killed by a signal still reports it.
+✓ `WorkerAccountingTest`: the raw-stdout case now arrives `fail`, with `Failed asserting that…`
+as its message, and `complete: true` — before, the frame was skipped, the test was reported as a
+lost result (`error`) and the run could not be complete. ✓ New
+`WorkerEventTransportTest`: bootstrap stdout, discovery stdout, isolated-test stderr (exit 2),
+user stderr without a newline before a frame, partial frame at exit. `php crucible --filter Worker`:
+21 passed, 1 skipped (no Laravel), 1 untested (no `posix`).

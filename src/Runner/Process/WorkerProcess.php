@@ -15,15 +15,18 @@ use LucianoPereira\Crucible\Runner\ProcessSetup;
 use LucianoPereira\Crucible\Test\TestId;
 
 use function fclose;
-use function fgets;
+use function fread;
 use function fwrite;
 use function getenv;
 use function is_resource;
+use function min;
 use function proc_close;
 use function proc_get_status;
 use function proc_open;
 use function proc_terminate;
+use function str_ends_with;
 use function stream_set_blocking;
+use function strlen;
 use function strpos;
 use function substr;
 use function trim;
@@ -33,26 +36,43 @@ use const PHP_BINARY;
 
 /**
  * One spawned worker: `php crucible --worker`, manifest written to stdin
- * (then closed — the worker reads to EOF), NDJSON events read from a
- * dedicated event channel, stdout drained (user output) and stderr
- * drained for crash diagnostics and D-124 attribution.
+ * (then closed — the worker reads to EOF), NDJSON events read from
+ * stderr, user stdout drained for diagnostics and display policy.
  *
- * The channel is separate from both user streams on purpose: a raw
- * `fwrite(STDOUT)` or `fwrite(STDERR)` can never be mistaken for a frame,
- * and no sentinel has to be taught to the reader. On POSIX it is fd 3;
- * on Windows, where the child cannot address an inherited handle by
- * number, it is a file read by offset (see {@see WorkerEventChannel}).
+ * Events and user stderr share the stderr pipe, but every event frame is
+ * prefixed with {@see self::EVENT_MARKER}. That is what makes a
+ * raw `fwrite(STDERR, 'x')` without a newline — or any bootstrap,
+ * discovery or test output — harmless: the reader splits on the marker,
+ * never on a newline the user may not have written. stdout is free for
+ * user output (echoes are discarded like before), so nothing a test does
+ * there can touch a frame either.
  *
- * All reads are non-blocking; the Supervisor multiplexes the pipes over
- * stream_select and reads a file channel on the same turn.
+ * Keeping both channels on one pipe preserves the D-124 ordering: text
+ * read before a frame belongs to no test (forwarded at `test:start`),
+ * text read between two frames belongs to the test that produced them.
+ * {@see self::nextLine()} returns one frame at a time and leaves
+ * everything after it in the buffer, so the supervisor attributes the
+ * exact text that preceded each event even when it read ahead.
+ *
+ * All reads are non-blocking; the Supervisor multiplexes many workers
+ * over stream_select.
  */
 final class WorkerProcess
 {
-    private string $eventsBuffer = '';
+    /**
+     * The per-frame sentinel. It starts a write that also carries the
+     * JSON and its newline, so the first bytes of a frame are never
+     * split; a reader that sees a prefix holds it until the rest arrives.
+     *
+     * @var non-empty-string
+     */
+    public const string EVENT_MARKER = "\0\x1Ecrucible-worker-event\x1E\0";
 
-    private string $stderrTail = '';
+    private string $stderrBuffer = '';
 
     private string $stderrPending = '';
+
+    private string $stderrTail = '';
 
     private bool $finished = false;
 
@@ -61,8 +81,8 @@ final class WorkerProcess
     /**
      * The first terminal status the process reported. proc_get_status()
      * answers a signal only to the call that first observes the exit: a
-     * second read reports -1, which made close() lose the signal that
-     * atEof() had already seen (WSL).
+     * second read reports -1, which made `close()` lose the signal that
+     * `atEof()` had already seen (WSL).
      *
      * @var ?array{exitcode: int, signaled: bool, termsig: int}
      */
@@ -71,15 +91,15 @@ final class WorkerProcess
     private ?int $signal = null;
 
     /**
-     * @param resource             $process
-     * @param ?resource            $stdout null on Windows, where it is the null device
-     * @param list<TestId>         $expected the test ids this worker must finish
+     * @param resource     $process
+     * @param resource     $stdout
+     * @param resource     $stderr
+     * @param list<TestId> $expected the test ids this worker must finish
      */
     private function __construct(
         private $process,
         private $stdout,
-        private readonly WorkerStderrChannel $stderr,
-        private readonly WorkerEventChannel $events,
+        private $stderr,
         public readonly array $expected,
     ) {}
 
@@ -92,11 +112,6 @@ final class WorkerProcess
      * @param array<string, string>   $env          extra environment for the child, merged over the
      *                                              inherited environment (the mutation worker injects
      *                                              its mutant this way); empty = plain inheritance
-     * @param ?WorkerEventChannel     $events       the protocol channel; null = the platform's
-     *                                              (fd 3 on POSIX, a file on Windows), injectable so
-     *                                              both readers are exercised on one machine
-     * @param ?WorkerStderrChannel    $stderr       stderr as the supervisor reads it; null = the
-     *                                              platform's (a pipe on POSIX, a file on Windows)
      */
     public static function spawn(
         string $crucibleBinary,
@@ -105,47 +120,26 @@ final class WorkerProcess
         array $expected,
         array $phpArguments = [],
         array $env = [],
-        ?WorkerEventChannel $events = null,
-        ?WorkerStderrChannel $stderr = null,
     ): ?self {
-        $events ??= WorkerEventChannel::forPlatform();
-        $stderr ??= WorkerStderrChannel::forPlatform();
-
-        // Windows cannot drain a stdout pipe without the risk of blocking
-        // on a write that never ended in a newline; the null device is
-        // the same policy the event channel already applies to stdout.
-        $stdout = DIRECTORY_SEPARATOR === '\\'
-            ? ['file', NullDevice::path(), 'w']
-            : ['pipe', 'w'];
-
         $process = proc_open(
             [PHP_BINARY, ...$phpArguments, $crucibleBinary, '--worker'],
-            [0 => ['pipe', 'r'], 1 => $stdout, ...$stderr->descriptors(), ...$events->descriptors()],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
             $workingDirectory->path,
-            self::environment([...$env, WorkerEventChannel::ENV => $events->spec()]),
+            self::environment($env),
         );
 
         if (!is_resource($process)) {
-            $events->close();
-            $stderr->close();
-
             return null;
         }
 
         fwrite($pipes[0], $manifest->toJson());
         fclose($pipes[0]);
 
-        $stdoutStream = isset($pipes[1]) && is_resource($pipes[1]) ? $pipes[1] : null;
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
 
-        if ($stdoutStream !== null) {
-            stream_set_blocking($stdoutStream, false);
-        }
-
-        $stderr->bind($pipes);
-        $events->bind($pipes);
-
-        return new self($process, $stdoutStream, $stderr, $events, $expected);
+        return new self($process, $pipes[1], $pipes[2], $expected);
     }
 
     /**
@@ -165,7 +159,9 @@ final class WorkerProcess
     }
 
     /**
-     * @return ?resource
+     * The worker's stdout: user output only.
+     *
+     * @return resource
      */
     public function stdout()
     {
@@ -173,67 +169,75 @@ final class WorkerProcess
     }
 
     /**
-     * The stderr pipe when it is selectable; null for a file.
+     * The worker's stderr: framed events and the user's own stderr,
+     * interleaved in write order.
      *
-     * @return ?resource
+     * @return resource
      */
     public function stderr()
     {
-        return $this->stderr->selectable();
-    }
-
-    public function stderrIsSelectable(): bool
-    {
-        return $this->stderr->isSelectable();
+        return $this->stderr;
     }
 
     /**
-     * The event pipe when the channel is selectable; null for a file.
-     *
-     * @return ?resource
-     */
-    public function events()
-    {
-        return $this->events->selectable();
-    }
-
-    public function eventsAreSelectable(): bool
-    {
-        return $this->events->isSelectable();
-    }
-
-    /**
-     * The next complete NDJSON event, without blocking. A partial line
-     * stays buffered until its newline arrives.
+     * The next complete event frame, without blocking. User text read
+     * before it is kept for {@see takeStderr()}; a partial frame stays
+     * buffered until its newline arrives.
      */
     public function nextLine(): ?string
     {
+        $marker = self::EVENT_MARKER;
+
         while (true) {
-            $newline = strpos($this->eventsBuffer, "\n");
+            $at = strpos($this->stderrBuffer, $marker);
 
-            if ($newline !== false) {
-                $line               = substr($this->eventsBuffer, 0, $newline);
-                $this->eventsBuffer = substr($this->eventsBuffer, $newline + 1);
+            if ($at === false) {
+                $this->flushText();
 
-                if ($line !== '') {
-                    return $line;
+                // A marker split across two reads keeps its prefix
+                // buffered; wait for the rest rather than print protocol
+                // bytes as user output.
+                if ($this->stderrBuffer !== '') {
+                    if ($this->readStderr() === 0) {
+                        return null;
+                    }
+
+                    continue;
+                }
+
+                if ($this->readStderr() === 0) {
+                    return null;
                 }
 
                 continue;
             }
 
-            $chunk = $this->events->read();
-
-            if ($chunk === '') {
-                return null;
+            if ($at > 0) {
+                $this->appendPending(substr($this->stderrBuffer, 0, $at));
+                $this->stderrBuffer = substr($this->stderrBuffer, $at);
             }
 
-            $this->eventsBuffer .= $chunk;
+            $newline = strpos($this->stderrBuffer, "\n");
+
+            if ($newline === false) {
+                if ($this->readStderr() === 0) {
+                    return null;
+                }
+
+                continue;
+            }
+
+            $line               = substr($this->stderrBuffer, strlen($marker), $newline - strlen($marker));
+            $this->stderrBuffer = substr($this->stderrBuffer, $newline + 1);
+
+            return $line;
         }
     }
 
     /**
-     * Every complete event currently available, one frame at a time.
+     * Every complete frame currently available. The supervisor uses
+     * {@see nextLine()} instead, because attribution needs one event at a
+     * time; this is for callers that only collect the stream.
      *
      * @return list<string>
      */
@@ -249,10 +253,9 @@ final class WorkerProcess
     }
 
     /**
-     * Reads and discards what the worker wrote to stdout — a direct
-     * `fwrite(STDOUT)`, bootstrap output, the test's raw reprint. It is
-     * user output, never protocol, and draining it keeps the pipe from
-     * filling.
+     * Reads and discards what the worker wrote to stdout — echoes the
+     * test did not buffer, bootstrap output, a direct `fwrite(STDOUT)`.
+     * Kept as a pipe because its readiness is the loop's wakeup.
      */
     public function drainStdout(): void
     {
@@ -260,35 +263,18 @@ final class WorkerProcess
             return;
         }
 
-        while (fgets($this->stdout) !== false) {
-            // Discarded by policy: a worker's stdout is not forwarded.
+        while (($chunk = fread($this->stdout, 65_536)) !== false && $chunk !== '') {
+            // Discarded by policy: a worker's stdout was never forwarded.
         }
     }
 
     /**
-     * Drains stderr into a bounded tail kept for crash diagnostics, and
-     * into the pending text {@see takeStderr()} hands over — what a test
-     * wrote is the test's output, not only a crash's last words.
-     */
-    public function drainStderr(): void
-    {
-        while (($chunk = $this->stderr->read()) !== '') {
-            $this->stderrTail = substr($this->stderrTail . $chunk, -2048);
-            $this->stderrPending .= $chunk;
-        }
-    }
-
-    /**
-     * Everything drained since the last call. The worker writes a test's
-     * stderr before it emits the finish frame, so draining when that
-     * frame is read collects the test's process output. The event channel
-     * carries no user bytes, so text the same process writes after the
-     * frame is still its own, never a protocol frame.
+     * Everything the user wrote to stderr before the last frame read.
+     * Reading is what the stream has delivered so far, never what a
+     * test wrote after the event: {@see nextLine()} stops at the frame.
      */
     public function takeStderr(): string
     {
-        $this->drainStderr();
-
         $pending             = $this->stderrPending;
         $this->stderrPending = '';
 
@@ -314,7 +300,7 @@ final class WorkerProcess
     }
 
     /**
-     * Whether the worker is done and its channels fully read. The first
+     * Whether the worker is done and its channel fully read. The first
      * call after the process exits answers false so the caller reads the
      * bytes it wrote before exiting; the next one answers true.
      */
@@ -359,8 +345,11 @@ final class WorkerProcess
      */
     public function close(): int
     {
-        $this->drainStdout();
-        $this->drainStderr();
+        $this->readStderr();
+        $this->flushAllText();
+
+        fclose($this->stdout);
+        fclose($this->stderr);
 
         do {
             $status = $this->terminalStatus();
@@ -369,15 +358,6 @@ final class WorkerProcess
                 usleep(1_000);
             }
         } while ($status === null);
-
-        // Close after the child has exited: a file channel is unlinked
-        // here, and Windows will not unlink a file the child still holds.
-        if (is_resource($this->stdout)) {
-            fclose($this->stdout);
-        }
-
-        $this->stderr->close();
-        $this->events->close();
 
         $exit = proc_close($this->process);
 
@@ -413,5 +393,67 @@ final class WorkerProcess
             'signaled' => $status['signaled'],
             'termsig'  => $status['termsig'],
         ];
+    }
+
+    /** Reads what the stderr pipe holds now; the byte count, for callers deciding whether to wait. */
+    private function readStderr(): int
+    {
+        if (!is_resource($this->stderr)) {
+            return 0;
+        }
+
+        $read = 0;
+
+        while (($chunk = fread($this->stderr, 65_536)) !== false && $chunk !== '') {
+            $this->stderrBuffer .= $chunk;
+            $read += strlen($chunk);
+        }
+
+        return $read;
+    }
+
+    /**
+     * Moves the buffer's unambiguous user text to the pending text, and
+     * keeps a trailing prefix of the marker buffered — it may be the
+     * first half of a frame.
+     */
+    private function flushText(): void
+    {
+        $length = strlen($this->stderrBuffer);
+
+        if ($length === 0) {
+            return;
+        }
+
+        $marker = self::EVENT_MARKER;
+        $keep   = 0;
+
+        for ($size = min($length, strlen($marker) - 1); $size > 0; --$size) {
+            if (str_ends_with($this->stderrBuffer, substr($marker, 0, $size))) {
+                $keep = $size;
+
+                break;
+            }
+        }
+
+        $this->appendPending(substr($this->stderrBuffer, 0, $length - $keep));
+        $this->stderrBuffer = substr($this->stderrBuffer, $length - $keep);
+    }
+
+    /** At EOF a held partial marker is user text, not protocol. */
+    private function flushAllText(): void
+    {
+        $this->appendPending($this->stderrBuffer);
+        $this->stderrBuffer = '';
+    }
+
+    private function appendPending(string $text): void
+    {
+        if ($text === '') {
+            return;
+        }
+
+        $this->stderrPending .= $text;
+        $this->stderrTail = substr($this->stderrTail . $text, -2048);
     }
 }

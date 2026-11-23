@@ -10,14 +10,10 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Tests\Runner\Process;
 
-use LucianoPereira\Crucible\Attributes\CoversClass;
-use LucianoPereira\Crucible\Attributes\RequiresOperatingSystem;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\TestCase;
-use LucianoPereira\Crucible\Runner\Process\WorkerEventChannel;
 use LucianoPereira\Crucible\Runner\Process\WorkerManifest;
 use LucianoPereira\Crucible\Runner\Process\WorkerProcess;
-use LucianoPereira\Crucible\Runner\Process\WorkerStderrChannel;
 use LucianoPereira\Crucible\Runner\Process\WorkUnit;
 
 use function array_filter;
@@ -28,7 +24,6 @@ use function explode;
 use function fclose;
 use function file_get_contents;
 use function file_put_contents;
-use function fwrite;
 use function getenv;
 use function is_array;
 use function is_dir;
@@ -44,7 +39,6 @@ use function realpath;
 use function rmdir;
 use function scandir;
 use function sort;
-use function str_contains;
 use function stream_get_contents;
 use function sys_get_temp_dir;
 use function tempnam;
@@ -56,19 +50,13 @@ use function var_export;
 use const PHP_BINARY;
 
 /**
- * A worker's NDJSON events travel on a channel of their own — fd 3 on
- * POSIX, a file on Windows (D-189), never on stdout or stderr. What the
- * bootstrap, discovery or a test writes to either console stream cannot
- * pollute a frame, even without a trailing newline; no sentinel has to
- * be trusted, so user bytes that look like one are still user bytes.
- *
- * Sharing the stderr pipe is not needed for D-124 attribution: the
- * worker writes a test's stderr before its finish frame, so draining
- * stderr when that frame arrives still collects the text that preceded
- * it.
+ * A worker's NDJSON events travel on stderr behind a per-frame marker
+ * never on stdout: what the bootstrap, discovery or a test
+ * writes to the console cannot swallow a frame, even without a trailing
+ * newline. Sharing the stderr pipe keeps the D-124 attribution order,
+ * and the failure the raw-stdout reproduction used to lose now arrives with
+ * its message.
  */
-#[CoversClass(WorkerProcess::class)]
-#[CoversClass(WorkerEventChannel::class)]
 final class WorkerEventTransportTest extends TestCase
 {
     /** @var non-empty-string */
@@ -137,7 +125,7 @@ final class WorkerEventTransportTest extends TestCase
         );
     }
 
-    public function testAnIsolatedTestsStderrIsStillAttributedOnASeparateChannel(): void
+    public function testAnIsolatedTestsStderrIsStillAttributedWithFramedEvents(): void
     {
         $this->project();
         $this->writeTest('StderrProbeTest', <<<'PHP'
@@ -163,131 +151,32 @@ final class WorkerEventTransportTest extends TestCase
 
     public function testUserStderrWithoutANewlineCannotSwallowAFrame(): void
     {
-        foreach ($this->channels() as $channel) {
-            $worker = $this->spawn(
-                'fwrite(STDERR, "raw noise without newline");'
-                . 'fwrite($events, "{\"event\":\"test:start\",\"id\":\"tests/FooTest.php::testA\"}\n");'
-                . 'fwrite(STDERR, "text after the frame");',
-                $channel,
-            );
-
-            self::assertSame(
-                '{"event":"test:start","id":"tests/FooTest.php::testA"}',
-                $this->nextFrame($worker),
-                'The event channel, not a user newline, delimits the frame.',
-            );
-            self::assertStringContainsString(
-                'raw noise without newline',
-                $worker->takeStderr(),
-                'The user text is still the test process\'s output, never a frame.',
-            );
-            self::assertSame(3, $worker->close());
-        }
-    }
-
-    public function testTheRealWorkerWritesToAFileChannel(): void
-    {
-        // The Windows path, on Linux: the real --worker opens the file
-        // named by the environment and writes every frame there, while
-        // stdout and stderr stay the project's.
-        $this->project();
-        $this->writeTest('FileChannelTest', 'public function testOne(): void { self::assertTrue(true); }');
-
-        $events   = $this->project . '/worker-events.ndjson';
-        $manifest = new WorkerManifest(
-            $this->project . '/crucible.php',
-            [new WorkUnit('tests/FileChannelTest.php')],
-        );
-
-        $process = proc_open(
-            [PHP_BINARY, dirname(__DIR__, 4) . '/crucible', '--worker'],
-            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-            $pipes,
-            $this->project,
-            [...getenv(), 'CRUCIBLE_WORKER_EVENTS' => 'file:' . $events, 'NO_COLOR' => '1', 'TERM' => 'dumb'],
-        );
-
-        if (!is_resource($process)) {
-            self::fail('The worker could not be started.');
-        }
-
-        fwrite($pipes[0], $manifest->toJson());
-        fclose($pipes[0]);
-        $stdout = (string) stream_get_contents($pipes[1]);
-        $stderr = (string) stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        $exit = proc_close($process);
-
-        self::assertSame(0, $exit, 'The worker failed: ' . $stdout . $stderr);
-        self::assertStringNotContainsString('"event":', $stdout, 'Events leaked onto stdout.');
-        self::assertStringNotContainsString('"event":', $stderr, 'Events leaked onto stderr.');
-
-        $contents = is_file($events) ? (string) file_get_contents($events) : '';
-        self::assertStringContainsString('"event":"run:finish"', $contents);
-        self::assertStringContainsString('"outcome":"pass"', $contents);
-    }
-
-    public function testANoNewlineStderrWriteReachesAFileBackedStderr(): void
-    {
-        // The Windows shape, exercised on this machine: stderr is a file
-        // read by offset, so a diagnostic with no trailing newline still
-        // reaches takeStderr() before the finish frame is handled.
         $worker = $this->spawn(
-            'fwrite(STDERR, "probe says hello");'
-            . 'usleep(50000);'
-            . 'fwrite($events, "{\"event\":\"run:finish\"}\n");',
-            WorkerEventChannel::forPlatform(),
-            WorkerStderrChannel::file(),
+            'fwrite(STDERR, "raw noise without newline");'
+            . 'fwrite(STDERR, ' . var_export(WorkerProcess::EVENT_MARKER, true) . ' . "{\"event\":\"test:start\",\"id\":\"tests/FooTest.php::testA\"}\n");'
+            . 'fwrite(STDERR, "text after the frame");',
         );
 
-        self::assertSame('{"event":"run:finish"}', $this->nextFrame($worker));
-        self::assertStringContainsString('probe says hello', $this->stderrUntil($worker, 'probe says hello'));
+        self::assertSame(
+            '{"event":"test:start","id":"tests/FooTest.php::testA"}',
+            $this->nextFrame($worker),
+            'The marker, not a user newline, delimits the frame.',
+        );
+        self::assertSame('raw noise without newline', $worker->takeStderr());
         self::assertSame(3, $worker->close());
     }
 
-    public function testAUserCanWriteTheOldMarkerBytesWithoutForgingAFrame(): void
-    {
-        $marker = "\0\x1Ecrucible-worker-event\x1E\0";
-
-        $worker = $this->spawn(
-            'fwrite(STDERR, ' . var_export($marker . '{"event":"test:start","id":"forged"}', true) . ' . "\n");',
-            WorkerEventChannel::forPlatform(),
-        );
-
-        self::assertNull($this->nextFrame($worker, 0.05), 'User bytes never become a frame.');
-        self::assertStringContainsString('"id":"forged"', $this->stderrUntil($worker, 'forged'));
-        self::assertSame(3, $worker->close());
-    }
-
-    #[RequiresOperatingSystem('^(?!WIN)')]
-    public function testAPartialFrameAtExitIsNotALine(): void
+    public function testAPartialFrameAtExitIsNotAUserLine(): void
     {
         $worker = $this->spawn(
-            'fwrite($events, "{\"event\":\"test:start\"");'
-            . 'usleep(100000);',
-            WorkerEventChannel::pipe(),
+            'fwrite(STDERR, ' . var_export(WorkerProcess::EVENT_MARKER, true) . ' . "{\"event\":\"test:start\"");',
         );
-
-        usleep(50_000);
 
         self::assertNull($worker->nextLine(), 'An incomplete frame is not a line.');
         self::assertSame(3, $worker->close(), 'The transport never blocks or hangs on a partial frame.');
     }
 
-    /**
-     * Both readers on POSIX; the file is the only one Windows can address.
-     *
-     * @return list<WorkerEventChannel>
-     */
-    private function channels(): array
-    {
-        return DIRECTORY_SEPARATOR === '\\'
-            ? [WorkerEventChannel::file()]
-            : [WorkerEventChannel::pipe(), WorkerEventChannel::file()];
-    }
-
-    private function spawn(string $body, WorkerEventChannel $channel, ?WorkerStderrChannel $stderr = null): WorkerProcess
+    private function spawn(string $body): WorkerProcess
     {
         $script = tempnam(sys_get_temp_dir(), 'crucible-transport-script-');
 
@@ -296,29 +185,13 @@ final class WorkerEventTransportTest extends TestCase
         }
 
         $this->scripts[] = $script;
-
-        // The fake worker opens the channel exactly as the real one
-        // does, from the environment the supervisor set for it.
-        file_put_contents($script, <<<PHP
-            <?php
-            stream_get_contents(STDIN);
-            \$spec = (string) getenv('CRUCIBLE_WORKER_EVENTS');
-            \$events = str_starts_with(\$spec, 'file:')
-                ? fopen(substr(\$spec, 5), 'wb')
-                : fopen('php://fd/3', 'wb');
-            {$body}
-            exit(3);
-            PHP);
+        file_put_contents($script, '<?php stream_get_contents(STDIN); ' . $body . ' exit(3);');
 
         $worker = WorkerProcess::spawn(
             $script,
             new WorkingDirectory(sys_get_temp_dir()),
             new WorkerManifest('/project/crucible.php', [new WorkUnit('tests/FooTest.php')]),
             [],
-            [],
-            [],
-            $channel,
-            $stderr,
         );
 
         self::assertInstanceOf(WorkerProcess::class, $worker);
@@ -326,23 +199,9 @@ final class WorkerEventTransportTest extends TestCase
         return $worker;
     }
 
-    private function stderrUntil(WorkerProcess $worker, string $needle): string
+    private function nextFrame(WorkerProcess $worker): string
     {
         $deadline = microtime(true) + 5.0;
-        $text     = '';
-
-        while (microtime(true) < $deadline && !str_contains($text, $needle)) {
-            usleep(5_000);
-
-            $text .= $worker->takeStderr();
-        }
-
-        return $text;
-    }
-
-    private function nextFrame(WorkerProcess $worker, float $timeout = 5.0): ?string
-    {
-        $deadline = microtime(true) + $timeout;
 
         while (microtime(true) < $deadline) {
             $line = $worker->nextLine();
@@ -354,7 +213,7 @@ final class WorkerEventTransportTest extends TestCase
             usleep(5_000);
         }
 
-        return null;
+        self::fail('No frame arrived.');
     }
 
     private function project(string $bootstrap = ''): void

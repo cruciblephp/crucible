@@ -112,11 +112,8 @@ final readonly class ColdMutantExecutor implements MutantExecutor
                 $lines[] = $line;
             }
 
-            $worker->drainStdout();
-            $worker->drainStderr();
-
-            // Read first, then ask: the channel may still hold the
-            // frames the worker wrote before exiting.
+            // Read first, then ask: atEof() reports the process, and the
+            // pipe may still hold the frames it wrote before exiting.
             if ($worker->atEof()) {
                 break;
             }

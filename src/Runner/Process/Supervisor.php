@@ -47,7 +47,6 @@ use function hrtime;
 use function in_array;
 use function is_array;
 use function is_file;
-use function is_resource;
 use function json_decode;
 use function max;
 use function random_bytes;
@@ -59,7 +58,6 @@ use function stream_select;
 use function sys_get_temp_dir;
 use function trim;
 use function unlink;
-use function usleep;
 use function usort;
 
 use const PHP_EOL;
@@ -608,9 +606,10 @@ final class Supervisor
             $this->await($active);
 
             foreach ($active as $key => $worker) {
-                // stdout carries only user output now, never a frame;
-                // draining it keeps the pipe from filling and its
-                // readiness is still one of the loop's wakeups.
+                // stdout carries only user output: discarding it
+                // keeps the pipe from filling, and its readiness is what
+                // wakes the loop. Events travel on stderr, behind the
+                // marker nextLine() splits on.
                 $worker->drainStdout();
 
                 while (($line = $worker->nextLine()) !== null) {
@@ -686,8 +685,6 @@ final class Supervisor
                         $this->tallyIssues($event);
                     }
                 }
-
-                $worker->drainStderr();
 
                 if (!$worker->atEof()) {
                     continue;
@@ -866,51 +863,17 @@ final class Supervisor
      */
     private function await(array $active): void
     {
-        $read        = [];
-        $fileChannel = false;
+        $read = [];
 
         foreach ($active as $worker) {
-            $stdout = $worker->stdout();
-
-            if (is_resource($stdout)) {
-                $read[] = $stdout;
-            }
-
-            if ($worker->stderrIsSelectable()) {
-                $stderr = $worker->stderr();
-
-                if (is_resource($stderr)) {
-                    $read[] = $stderr;
-                }
-            } else {
-                $fileChannel = true;
-            }
-
-            if ($worker->eventsAreSelectable()) {
-                $events = $worker->events();
-
-                if (is_resource($events)) {
-                    $read[] = $events;
-                }
-            } else {
-                // A file channel cannot be selected on; poll it on the
-                // same turn rather than waiting the full pipe timeout.
-                $fileChannel = true;
-            }
-        }
-
-        if ($read === []) {
-            usleep(1_000);
-
-            return;
+            $read[] = $worker->stdout();
+            $read[] = $worker->stderr();
         }
 
         $write  = null;
         $except = null;
 
-        $timeout = $fileChannel ? 0.001 : self::SELECT_TIMEOUT_SECONDS;
-
-        @stream_select($read, $write, $except, 0, (int) ($timeout * 1_000_000));
+        @stream_select($read, $write, $except, 0, (int) (self::SELECT_TIMEOUT_SECONDS * 1_000_000));
     }
 
     /**
