@@ -717,8 +717,8 @@ needed no second protocol.
   rediscovers and rebuilds tests on its side; **nothing is ever `serialize()`d across the
   process boundary**. Output protocol = the NDJSON event stream on a channel of its own:
   descriptor 3 on POSIX, a per-worker file on Windows (D-189). stdout and stderr stay the
-  project's — on Windows stdout is the null device and stderr is a file — so no user write is
-  ever parsed as a frame.
+  project's — on Windows stdout is the null device and stderr stays a pipe — so no user write
+  is ever parsed as a frame.
 - **`crucible --worker`** prints nothing else: no banner, no reporter. The exit code carries
   no verdict — the worker's `run:finish` event is the completion handshake. User `echo`s
   stay on stdout, which the supervisor drains; stderr is drained for crash diagnostics and
@@ -7510,16 +7510,17 @@ started `crucible --worker` has no channel in its environment and keeps stdout, 
 D-124 attribution does not need a shared stream. The worker writes a test's stderr before it
 emits the finish frame, and flushes that stream before every frame, so draining stderr when the
 finish frame is read collects the test's process output; text the same process writes after the
-frame is still its own, never a protocol frame. On Windows stderr is a file read by offset too:
-a pipe cannot be drained without the risk of blocking on a write that never ended in a newline,
-and D-124's diagnostic is exactly that write. stdout is the null device there and is drained
-elsewhere, as it always was. A partial event frame at exit stays buffered and is never a line.
+frame is still its own, never a protocol frame. Stderr is read as **bytes, never as lines**: a
+diagnostic that never ended in a newline is exactly what D-124 has to see. On Windows, where a
+pipe cannot be made non-blocking, a read happens only when `stream_select` reports bytes, so a
+quiet stderr never parks the supervisor; stdout is the null device there. A partial event frame
+at exit stays buffered and is never a line.
 
 Rejected: a sentinel in the shared stderr stream (the collision remains possible and the
 reader must be trusted with protocol bytes), and a third descriptor on Windows (the child
 cannot address it). ✓ `WorkerEventTransportTest` covers bootstrap and discovery stdout, an
 isolated test's stderr, a user stderr write without a newline on both the pipe and file
-readers, a no-newline stderr write on the file-backed stderr the Windows shape uses, bytes that
+readers, a no-newline stderr write on a file-backed reader, bytes that
 spell the old sentinel, and a partial frame at exit. ✓ `WorkerAccountingTest` pins the original case: a raw `fwrite(STDOUT)` before a failed
 assertion now arrives `fail`, with its message and `complete: true`. ✓ `WorkerProcessTest`
 pins the cached terminal status: a worker killed by a signal still reports it.

@@ -18,6 +18,7 @@ use function fread;
 use function fseek;
 use function is_resource;
 use function random_bytes;
+use function stream_select;
 use function stream_set_blocking;
 use function strlen;
 use function sys_get_temp_dir;
@@ -25,16 +26,16 @@ use function touch;
 use function unlink;
 
 /**
- * The worker's stderr as the supervisor reads it. On POSIX that is the
- * pipe proc_open already gives us; on Windows it is a file, for the same
- * reason the event channel is one: the child cannot address an inherited
- * descriptor, and a pipe there cannot be read without the risk of
- * blocking on a partial line. A file read by offset also returns the
- * bytes of a write that never ended in a newline, which is exactly what
- * D-124's diagnostic needs.
+ * The worker's stderr as the supervisor reads it. The pipe is read as
+ * bytes, never as lines: a diagnostic that never ended in a newline is
+ * exactly what D-124 has to see. On Windows, where a pipe cannot be
+ * made non-blocking, a read happens only when stream_select says bytes
+ * are there, so a quiet stderr never parks the supervisor. The file
+ * form exists for the reader test (and for a platform that cannot
+ * expose fd 2 any other way); a file is read by offset.
  *
- * stdout is opened on the platform's null device on Windows, so the only
- * worker streams the supervisor reads there are files.
+ * stdout is opened on the platform's null device on Windows, so no
+ * stdout pipe has to be drained there.
  */
 final class WorkerStderrChannel
 {
@@ -49,7 +50,7 @@ final class WorkerStderrChannel
 
     public static function forPlatform(): self
     {
-        return DIRECTORY_SEPARATOR === '\\' ? self::file() : self::pipe();
+        return self::pipe();
     }
 
     public static function pipe(): self
@@ -124,6 +125,17 @@ final class WorkerStderrChannel
             clearstatcache(true, $this->path);
 
             if (fseek($this->reader, $this->offset) !== 0) {
+                return '';
+            }
+        } else {
+            // Windows pipes cannot be made non-blocking; only read one
+            // when it already has bytes, so a quiet stderr never parks
+            // the supervisor.
+            $ready  = [$this->reader];
+            $write  = null;
+            $except = null;
+
+            if (@stream_select($ready, $write, $except, 0, 0) !== 1) {
                 return '';
             }
         }
