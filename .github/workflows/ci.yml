@@ -149,6 +149,14 @@ jobs:
         if: runner.os == 'Windows'
         run: php crucible --log-markdown "$env:GITHUB_STEP_SUMMARY"
 
+      # The sequential run above never reads a worker's output. Windows
+      # worker transport is a different path (a per-worker file, not a
+      # pipe), and v1.4.2 shipped with it broken while this matrix stayed
+      # green: exercise it or the matrix proves nothing about --parallel.
+      - name: The self-hosted suite, parallel (Windows)
+        if: runner.os == 'Windows'
+        run: php crucible --parallel 2
+
       # composer check is NOT the whole gate, and this is the half that
       # most needs a machine other than the author's: the only gate that
       # reads the code Crucible writes at runtime, needing no oracle, so

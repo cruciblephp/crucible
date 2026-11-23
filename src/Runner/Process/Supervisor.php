@@ -47,6 +47,7 @@ use function hrtime;
 use function in_array;
 use function is_array;
 use function is_file;
+use function is_resource;
 use function json_decode;
 use function max;
 use function random_bytes;
@@ -58,6 +59,7 @@ use function stream_select;
 use function sys_get_temp_dir;
 use function trim;
 use function unlink;
+use function usleep;
 use function usort;
 
 use const PHP_EOL;
@@ -690,7 +692,10 @@ final class Supervisor
                     continue;
                 }
 
-                $worker->close();
+                $missing = $this->missing($expectedCounts[$key], $finished[$key]);
+                $keepLog = !$worker->hasFinished() || $missing !== [];
+
+                $worker->close(keepLog: $keepLog);
 
                 // A crash carries the tail in its reason already; a clean
                 // exit hands over whatever came after the last test.
@@ -698,7 +703,9 @@ final class Supervisor
                     $this->forwardStderr($worker->takeStderr());
                 }
 
-                $missing = $this->missing($expectedCounts[$key], $finished[$key]);
+                $logNote = $keepLog && $worker->stderrLogPath() !== null
+                    ? ' Worker log: ' . $worker->stderrLogPath()
+                    : '';
 
                 if (!$worker->hasFinished()) {
                     $this->accounted = false;
@@ -708,7 +715,8 @@ final class Supervisor
                         $finished[$key],
                         'The worker process running this test exited unexpectedly.'
                             . $this->signalNote($worker->signal())
-                            . ($worker->stderrTail() !== '' ? ' Worker stderr: ' . $worker->stderrTail() : ''),
+                            . ($worker->stderrTail() !== '' ? ' Worker stderr: ' . $worker->stderrTail() : '')
+                            . $logNote,
                     );
                 } elseif ($missing !== []) {
                     // The handshake said the worker finished. Either it
@@ -730,7 +738,8 @@ final class Supervisor
                             $expectedCounts[$key],
                             $finished[$key],
                             'The worker finished without reporting this test.'
-                                . ($worker->stderrTail() !== '' ? ' Worker stderr: ' . $worker->stderrTail() : ''),
+                                . ($worker->stderrTail() !== '' ? ' Worker stderr: ' . $worker->stderrTail() : '')
+                                . $logNote,
                         );
                     }
                 }
@@ -863,17 +872,39 @@ final class Supervisor
      */
     private function await(array $active): void
     {
-        $read = [];
+        $read        = [];
+        $fileChannel = false;
 
         foreach ($active as $worker) {
-            $read[] = $worker->stdout();
-            $read[] = $worker->stderr();
+            $stdout = $worker->stdout();
+
+            if (is_resource($stdout)) {
+                $read[] = $stdout;
+            }
+
+            if (!$worker->stderrIsSelectable()) {
+                $fileChannel = true;
+
+                continue;
+            }
+
+            $stderr = $worker->stderr();
+
+            if (is_resource($stderr)) {
+                $read[] = $stderr;
+            }
         }
 
         $write  = null;
         $except = null;
 
-        @stream_select($read, $write, $except, 0, (int) (self::SELECT_TIMEOUT_SECONDS * 1_000_000));
+        if ($read !== []) {
+            @stream_select($read, $write, $except, 0, $fileChannel ? 0 : (int) (self::SELECT_TIMEOUT_SECONDS * 1_000_000));
+        }
+
+        if ($fileChannel) {
+            usleep(1_000);
+        }
     }
 
     /**

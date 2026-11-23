@@ -16,14 +16,18 @@ use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Framework\TestCase;
 use LucianoPereira\Crucible\Runner\Process\WorkerManifest;
 use LucianoPereira\Crucible\Runner\Process\WorkerProcess;
+use LucianoPereira\Crucible\Runner\Process\WorkerStderrChannel;
 use LucianoPereira\Crucible\Runner\Process\WorkUnit;
 
+use function bin2hex;
 use function file_put_contents;
 use function is_file;
+use function microtime;
 use function sys_get_temp_dir;
 use function tempnam;
 use function unlink;
 use function usleep;
+use function var_export;
 
 /**
  * A worker that dies by signal leaves no stderr of its own (a crashing
@@ -56,6 +60,63 @@ final class WorkerProcessTest extends TestCase
 
         self::assertSame(3, $worker->close());
         self::assertNull($worker->signal());
+    }
+
+    public function testFileStderrChannelKeepsUserTextWithItsFrame(): void
+    {
+        $script = tempnam(sys_get_temp_dir(), 'crucible-worker-');
+
+        if ($script === false) {
+            self::fail('Cannot create a temp file.');
+        }
+
+        $this->script = $script;
+
+        $marker = bin2hex(WorkerProcess::EVENT_MARKER);
+
+        file_put_contents($script, '<?php stream_get_contents(STDIN); fwrite(STDERR, "diag");'
+            . ' fwrite(STDERR, hex2bin(' . var_export($marker, true) . ') . "{\"event\":\"test:finish\"}\n");'
+            . ' fwrite(STDERR, "after");');
+
+        $channel = WorkerStderrChannel::file();
+
+        $worker = WorkerProcess::spawn(
+            $script,
+            new WorkingDirectory(sys_get_temp_dir()),
+            new WorkerManifest('/project/crucible.php', [new WorkUnit('tests/FooTest.php')]),
+            [],
+            [],
+            [],
+            $channel,
+        );
+
+        self::assertInstanceOf(WorkerProcess::class, $worker);
+
+        $deadline = microtime(true) + 5.0;
+        $line     = null;
+
+        while (microtime(true) < $deadline) {
+            $line = $worker->nextLine();
+
+            if ($line !== null) {
+                break;
+            }
+
+            usleep(5_000);
+        }
+
+        self::assertSame('{"event":"test:finish"}', $line);
+        self::assertSame('diag', $worker->takeStderr());
+
+        while (!$worker->atEof()) {
+            $worker->readLines();
+            usleep(1_000);
+        }
+
+        $worker->close();
+
+        self::assertSame('after', $worker->takeStderr());
+        self::assertFalse(is_file((string) $channel->path), 'A clean close removes the log.');
     }
 
     private function spawn(string $body): WorkerProcess

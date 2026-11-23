@@ -54,8 +54,11 @@ use const PHP_BINARY;
  * everything after it in the buffer, so the supervisor attributes the
  * exact text that preceded each event even when it read ahead.
  *
- * All reads are non-blocking; the Supervisor multiplexes many workers
- * over stream_select.
+ * All reads are non-blocking. On POSIX the Supervisor multiplexes many
+ * workers over stream_select. On Windows stderr is a per-worker file
+ * (see {@see WorkerStderrChannel}) that the Supervisor tails, because a
+ * proc_open() pipe there cannot be read without blocking and
+ * stream_select() waits on sockets only.
  */
 final class WorkerProcess
 {
@@ -92,14 +95,13 @@ final class WorkerProcess
 
     /**
      * @param resource     $process
-     * @param resource     $stdout
-     * @param resource     $stderr
+     * @param ?resource    $stdout null on Windows, where stdout is the null device
      * @param list<TestId> $expected the test ids this worker must finish
      */
     private function __construct(
         private $process,
         private $stdout,
-        private $stderr,
+        private readonly WorkerStderrChannel $stderr,
         public readonly array $expected,
     ) {}
 
@@ -112,6 +114,9 @@ final class WorkerProcess
      * @param array<string, string>   $env          extra environment for the child, merged over the
      *                                              inherited environment (the mutation worker injects
      *                                              its mutant this way); empty = plain inheritance
+     * @param ?WorkerStderrChannel    $stderr       the supervisor's stderr reader; null = the platform's
+     *                                              (a pipe on POSIX, a file on Windows), injectable so
+     *                                              the file reader is exercised on every platform
      */
     public static function spawn(
         string $crucibleBinary,
@@ -120,26 +125,49 @@ final class WorkerProcess
         array $expected,
         array $phpArguments = [],
         array $env = [],
+        ?WorkerStderrChannel $stderr = null,
     ): ?self {
+        $stderr ??= WorkerStderrChannel::forPlatform();
+
+        // A Windows proc_open() pipe cannot be drained without blocking;
+        // the worker's stdout is never forwarded anyway, so it goes to the
+        // null device and the supervisor has only stderr to read.
+        $stdout = DIRECTORY_SEPARATOR === '\\'
+            ? ['file', NullDevice::path(), 'w']
+            : ['pipe', 'w'];
+
         $process = proc_open(
             [PHP_BINARY, ...$phpArguments, $crucibleBinary, '--worker'],
-            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            [0 => ['pipe', 'r'], 1 => $stdout, ...$stderr->descriptors()],
             $pipes,
             $workingDirectory->path,
             self::environment($env),
         );
 
         if (!is_resource($process)) {
+            $stderr->close();
+
             return null;
         }
 
         fwrite($pipes[0], $manifest->toJson());
         fclose($pipes[0]);
 
-        stream_set_blocking($pipes[1], false);
-        stream_set_blocking($pipes[2], false);
+        $stdoutStream = isset($pipes[1]) && is_resource($pipes[1]) ? $pipes[1] : null;
 
-        return new self($process, $pipes[1], $pipes[2], $expected);
+        if ($stdoutStream !== null) {
+            stream_set_blocking($stdoutStream, false);
+        }
+
+        if (!$stderr->bind($pipes)) {
+            proc_terminate($process);
+            proc_close($process);
+            $stderr->close();
+
+            return null;
+        }
+
+        return new self($process, $stdoutStream, $stderr, $expected);
     }
 
     /**
@@ -161,7 +189,7 @@ final class WorkerProcess
     /**
      * The worker's stdout: user output only.
      *
-     * @return resource
+     * @return ?resource
      */
     public function stdout()
     {
@@ -169,14 +197,24 @@ final class WorkerProcess
     }
 
     /**
-     * The worker's stderr: framed events and the user's own stderr,
-     * interleaved in write order.
+     * The stderr stream when selectable; null when it is a file.
      *
-     * @return resource
+     * @return ?resource
      */
     public function stderr()
     {
-        return $this->stderr;
+        return $this->stderr->selectable();
+    }
+
+    public function stderrIsSelectable(): bool
+    {
+        return $this->stderr->path === null;
+    }
+
+    /** Where the stderr log lives, on Windows. */
+    public function stderrLogPath(): ?string
+    {
+        return $this->stderr->path;
     }
 
     /**
@@ -342,14 +380,19 @@ final class WorkerProcess
      * Reaps the worker. The status is read before proc_close(), which
      * folds a signal into the exit code; a signal is returned as the
      * code, as proc_close() alone returns it.
+     *
+     * @param bool $keepLog leave the Windows stderr log for inspection
      */
-    public function close(): int
+    public function close(bool $keepLog = false): int
     {
         $this->readStderr();
         $this->flushAllText();
 
-        fclose($this->stdout);
-        fclose($this->stderr);
+        if (is_resource($this->stdout)) {
+            fclose($this->stdout);
+        }
+
+        $this->stderr->close($keepLog);
 
         do {
             $status = $this->terminalStatus();
@@ -395,16 +438,12 @@ final class WorkerProcess
         ];
     }
 
-    /** Reads what the stderr pipe holds now; the byte count, for callers deciding whether to wait. */
+    /** Reads what stderr holds now; the byte count, for callers deciding whether to wait. */
     private function readStderr(): int
     {
-        if (!is_resource($this->stderr)) {
-            return 0;
-        }
-
         $read = 0;
 
-        while (($chunk = fread($this->stderr, 65_536)) !== false && $chunk !== '') {
+        while (($chunk = $this->stderr->read()) !== '') {
             $this->stderrBuffer .= $chunk;
             $read += strlen($chunk);
         }

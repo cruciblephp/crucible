@@ -7499,23 +7499,39 @@ buffering was the only thing keeping a test's `echo` out of the stream. A direct
 frame, which the supervisor skipped as unparseable — a failing test's result disappeared, and the
 parent reported a lost result instead of the failure.
 
-Three transports were tried. A third descriptor (`fd 3`) is not portable — Windows cannot pass
-one through `proc_open`. A separate event file plus a marker in the stream lost D-124's
-attribution: reading the file by batches put events ahead of the user text the pipe had not
-delivered yet. So the events share **stderr**, where the user's text already lives, and every
-frame is prefixed with `WorkerProcess::EVENT_MARKER` (`"\0\x1Ecrucible-worker-event\x1E\0"`).
-`nextLine()` splits on the marker, never on a newline the user may not have written, returns
-one frame and leaves everything after it buffered — the text before a frame is exactly the text
-that preceded it in the pipe, so D-124 is preserved without a temporary file. stdout is left to
-the user entirely and drained by `Supervisor::drainStdout()`; `ColdMutantExecutor` reads frames
-the same way. A marker split across two reads keeps its prefix buffered, and a partial frame at
-exit is never reported as a line. `proc_get_status()` carries a signal only to the call that first
-observes the exit, so that terminal status is cached: `atEof()` may read it before `close()`, and
-the crash diagnosis still names the signal (WSL regression, `SIGSEGV` as 11, not -1).
+Three transports were tried. A third descriptor (`fd 3`) is not portable — on Windows PHP hands
+the child an inherited handle for descriptors beyond 2 but gives it no way to address one. A
+separate event file plus a marker in the stream lost D-124's attribution: reading the file by
+batches put events ahead of the user text the pipe had not delivered yet. So the events share
+**stderr**, where the user's text already lives, and every frame is prefixed with
+`WorkerProcess::EVENT_MARKER` (`"\0\x1Ecrucible-worker-event\x1E\0"`). `nextLine()` splits on the
+marker, never on a newline the user may not have written, returns one frame and leaves everything
+after it buffered — the text before a frame is exactly the text that preceded it in the stream, so
+D-124 is preserved without a temporary file. On POSIX stdout is left to the user entirely and
+drained by `Supervisor::drainStdout()`; `ColdMutantExecutor` reads frames the same way. A marker
+split across two reads keeps its prefix buffered, and a partial frame at exit is never reported as
+a line. `proc_get_status()` carries a signal only to the call that first observes the exit, so that
+terminal status is cached: `atEof()` may read it before `close()`, and the crash diagnosis still
+names the signal (WSL regression, `SIGSEGV` as 11, not -1).
+
+On Windows that stderr is a per-worker file, not a pipe (`WorkerStderrChannel`). A `proc_open()`
+pipe there cannot be read without blocking, and `stream_select()` waits on sockets only, so the
+v1.4.2 pipe parked the supervisor on a silent stdout while a worker blocked on a full stderr pipe:
+`--parallel` hung once the event stream passed the pipe buffer. The file is the same stderr —
+frames and user text in write order — read through a second handle by offset and polled every
+millisecond; stdout goes to the null device, since a worker's stdout is never forwarded anyway. A
+worker that crashes or loses results keeps its log, named in the error. Rejected: a socket
+descriptor (a temporary listener on every interface, and firewall/EDR noise for a marginal
+platform), a separate event file (D-124 again), and blocking pipe reads (the deadlock). PHPUnit 14's
+parallel runner and Symfony's `WindowsPipes` use the same file shape on Windows.
 
 ✓ `WorkerAccountingTest`: the raw-stdout case now arrives `fail`, with `Failed asserting that…`
 as its message, and `complete: true` — before, the frame was skipped, the test was reported as a
 lost result (`error`) and the run could not be complete. ✓ New
 `WorkerEventTransportTest`: bootstrap stdout, discovery stdout, isolated-test stderr (exit 2),
-user stderr without a newline before a frame, partial frame at exit. `php crucible --filter Worker`:
+user stderr without a newline before a frame, partial frame at exit. ✓
+`WorkerStderrChannelTest` and `WorkerProcessTest` exercise the file reader on every platform: bytes
+in write order, offset growth, a frame with the text that preceded it, and the kept/deleted log.
+✓ CI runs `php crucible --parallel 2` on Windows, because the sequential matrix never read a
+worker's output and stayed green through the v1.4.2 regression. `php crucible --filter Worker`:
 21 passed, 1 skipped (no Laravel), 1 untested (no `posix`).
