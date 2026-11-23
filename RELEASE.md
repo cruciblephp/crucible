@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-23 (D-001..D-189, 1.4.2). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-24 (D-001..D-189, 1.4.3). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -9,6 +9,32 @@ observable behavior targets **drop-in compatibility with PHPUnit 13 suites**. PH
 *specification* — never the *source*: no code, templates, doc comments, or message text are
 copied from it or from any other project. Sole copyright over every line is a project
 invariant.
+
+---
+
+## v1.4.3 — 2026-11-24
+
+A Windows-only `--parallel` regression, reported by Thomas (lekoala) as #27 and bisected to
+`d3f16d0`.
+
+- **Windows worker transport.** v1.4.2 sent events on stderr behind the marker but left stderr a
+  `proc_open()` pipe. On Windows such a pipe cannot be read without blocking, and `stream_select()`
+  waits on sockets only, so a worker blocked on a full stderr pipe while the supervisor blocked on
+  a silent stdout: `--parallel` hung after the banner once a worker wrote about 6 KB of events.
+  The worker's stderr is now a per-worker file on Windows — the same stream, frames and user text
+  in write order, read through a second handle by offset and polled every millisecond — while
+  POSIX keeps its pipe. stdout goes to the null device; a crashed worker keeps its log and the
+  path rides in the error. D-189. Rejected: a separate event file (D-124 ordering), a socket
+  descriptor (a temporary listener on every interface, firewall/EDR noise), and blocking pipe
+  reads (the deadlock).
+- **Gate.** Windows CI now runs `php crucible --parallel 2`; it previously ran the suite
+  sequentially and never read a worker's output, which is why the matrix stayed green while
+  `--parallel` hung.
+- **Tests.** `WorkerStderrChannelTest` and a file-channel `WorkerProcessTest` case exercise the
+  reader on every platform.
+
+Full gate: 2019 tests, 0 failed, 0 errors, 0 risky; CI green on PHP 8.3–8.5, Linux and Windows;
+8.6 experimental green.
 
 ---
 

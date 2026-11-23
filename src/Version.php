@@ -17,7 +17,7 @@ use function trim;
 
 final class Version
 {
-    public const string NUMBER = '1.4.2';
+    public const string NUMBER = '1.4.3';
     public const string AUTHOR = 'Luciano Federico Pereira';
 
     /** The project's own home, for the places branding says more than a byline. */

@@ -2,6 +2,15 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.4.3 — 2026-11-24
+
+Thanks to Thomas (lekoala) for the #27 report, bisect and Windows measurements.
+
+- Fixed `--parallel` hanging on Windows once a worker wrote about 6 KB of events: a `proc_open()` pipe there cannot be read without blocking, and `stream_select()` waits on sockets only, so the worker blocked on a full stderr pipe while the supervisor blocked on a silent stdout. The worker's stderr is now a per-worker file — the same stream, frames and user text in write order — read through a second handle by offset and polled every millisecond; stdout goes to the null device and POSIX keeps its pipe. A crashed worker keeps its log, named in the error. D-189
+- Added `php crucible --parallel 2` to the Windows CI matrix; it previously ran the suite sequentially and never read a worker's output, which is why 1.4.2 stayed green while `--parallel` hung
+- Added `WorkerStderrChannelTest` and a file-channel `WorkerProcessTest` case, so the Windows reader is exercised on every platform
+- Full gate: 2019 tests, 0 failed, 0 errors, 0 risky; CI green on PHP 8.3–8.5, Linux and Windows; 8.6 experimental green
+
 ## v1.4.2 — 2026-11-23
 
 Thanks to Thomas (lekoala) for the reports and patches behind #22–#25.

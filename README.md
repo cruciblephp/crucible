@@ -203,9 +203,10 @@ and defects-first scheduling, VMVM-style state isolation, Ekstazi-style impact s
 
 ## Credits
 
-Crucible 1.4.2 includes work from [Thomas (lekoala)](https://github.com/lekoala), who tested a
+Crucible 1.4.3 includes work from [Thomas (lekoala)](https://github.com/lekoala), who tested a
 Symfony 8.1 / Doctrine / PostgreSQL suite against Crucible, reported what broke in
-[issue #2](https://github.com/cruciblephp/crucible/issues/2), and sent the reports and pull
+[issue #2](https://github.com/cruciblephp/crucible/issues/2) and the Windows `--parallel` hang in
+[issue #27](https://github.com/cruciblephp/crucible/issues/27), and sent the reports and pull
 requests behind #22–#25: the worker transport, impact-selection paths, type-suite deletions
 and the fingerprint walk. Thank you.
 
