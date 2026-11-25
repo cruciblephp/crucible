@@ -23,6 +23,7 @@ use function is_link;
 use function is_resource;
 use function proc_close;
 use function proc_open;
+use function str_starts_with;
 use function stream_get_contents;
 use function trim;
 
@@ -62,6 +63,13 @@ final readonly class ChangedFiles
      */
     public static function fromGit(WorkingDirectory $workingDirectory, string $reference): self|string
     {
+        // The ref is placed before `--` in the diff argv, where git reads
+        // it as a revision. A value starting with `-` would be parsed as
+        // an option instead of a revision, so refuse it at the boundary.
+        if (str_starts_with($reference, '-')) {
+            return 'a git reference cannot start with "-".';
+        }
+
         [$code, $output, $error] = self::git(['rev-parse', '--show-toplevel'], $workingDirectory->path);
 
         if ($code !== 0) {

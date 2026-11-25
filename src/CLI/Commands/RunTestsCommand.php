@@ -129,7 +129,6 @@ use function count;
 use function ctype_digit;
 use function explode;
 use function file;
-use function file_put_contents;
 use function fopen;
 use function fwrite;
 use function get_declared_classes;
@@ -2082,7 +2081,7 @@ final class RunTestsCommand
         }
 
         if ($manifest->dependencyArtifact !== null) {
-            file_put_contents($manifest->dependencyArtifact, json_encode($dependencyValues->provided(), JSON_THROW_ON_ERROR));
+            AtomicFile::write($manifest->dependencyArtifact, json_encode($dependencyValues->provided(), JSON_THROW_ON_ERROR));
         }
 
         return 0;

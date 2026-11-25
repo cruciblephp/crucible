@@ -261,6 +261,14 @@ final class ChangedFilesTest extends TestCase
         self::assertIsString(ChangedFiles::fromGit(new WorkingDirectory($this->repository), 'no-such-ref-anywhere'));
     }
 
+    public function testAReferenceThatLooksLikeAGitOptionIsRefused(): void
+    {
+        $changed = ChangedFiles::fromGit(new WorkingDirectory($this->repository), '--output=/tmp/pwned');
+
+        self::assertIsString($changed);
+        self::assertStringContainsString('cannot start with "-"', $changed);
+    }
+
     public function testOutsideARepositoryIsAnError(): void
     {
         self::assertIsString(ChangedFiles::fromGit(new WorkingDirectory(sys_get_temp_dir() . '/'), 'HEAD'));

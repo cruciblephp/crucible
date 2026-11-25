@@ -14,15 +14,13 @@ use LucianoPereira\Crucible\Coverage\CacheManifest;
 use LucianoPereira\Crucible\Extension\Artifact\Artifact;
 use LucianoPereira\Crucible\Extension\Artifact\Claim;
 use LucianoPereira\Crucible\Extension\Check;
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 
 use function count;
-use function file_put_contents;
 use function implode;
-use function is_dir;
 use function json_encode;
 use function ksort;
-use function mkdir;
 use function sprintf;
 
 use const JSON_PRETTY_PRINT;
@@ -88,13 +86,9 @@ final readonly class ObservedTypesCheck implements Check
     /** @param array<string, mixed> $functions */
     private function write(array $functions): void
     {
-        if (!is_dir($this->cacheDirectory) && !@mkdir($this->cacheDirectory, 0o777, true)) {
-            return;
-        }
-
         $json = json_encode(['version' => self::VERSION, 'functions' => $functions], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
-        if (@file_put_contents($this->cacheDirectory . '/' . self::FILE, $json . "\n") !== false) {
+        if (AtomicFile::write($this->cacheDirectory . '/' . self::FILE, $json . "\n")) {
             CacheManifest::record($this->cacheDirectory, self::FILE, self::VERSION);
         }
     }

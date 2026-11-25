@@ -7614,3 +7614,40 @@ non-PHP change selects nothing and exits 0, while watch mode widens it. The
 JS section names the cross-package `related` offer, the stop-on paragraph says
 the supervisor stops handing out units, and `spec/cache-formats.md` records
 that every artifact is renamed over its target.
+
+### D-191: the follow-up audit's clear violations, fixed
+
+The #29 review separated what contradicted a written promise from what was a
+documented limitation or a preference. The five clear ones:
+
+- **The watchdog measures inactivity, not the unit's birthday.** D-190 and the
+  manual say a unit that *stops reporting* is killed; the timer started once at
+  dispatch, so two healthy 1.5 s tests under `->watchdog(2)` were killed for
+  taking 3 s in total. Every event frame now renews the deadline. The existing
+  hang test still fails the run; a new two-slow-tests case proves a unit whose
+  total exceeds the budget survives when each gap does not.
+- **The cold mutation worker drains stdout.** The supervisor drains every
+  worker's stdout because it is user output and an undrained pipe fills; the
+  cold mutant executor did not, so a mutant printing more than a pipe buffer
+  blocked until the timeout and was reported as timed out. It now drains on
+  every poll, and a 256 KB flood is killed rather than timed out.
+- **A foreign `test:start` is dropped.** D-022 drains unplanned *results*
+  before they reach the stream; the start half was still forwarded, and a later
+  `reportMissing()` could start the same id again. Starts are now counted
+  against the unit exactly as finishes are, and an unexpected one is logged to
+  stderr, marks the run incomplete and never reaches the event stream.
+- **A git reference that looks like an option is refused.** `--changed=<ref>`
+  puts the value where git reads revisions; a ref beginning with `-` would be
+  parsed as a git option. `ChangedFiles::fromGit()` rejects it at the boundary.
+- **The remaining state writers are atomic.** `DeprecationBaseline::save()`,
+  `ObservedTypesCheck::write()` and the worker's `dependencyArtifact` now join
+  the `AtomicFile` set D-190 established.
+
+Deliberately not changed, because the review found them documented or design
+questions rather than broken promises: a worker's post-`run:finish` exit code
+(D-022 says the handshake is the verdict), non-module shared files outside a
+Vitest root (D-080 says they leave every suite out), the dependency index's
+fresh-only save (D-179's incremental contract), and the forgeable event marker
+(no security boundary). A gitlink bump, the Vitest workspace topology files and
+`doctor`'s migration-mode companion check are recorded as shape questions for a
+later decision rather than patched in this pass.

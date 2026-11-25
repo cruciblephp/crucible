@@ -162,6 +162,38 @@ final class ColdMutantExecutorTest extends TestCase
         self::assertSame(MutationOutcome::Killed, $verdict->outcome);
     }
 
+    public function testAMutantThatFloodsStdoutDoesNotBlockTheColdWorker(): void
+    {
+        $this->write($this->dir . '/tests/CalculatorTest.php', <<<'PHP'
+            <?php
+            namespace ColdFixture;
+            use LucianoPereira\Crucible\Framework\TestCase;
+            final class CalculatorTest extends TestCase
+            {
+                public function testAddsToFour(): void
+                {
+                    fwrite(\STDOUT, str_repeat('x', 262144));
+                    self::assertSame(4, Calculator::add(2, 2));
+                }
+            }
+            PHP);
+
+        // An undrained pipe fills at ~64 KB; the worker would block and
+        // be reported as timed out. The executor must drain stdout, as
+        // the supervisor does for every worker (D-022/D-189).
+        $executor = new ColdMutantExecutor(
+            dirname(__DIR__, 3) . '/crucible',
+            $this->dir . '/crucible.php',
+            new WorkingDirectory($this->dir),
+            timeoutSeconds: 5.0,
+        );
+
+        $verdict = $executor->execute($this->mutant('return $a - $b;'), [self::COVERING_ID]);
+
+        self::assertSame(MutationOutcome::Killed, $verdict->outcome);
+        self::assertSame(self::COVERING_ID, $verdict->killedBy);
+    }
+
     public function testAMutantNoTestCoversIsNotCovered(): void
     {
         $verdict = $this->executor()->execute($this->mutant('return $a - $b;'), []);

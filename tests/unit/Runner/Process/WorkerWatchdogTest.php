@@ -119,6 +119,73 @@ final class WorkerWatchdogTest extends TestCase
         self::assertFalse($this->completed($events));
     }
 
+    public function testTheWatchdogMeasuresInactivityNotTotalUnitTime(): void
+    {
+        // Two tests, each quiet for 2.5 s, in a unit whose total is 5 s.
+        // A watchdog of 4 s must let both finish: it measures the gap
+        // between reports, not the unit's birthday.
+        file_put_contents($this->project . '/crucible.php', <<<'PHP'
+            <?php
+
+            declare(strict_types=1);
+
+            use LucianoPereira\Crucible\Configuration\Crucible;
+
+            return Crucible::configure()
+                ->watchdog(4)
+                ->testSuite('unit', 'tests')
+                ->build();
+            PHP);
+
+        unlink($this->project . '/tests/HangingTest.php');
+
+        file_put_contents($this->project . '/tests/SlowTest.php', <<<'PHP'
+            <?php
+
+            declare(strict_types=1);
+
+            use LucianoPereira\Crucible\Framework\TestCase;
+
+            final class SlowTest extends TestCase
+            {
+                public function testFirst(): void
+                {
+                    usleep(2_500_000);
+                    self::assertTrue(true);
+                }
+
+                public function testSecond(): void
+                {
+                    usleep(2_500_000);
+                    self::assertTrue(true);
+                }
+            }
+            PHP);
+
+        [$exit, $events] = $this->crucible(['--parallel', '2']);
+
+        self::assertSame(0, $exit);
+        self::assertSame('pass', $this->outcomeOf($events, 'tests/SlowTest.php::testFirst'));
+        self::assertSame('pass', $this->outcomeOf($events, 'tests/SlowTest.php::testSecond'));
+        self::assertTrue($this->completed($events), 'Both tests reported within the inactivity window.');
+    }
+
+    /**
+     * @param list<string> $events
+     */
+    private function outcomeOf(array $events, string $id): ?string
+    {
+        foreach ($events as $line) {
+            $decoded = json_decode($line, true);
+
+            if (is_array($decoded) && ($decoded['event'] ?? null) === 'test:finish' && ($decoded['id'] ?? null) === $id) {
+                return is_string($decoded['outcome'] ?? null) ? $decoded['outcome'] : null;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * @param list<string> $events
      */

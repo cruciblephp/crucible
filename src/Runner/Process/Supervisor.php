@@ -500,8 +500,11 @@ final class Supervisor
         /** @var array<int, bool> $isolatedOf worker object id => its unit asked for its own process */
         $isolatedOf = [];
 
-        /** @var array<int, int> $startedAt worker object id => hrtime(true) at dispatch */
-        $startedAt = [];
+        /** @var array<int, int> $lastActivity worker object id => hrtime(true) of its last event frame */
+        $lastActivity = [];
+
+        /** @var array<int, array<string, int>> $startedCounts worker object id => started occurrences per id */
+        $startedCounts = [];
 
         /** @var array<int, true> $timedOut worker object id => the watchdog terminated it */
         $timedOut = [];
@@ -629,7 +632,8 @@ final class Supervisor
                 $artifactOf[$key]         = $artifact;
                 $coverageArtifactOf[$key] = $coverageArtifact;
                 $isolatedOf[$key]         = $planned->isolated;
-                $startedAt[$key]          = hrtime(true);
+                $lastActivity[$key]       = hrtime(true);
+                $startedCounts[$key]      = [];
             }
 
             if ($active === []) {
@@ -642,7 +646,7 @@ final class Supervisor
                 $now = hrtime(true);
 
                 foreach ($active as $key => $worker) {
-                    if (isset($timedOut[$key]) || $now - $startedAt[$key] < $this->watchdogSeconds * 1_000_000_000) {
+                    if (isset($timedOut[$key]) || $now - $lastActivity[$key] < $this->watchdogSeconds * 1_000_000_000) {
                         continue;
                     }
 
@@ -659,6 +663,8 @@ final class Supervisor
                 $worker->drainStdout();
 
                 while (($line = $worker->nextLine()) !== null) {
+                    $lastActivity[$key] = hrtime(true);
+
                     if ($this->parser->isRunFinished($line)) {
                         $worker->markFinished();
                         $reportedTotals[$key] = $this->parser->reportedTotal($line);
@@ -684,6 +690,30 @@ final class Supervisor
                     // startup notice, the bootstrap) belongs to no test;
                     // what it wrote while one ran belongs to that test.
                     if ($event instanceof TestStarted) {
+                        $id     = $event->test->toString();
+                        $seen   = $startedCounts[$key][$id] ?? 0;
+                        $wanted = $expectedCounts[$key][$id] ?? 0;
+
+                        // A start for an id this unit never planned must
+                        // not reach the one true stream: a later
+                        // reportMissing() would then start the same id a
+                        // second time. It is the start-side of the
+                        // unplanned-result rule (D-022).
+                        if ($wanted === 0 || $seen >= $wanted) {
+                            $this->accounted = false;
+
+                            fwrite(STDERR, sprintf(
+                                'Worker started %s, which its unit did not expect; ignored.' . PHP_EOL,
+                                $id,
+                            ));
+
+                            $this->forwardStderr($worker->takeStderr());
+
+                            continue;
+                        }
+
+                        $startedCounts[$key][$id] = $seen + 1;
+
                         $this->forwardStderr($worker->takeStderr());
                     }
 
@@ -833,7 +863,8 @@ final class Supervisor
                     $artifactOf[$key],
                     $coverageArtifactOf[$key],
                     $isolatedOf[$key],
-                    $startedAt[$key],
+                    $lastActivity[$key],
+                    $startedCounts[$key],
                     $timedOut[$key],
                 );
             }

@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-25 (D-001..D-190, 1.4.5). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-25 (D-001..D-191, 1.4.6). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -9,6 +9,34 @@ observable behavior targets **drop-in compatibility with PHPUnit 13 suites**. PH
 *specification* — never the *source*: no code, templates, doc comments, or message text are
 copied from it or from any other project. Sole copyright over every line is a project
 invariant.
+
+---
+
+## v1.4.6 — 2026-11-25
+
+The clear violations from Thomas (lekoala)'s #29 follow-up, separated from the items that are
+documented limitations or shape questions.
+
+- **Watchdog inactivity.** D-190 and the manual say a unit that *stops reporting* is killed; the
+  timer started once at dispatch. Every event frame now renews the deadline, so two healthy
+  2.5 s tests under a 4 s watchdog survive even though the unit takes 5 s in total.
+- **Cold mutation stdout.** The supervisor drains every worker's stdout; the cold mutant
+  executor did not, so a mutant printing more than a pipe buffer blocked until the timeout and
+  was reported as timed out. It now drains on every poll.
+- **Foreign starts.** An unexpected `test:start` is counted against the unit like a finish,
+  logged to stderr, marks the run incomplete and never reaches the one true stream.
+- **Git refs.** `ChangedFiles::fromGit()` refuses a reference beginning with `-`; the value is
+  placed where git reads revisions, so it must not be parsed as an option.
+- **Atomic writers.** `DeprecationBaseline::save()`, `ObservedTypesCheck::write()` and the
+  worker's `dependencyArtifact` join the `AtomicFile` set.
+
+The review deliberately left these as documented or design questions: a worker's post-`run:finish`
+exit code (D-022), non-module shared files outside a Vitest root (D-080), the dependency index's
+fresh-only save (D-179), the forgeable event marker (no security boundary), and the gitlink,
+Vitest-workspace-topology and `doctor` migration-mode shapes. D-191.
+
+Full gate: 2038 tests, 0 failed, 0 errors, 0 risky; all 19 conformance fixtures conform;
+phpunit/mockery compatibility analysis clean.
 
 ---
 

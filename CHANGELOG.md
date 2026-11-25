@@ -2,6 +2,18 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.4.6 — 2026-11-25
+
+Thanks to Thomas (lekoala) for the #29 follow-up review.
+
+- Fixed the watchdog to measure inactivity, not total unit time: a unit whose tests keep reporting now survives a total longer than `->watchdog()`
+- Fixed the cold mutation worker blocking on a mutant that floods stdout: the executor now drains stdout on every poll
+- Fixed a foreign `test:start` reaching the event stream and allowing a duplicate synthetic start; starts are counted against the unit like finishes
+- Refused a `--changed=<ref>` value that starts with `-` instead of passing it to git as an option
+- Routed `DeprecationBaseline::save()`, `ObservedTypesCheck::write()` and the worker's `dependencyArtifact` through `AtomicFile`
+- Kept the documented behaviours: the worker exit code after `run:finish` is not a verdict, non-module shared files outside a Vitest root leave suites out, the dependency index saves fresh entries only, and the event marker is not a security boundary. D-191
+- Full gate: 2038 tests, 0 failed, 0 errors, 0 risky; all 19 conformance fixtures conform; phpunit/mockery compatibility analysis clean
+
 ## v1.4.5 — 2026-11-25
 
 - Fixed the v1.4.4 Windows gate: the atomic-file mode-preservation assertion is POSIX-only; Windows synthesises permission bits, so the test now skips by its OS requirement there. No runtime change

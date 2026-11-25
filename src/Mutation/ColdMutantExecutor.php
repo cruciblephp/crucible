@@ -108,6 +108,11 @@ final readonly class ColdMutantExecutor implements MutantExecutor
         $timedOut = false;
 
         while (true) {
+            // stdout is user output and is never part of the verdict, but
+            // an undrained pipe fills and blocks a chatty mutant. The
+            // supervisor drains it for the same reason (D-022/D-189).
+            $worker->drainStdout();
+
             foreach ($worker->readLines() as $line) {
                 $lines[] = $line;
             }
@@ -127,6 +132,8 @@ final readonly class ColdMutantExecutor implements MutantExecutor
 
             usleep(self::POLL_MICROSECONDS);
         }
+
+        $worker->drainStdout();
 
         foreach ($worker->readLines() as $line) {
             $lines[] = $line;
