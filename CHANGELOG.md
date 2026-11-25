@@ -11,6 +11,8 @@ Thanks to Thomas (lekoala) for the #29 follow-up review.
 - Fixed a foreign `test:start` reaching the event stream and allowing a duplicate synthetic start; starts are counted against the unit like finishes
 - Refused a `--changed=<ref>` value that starts with `-` instead of passing it to git as an option
 - Routed `observed-types.json` through `AtomicFile` — the last cache artifact listed in `spec/cache-formats.md`
+- Added `pnpm-workspace.yaml`, `nx.json`, `turbo.json` and `.npmrc` to the Vitest environment files, and routed four host-dependent absolute-path checks through `WorkingDirectory::isAbsolute()`
+- Widened PHP, type and Vitest selection on a gitlink/submodule change instead of selecting nothing, and added `WorkingDirectory::isAbsoluteAnyPlatform()` for paths rendered from another platform
 - Kept the documented behaviours: the worker exit code after `run:finish` is not a verdict, non-module shared files outside a Vitest root leave suites out, the dependency index saves fresh entries only, and the event marker is not a security boundary. The deprecations baseline and the worker dependency handoff are outside the written cache-atomicity contract and were left alone. D-191
 - Full gate: 2038 tests, 0 failed, 0 errors, 0 risky; all 19 conformance fixtures conform; phpunit/mockery compatibility analysis clean
 

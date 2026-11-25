@@ -26,6 +26,10 @@ use LucianoPereira\Crucible\Test\TestId;
 use function array_map;
 use function dirname;
 use function implode;
+use function mkdir;
+use function rmdir;
+use function sys_get_temp_dir;
+use function uniqid;
 
 #[CoversClass(ImpactSelection::class)]
 #[CoversClass(ImpactResult::class)]
@@ -114,6 +118,21 @@ final class ImpactSelectionTest extends TestCase
             [self::FIXTURES . '/Delta.php'],
             array_map(static fn(TestGroup $group): string => $group->name, $selected),
         );
+    }
+
+    public function testAChangedGitlinkWidensInsteadOfSelectingNothing(): void
+    {
+        $directory = sys_get_temp_dir() . '/crucible-gitlink-' . uniqid();
+        mkdir($directory, 0o777, true);
+
+        try {
+            $result = $this->selection()->select($this->groups(), new ChangedFiles([$directory]));
+
+            self::assertNull($result->groups, 'A gitlink change must widen, not select nothing.');
+            self::assertStringContainsString('gitlink or directory', $result->notes[0]);
+        } finally {
+            rmdir($directory);
+        }
     }
 
     public function testAnUntouchedGraphSelectsNothing(): void

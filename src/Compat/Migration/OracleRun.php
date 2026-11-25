@@ -239,7 +239,7 @@ final readonly class OracleRun
     private static function pestKey(string $path, string $name, WorkingDirectory $workingDirectory, array &$ordinals): ?string
     {
         $relative = self::relative($path, $workingDirectory);
-        $absolute = str_starts_with($relative, '/') ? $relative : rtrim($workingDirectory->path, '/') . '/' . $relative;
+        $absolute = WorkingDirectory::isAbsolute($relative) ? $relative : rtrim($workingDirectory->path, '/') . '/' . $relative;
 
         if ($relative === '' || !is_file($absolute)) {
             return null;

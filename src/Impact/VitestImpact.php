@@ -21,6 +21,7 @@ use function basename;
 use function count;
 use function dirname;
 use function in_array;
+use function is_dir;
 use function pathinfo;
 use function preg_match;
 use function realpath;
@@ -100,6 +101,20 @@ final readonly class VitestImpact
     {
         if ($suites === []) {
             return [[], []];
+        }
+
+        // A changed directory is a gitlink (submodule): its contents
+        // live in another history, so no module edge can name them.
+        foreach ($changed->files as $file) {
+            if (is_dir(self::canonical($file))) {
+                return [
+                    $suites,
+                    [sprintf(
+                        'Impact: %s is a gitlink or directory — every Vitest suite runs in full.',
+                        $workingDirectory->relative($file),
+                    )],
+                ];
+            }
         }
 
         // Deletions defeat the graph on both tiers (ImpactSelection
@@ -305,7 +320,14 @@ final readonly class VitestImpact
             || preg_match('/^vitest\.workspace\.[cm]?[jt]s$/', $name) === 1
             || preg_match('/^tsconfig(?:\..+)?\.json$/', $name) === 1
             || $name === 'jsconfig.json'
-            || preg_match('/^\.env(?:\..+)?$/', $name) === 1;
+            || preg_match('/^\.env(?:\..+)?$/', $name) === 1
+            // Workspace topology/resolvers: a changed package graph can
+            // make a suite resolve modules it did not before, and no
+            // module edge can express that.
+            || $name === 'pnpm-workspace.yaml'
+            || $name === 'nx.json'
+            || $name === 'turbo.json'
+            || $name === '.npmrc';
     }
 
     /** Whether the file is a module the Vite pipeline could load. */

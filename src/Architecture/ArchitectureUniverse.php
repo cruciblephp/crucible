@@ -266,6 +266,6 @@ final class ArchitectureUniverse
 
     private function absolute(string $path): string
     {
-        return str_starts_with($path, '/') ? $path : rtrim($this->workingDirectory->path, '/') . '/' . $path;
+        return WorkingDirectory::isAbsolute($path) ? $path : rtrim($this->workingDirectory->path, '/') . '/' . $path;
     }
 }

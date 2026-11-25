@@ -7657,3 +7657,54 @@ fresh-only save (D-179's incremental contract), and the forgeable event marker
 `doctor`'s migration-mode companion check, the deprecations baseline and the
 worker dependency handoff are recorded as shape questions for a later decision
 rather than patched in this pass.
+
+### D-192: Vitest workspace topology files are environment
+
+D-080's environment list covered package manifests, lockfiles, Vitest/Vite
+configuration, TypeScript configuration and `.env` files. A pnpm/Nx/Turbo
+workspace can change which package a suite resolves without changing any of
+those: `pnpm-workspace.yaml`, `nx.json`, `turbo.json` and `.npmrc` all move the
+resolver or the project graph.
+
+They join `VitestImpact::isEnvironment()` on the same terms as a lockfile: a
+file at or above a suite's directory runs that suite in full, and a sibling
+package's own file does not. `VitestImpactTest` covers all four names at the
+root. This is D-080's principle applied to the files the principle's prose
+already named ("a changed resolver has no module edge"), not a new mechanism.
+
+### D-193: absolute paths come from the working-directory helper
+
+Four remaining sites tested “absolute” as `str_starts_with($path, '/')`: the
+Pest key in the migration oracle, the architecture universe's path resolver, the
+Vitest suite claim in the run command, and the manual's link resolver. On
+Windows those checks misread a drive-letter or UNC path and rejoined the project
+root in front of it. They now use `WorkingDirectory::isAbsolute()`.
+
+The two meanings are kept separate rather than flattened:
+`WorkingDirectory::isAbsolute()` asks whether the path is absolute on this
+host, which is what filesystem resolution needs. `isAbsoluteAnyPlatform()`
+recognises POSIX and Windows forms whatever the host, which is what
+`FailureLocation` needs when it renders a trace produced elsewhere. The first
+attempt used the host helper there and broke the cross-platform display test;
+the shared predicate is the better shape, and `WorkingDirectoryTest` pins both
+sets of expectations.
+
+### D-194: a gitlink change widens instead of selecting nothing
+
+A submodule bump changes one gitlink in the parent repository. The working tree
+shows it as a directory, and `git diff` names only that path. The impact
+selection treated it as an undeclared non-PHP change, so it selected nothing and
+exited 0 — a false green over code in another history.
+
+Research on Nx, Bazel, pytest-testmon and the Jest/Vitest change-selection model
+found no runner that infers inside a submodule by default. Nx maps the gitlink
+to a project root and silently ignores it when no root contains it; accurate
+per-file handling needs a custom diff inside the submodule with a fallback when
+the old commit is unreachable. Bazel requires explicit repository rules;
+pytest-testmon is coverage/checksum based.
+
+The project's safety direction makes the coarse answer the honest one: a changed
+directory is treated like a deletion. PHP selection widens to the full suite,
+the type tier stays, and every Vitest suite runs in full — each with a named
+"gitlink or directory" note. A per-file submodule diff remains a separate
+decision, with its own shallow-history fixture, rather than a guess in the core.

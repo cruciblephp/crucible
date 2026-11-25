@@ -60,6 +60,20 @@ final class VitestImpactTest extends TestCase
         self::assertStringContainsString('no JS changes, skipped', $notes[0]);
     }
 
+    public function testAGitlinkChangeWidensEverySuite(): void
+    {
+        $directory = $this->root() . '/src';
+
+        [$suites, $notes] = VitestImpact::select(
+            [new VitestSuite('src/Vitest'), new VitestSuite('src/Impact')],
+            new ChangedFiles([$directory]),
+            new WorkingDirectory($this->root()),
+        );
+
+        self::assertSame([[], []], array_map(static fn(VitestSuite $suite): array => $suite->related, $suites));
+        self::assertStringContainsString('gitlink or directory', $notes[0]);
+    }
+
     public function testDeletionsWidenEverySuiteToAFullRun(): void
     {
         $suite = new VitestSuite('src/Vitest');
@@ -134,6 +148,27 @@ final class VitestImpactTest extends TestCase
         self::assertSame([[], []], array_map(static fn(VitestSuite $suite): array => $suite->related, $suites));
         self::assertStringContainsString('configures it, running the whole suite', $notes[0]);
         self::assertStringContainsString('configures it, running the whole suite', $notes[1]);
+    }
+
+    public function testWorkspaceTopologyFilesRunEverySuiteInFull(): void
+    {
+        foreach (['pnpm-workspace.yaml', 'nx.json', 'turbo.json', '.npmrc'] as $name) {
+            $file = $this->root() . '/' . $name;
+
+            [$suites, $notes] = VitestImpact::select(
+                [new VitestSuite('src/Vitest'), new VitestSuite('src/Impact')],
+                new ChangedFiles([$file]),
+                new WorkingDirectory($this->root()),
+            );
+
+            self::assertSame(
+                [[], []],
+                array_map(static fn(VitestSuite $suite): array => $suite->related, $suites),
+                $name . ' did not widen both suites.',
+            );
+            self::assertStringContainsString('configures it, running the whole suite', $notes[0]);
+            self::assertStringContainsString('configures it, running the whole suite', $notes[1]);
+        }
     }
 
     public function testASuiteLocalConfigurationRunsOnlyThatSuiteInFull(): void

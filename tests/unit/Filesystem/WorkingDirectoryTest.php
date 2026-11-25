@@ -78,6 +78,23 @@ final class WorkingDirectoryTest extends TestCase
         self::assertSame('/project//src', (new WorkingDirectory('/project/'))->absolute('src'));
     }
 
+    public function testAnyPlatformAbsoluteRecognisesPosixAndWindowsForms(): void
+    {
+        foreach ([
+            '/project/Test.php',
+            'C:/project/Test.php',
+            'C:\\project\\Test.php',
+            '\\\\server\\share\\Test.php',
+            '\\project\\Test.php',
+        ] as $path) {
+            self::assertTrue(WorkingDirectory::isAbsoluteAnyPlatform($path), $path);
+        }
+
+        foreach (['project/Test.php', 'C:project/Test.php', '', '.'] as $path) {
+            self::assertFalse(WorkingDirectory::isAbsoluteAnyPlatform($path), $path);
+        }
+    }
+
     public function testCurrentReadsTheProcessDirectory(): void
     {
         self::assertSame((string) getcwd(), WorkingDirectory::current()->path);

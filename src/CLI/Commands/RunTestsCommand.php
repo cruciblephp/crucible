@@ -815,7 +815,7 @@ final class RunTestsCommand
 
             foreach ($configuration->vitest as $suite) {
                 $claimed = realpath(
-                    str_starts_with($suite->directory, '/')
+                    WorkingDirectory::isAbsolute($suite->directory)
                         ? $suite->directory
                         : $workingDirectory->path . '/' . $suite->directory,
                 );
@@ -1599,7 +1599,9 @@ final class RunTestsCommand
     private function typesCanChange(array $files, array $deleted): bool
     {
         foreach ($files as $file) {
-            if ($this->isTypeAnalysisInput($file)) {
+            // A changed directory is a gitlink (submodule); its contents
+            // are invisible to the analysis, so keep the type tier.
+            if (is_dir($file) || $this->isTypeAnalysisInput($file)) {
                 return true;
             }
         }

@@ -14,6 +14,7 @@ use LucianoPereira\Crucible\Console\Components\Pager;
 use LucianoPereira\Crucible\Console\Output\Markdown;
 use LucianoPereira\Crucible\Console\Output\TextPdf;
 use LucianoPereira\Crucible\Console\Runtime\Runtime;
+use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Version;
 
 use function array_pop;
@@ -26,7 +27,6 @@ use function max;
 use function preg_match;
 use function printf;
 use function realpath;
-use function str_starts_with;
 
 use const PHP_EOL;
 
@@ -141,7 +141,7 @@ final class ManualCommand
             return null;
         }
 
-        $candidate = str_starts_with($target, '/') ? $target : $baseDir . '/' . $target;
+        $candidate = WorkingDirectory::isAbsolute($target) ? $target : $baseDir . '/' . $target;
         $real      = realpath($candidate);
 
         return $real !== false && is_file($real) ? $real : null;

@@ -22,6 +22,7 @@ use function basename;
 use function count;
 use function implode;
 use function in_array;
+use function is_dir;
 use function is_file;
 use function realpath;
 use function rtrim;
@@ -145,6 +146,16 @@ final readonly class ImpactSelection
         foreach ($changed->files as $file) {
             $real = realpath($file);
             $real = $real === false ? WorkingDirectory::native($file) : $real;
+
+            // Git does not track directories: a changed directory is a
+            // gitlink (submodule). Its contents are in another history
+            // the graph cannot see, so only a full run is honest.
+            if (is_dir($real)) {
+                return ImpactResult::everything(sprintf(
+                    'Impact: %s is a gitlink or directory — its contents are invisible to the graph',
+                    $this->relative($real),
+                ));
+            }
 
             if (in_array($real, $environment, true)
                 || in_array(basename($real), self::MANIFESTS, true)

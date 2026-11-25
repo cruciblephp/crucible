@@ -115,6 +115,19 @@ final readonly class WorkingDirectory
     }
 
     /**
+     * Whether the path is absolute in either the POSIX or the Windows
+     * sense, whatever the host. Display code uses this for a path that
+     * may have been produced on another platform; filesystem resolution
+     * must use {@see self::isAbsolute()} instead.
+     */
+    public static function isAbsoluteAnyPlatform(string $path): bool
+    {
+        return str_starts_with($path, '/')
+            || str_starts_with($path, '\\')
+            || preg_match('~^[A-Za-z]:[/\\\\]~', $path) === 1;
+    }
+
+    /**
      * The OS's own separator throughout — the form to compare against
      * what the filesystem and PHP itself report.
      *
