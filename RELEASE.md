@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-25 (D-001..D-191, 1.4.6). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-25 (D-001..D-194, 1.4.6). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -29,14 +29,21 @@ documented limitations or shape questions.
   placed where git reads revisions, so it must not be parsed as an option.
 - **The last spec-listed cache artifact.** `observed-types.json` now goes through
   `AtomicFile`, completing `spec/cache-formats.md`.
+- **Vitest workspace topology.** `pnpm-workspace.yaml`, `nx.json`, `turbo.json` and `.npmrc`
+  now run the suites they configure in full, the same as a lockfile. D-192.
+- **Absolute-path semantics.** Four host-dependent checks use
+  `WorkingDirectory::isAbsolute()`; display code uses the new
+  `isAbsoluteAnyPlatform()` for paths produced on another platform. D-193.
+- **Gitlink changes widen.** A changed directory (a submodule gitlink) runs the PHP suite, keeps
+  the type tier and runs every Vitest suite in full instead of selecting nothing. D-194.
 
 The review deliberately left these as documented or design questions: a worker's post-`run:finish`
 exit code (D-022), non-module shared files outside a Vitest root (D-080), the dependency index's
 fresh-only save (D-179), the forgeable event marker (no security boundary), the deprecations
 baseline and the worker dependency handoff (both outside `spec/cache-formats.md`), and the
-gitlink, Vitest-workspace-topology and `doctor` migration-mode shapes. D-191.
+`doctor` migration-mode shape. D-191–D-194.
 
-Full gate: 2038 tests, 0 failed, 0 errors, 0 risky; all 19 conformance fixtures conform;
+Full gate: 2043 tests, 0 failed, 0 errors, 0 risky; all 19 conformance fixtures conform;
 phpunit/mockery compatibility analysis clean.
 
 ---
