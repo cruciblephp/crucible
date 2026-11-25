@@ -27,13 +27,14 @@ documented limitations or shape questions.
   logged to stderr, marks the run incomplete and never reaches the one true stream.
 - **Git refs.** `ChangedFiles::fromGit()` refuses a reference beginning with `-`; the value is
   placed where git reads revisions, so it must not be parsed as an option.
-- **Atomic writers.** `DeprecationBaseline::save()`, `ObservedTypesCheck::write()` and the
-  worker's `dependencyArtifact` join the `AtomicFile` set.
+- **The last spec-listed cache artifact.** `observed-types.json` now goes through
+  `AtomicFile`, completing `spec/cache-formats.md`.
 
 The review deliberately left these as documented or design questions: a worker's post-`run:finish`
 exit code (D-022), non-module shared files outside a Vitest root (D-080), the dependency index's
-fresh-only save (D-179), the forgeable event marker (no security boundary), and the gitlink,
-Vitest-workspace-topology and `doctor` migration-mode shapes. D-191.
+fresh-only save (D-179), the forgeable event marker (no security boundary), the deprecations
+baseline and the worker dependency handoff (both outside `spec/cache-formats.md`), and the
+gitlink, Vitest-workspace-topology and `doctor` migration-mode shapes. D-191.
 
 Full gate: 2038 tests, 0 failed, 0 errors, 0 risky; all 19 conformance fixtures conform;
 phpunit/mockery compatibility analysis clean.

@@ -12,16 +12,19 @@ namespace LucianoPereira\Crucible\Runner;
 
 use LucianoPereira\Crucible\Event\Issue;
 use LucianoPereira\Crucible\Event\IssueKind;
-use LucianoPereira\Crucible\Filesystem\AtomicFile;
 
+use function dirname;
 use function explode;
 use function file_get_contents;
+use function file_put_contents;
 use function in_array;
 use function is_array;
+use function is_dir;
 use function is_file;
 use function is_string;
 use function json_decode;
 use function json_encode;
+use function mkdir;
 use function sort;
 
 use const JSON_PRETTY_PRINT;
@@ -112,7 +115,13 @@ final readonly class DeprecationBaseline
 
         sort($entries);
 
-        AtomicFile::write($file, json_encode(
+        $directory = dirname($file);
+
+        if (!is_dir($directory)) {
+            mkdir($directory, 0o777, true);
+        }
+
+        file_put_contents($file, json_encode(
             ['version' => self::VERSION, 'deprecations' => $entries],
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
         ));

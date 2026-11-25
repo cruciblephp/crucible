@@ -7639,15 +7639,18 @@ documented limitation or a preference. The five clear ones:
 - **A git reference that looks like an option is refused.** `--changed=<ref>`
   puts the value where git reads revisions; a ref beginning with `-` would be
   parsed as a git option. `ChangedFiles::fromGit()` rejects it at the boundary.
-- **The remaining state writers are atomic.** `DeprecationBaseline::save()`,
-  `ObservedTypesCheck::write()` and the worker's `dependencyArtifact` now join
-  the `AtomicFile` set D-190 established.
+- **The last spec-listed cache artifact is atomic.** `ObservedTypesCheck::write()`
+  writes `observed-types.json`, which `spec/cache-formats.md` lists and which
+  now goes through `AtomicFile`. The deprecations baseline and the worker's
+  dependency handoff are not in that contract; they are left alone rather than
+  swept in because an issue called them residual.
 
 Deliberately not changed, because the review found them documented or design
 questions rather than broken promises: a worker's post-`run:finish` exit code
 (D-022 says the handshake is the verdict), non-module shared files outside a
 Vitest root (D-080 says they leave every suite out), the dependency index's
 fresh-only save (D-179's incremental contract), and the forgeable event marker
-(no security boundary). A gitlink bump, the Vitest workspace topology files and
-`doctor`'s migration-mode companion check are recorded as shape questions for a
-later decision rather than patched in this pass.
+(no security boundary). A gitlink bump, the Vitest workspace topology files,
+`doctor`'s migration-mode companion check, the deprecations baseline and the
+worker dependency handoff are recorded as shape questions for a later decision
+rather than patched in this pass.
