@@ -70,6 +70,25 @@ final class DoctorCommandTest extends TestCase
         self::assertStringContainsString('pestphp/pest-plugin-phpstan duplicates', $output);
     }
 
+    public function testPhpStanPhpUnitIsACompanionInMigrationMode(): void
+    {
+        [$exit, $output] = $this->doctor(['phpunit/phpunit', 'phpstan/phpstan-phpunit']);
+
+        self::assertSame(0, $exit);
+        self::assertStringContainsString('companion for the real PHPUnit assertions', $output);
+        self::assertStringNotContainsString('duplicates Crucible', $output);
+    }
+
+    public function testLaravelIsNotToldToRemovePhpUnit(): void
+    {
+        [$exit, $output] = $this->doctor(['laravel/framework', 'phpunit/phpunit']);
+
+        self::assertSame(0, $exit);
+        self::assertStringContainsString('because Laravel/testbench requires it', $output);
+        self::assertStringContainsString('->phpunitCompatibility()', $output);
+        self::assertStringNotContainsString('Remove it for the drop-in aliases', $output);
+    }
+
     public function testTheTestbenchMetaPackageIsAWarning(): void
     {
         [$exit, $output] = $this->doctor(['orchestra/testbench']);

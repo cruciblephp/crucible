@@ -7736,3 +7736,31 @@ written promises before any code:
 
 The issue can close on this record; R-15 remains the live design question and
 must not be folded into a cleanup patch.
+
+### D-196: Laravel migration is a proved path, not a new adapter
+
+The #30 question was framed as “invent a Laravel shape”. Measured against a real Laravel 13.17
+application with PHPUnit 12.5.45, the existing migration mode already carries it: Laravel's own
+`Illuminate\Foundation\Testing\TestCase`, unmodified, runs on Crucible through
+`->phpunitCompatibility()`. So does `Orchestra\Testbench\TestCase` from `testbench-core`.
+
+- **Baseline:** the Laravel skeleton's two tests pass under real PHPUnit; HTTP, container/facade,
+  `RefreshDatabase` and a database write pass in a three-test probe; `testbench-core` boots and
+  serves a request in two more. Crucible: 7/7, matching PHPUnit.
+- **No vendor patch and no base class.** `migrate-config` generates the env entries from
+  `phpunit.xml`, the suites, the source scope and `->phpunitCompatibility()`. The aliases are
+  runtime `class_alias()` calls that run before the bootstrap; Laravel's files stay untouched.
+- **No native real-TestCase adapter.** PHPUnit 13's `run()` and `runLifecycle()` are final, and
+  its result/event objects are runner internals. A thin adapter is not thin, and is unnecessary.
+- **Doctor was the actual defect.** It advised removing `phpunit/phpunit` (impossible for
+  Laravel/testbench) and flagged `phpstan/phpstan-phpunit` as a duplicate even in migration mode,
+  where it is the companion for the real assertion classes. The note and problem rules now
+  distinguish those cases.
+- **Executable proof.** `LaravelMigrationTest` writes the same probe into the oracle, runs the
+  real `phpunit` binary and the oracle's Crucible, and compares outcomes and exit codes. The
+  browser CI job path-installs Crucible into the Livewire oracle and runs this test with
+  `--fail-on-skipped`, so a missing oracle fails the job rather than hiding.
+
+The old text in D-186 that treats `phpstan/phpstan-phpunit` as an unconditional duplicate is
+superseded by this entry for the real-PHPUnit case. `pest-plugin-phpstan` keeps its duplicate
+warning. #30 is the design record this replaces with a measured, gated path.

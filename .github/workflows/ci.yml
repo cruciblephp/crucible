@@ -285,6 +285,19 @@ jobs:
             exit 1
           fi
 
+      # The Laravel migration proof: the app's own TestCase, real
+      # PHPUnit beside it, Crucible path-installed beside that. The test
+      # compares the same probe through both binaries; --fail-on-skipped
+      # makes a missing oracle a failed job, not a green one.
+      - name: Install Crucible into the Livewire oracle
+        run: |
+          cd livewire-oracle
+          composer config repositories.crucible path ..
+          composer require --dev --no-interaction --no-progress 'cruciblephp/crucible:@dev'
+
+      - name: Laravel migration parity, refusing to skip
+        run: php crucible tests/unit/Bridge/Laravel/LaravelMigrationTest.php --fail-on-skipped
+
       # The bridge tier's oracle is this job's Laravel app, so this is
       # the only job that can analyse it. Required, for the same reason
       # the skip check above exists.

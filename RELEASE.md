@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-25 (D-001..D-194, 1.4.6). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-25 (D-001..D-196, 1.4.6). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -41,9 +41,17 @@ The review deliberately left these as documented or design questions: a worker's
 exit code (D-022), non-module shared files outside a Vitest root (D-080), the dependency index's
 fresh-only save (D-179), the forgeable event marker (no security boundary), the deprecations
 baseline and the worker dependency handoff (both outside `spec/cache-formats.md`), and the
-`doctor` migration-mode shape. D-191–D-194.
+`doctor` migration-mode shape. D-191–D-196.
 
-Full gate: 2043 tests, 0 failed, 0 errors, 0 risky; all 19 conformance fixtures conform;
+- **Laravel migration is proven, not assumed.** A real Laravel app with PHPUnit beside it runs
+  its own `Illuminate\Foundation\Testing\TestCase` and a `testbench-core` TestCase through
+  Crucible: HTTP, container/facade, `RefreshDatabase`, 7/7 against the real PHPUnit baseline.
+  `doctor` no longer tells Laravel/testbench projects to remove PHPUnit, and treats
+  `phpstan-phpunit` as the migration-mode companion. `LaravelMigrationTest` runs the same probe
+  through both binaries, and the browser CI job path-installs Crucible into the Livewire oracle
+  and runs it with `--fail-on-skipped`. D-196.
+
+Full gate: 2046 tests, 0 failed, 0 errors, 0 risky; all 19 conformance fixtures conform;
 phpunit/mockery compatibility analysis clean.
 
 ---

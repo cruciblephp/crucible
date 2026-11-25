@@ -66,6 +66,7 @@ final class SkipReasonsTest extends TestCase
         'No Inertia oracle built — see ORACLES.md.'                                                             => 'the built Inertia bundle',
         'The OTR schema ships with the oracle reference install (phpunit-main/), which is not present.'         => 'the PHPUnit oracle, which carries the OTR schema',
         'The PHPUnit oracle is not installed (phpunit-main/), so real class-level outcomes cannot be compared.' => 'the PHPUnit oracle, which the real class-level skip/incomplete comparison executes',
+        'The Laravel oracle is not installed with Crucible, so migration parity cannot be exercised.'           => 'the Livewire/Laravel oracle with Crucible path-installed, which the migration parity probe executes',
         'The SARIF schema is fetched as an oracle (sarif-schema/), which is not present.'                       => 'the OASIS SARIF schema, which is normative and not ours to vendor',
         'xdebug is loaded without coverage mode.'                                                               => 'xdebug in coverage mode (-d xdebug.mode=coverage)',
         'pcov is loaded but disabled.'                                                                          => 'pcov enabled (-d pcov.enabled=1)',

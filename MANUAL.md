@@ -906,8 +906,10 @@ The exit code says what kind of finding it is:
 anything it changed.
 
 A real Laravel 13 application runs green through exactly these steps — factories,
-`RefreshDatabase`, Laravel's own constraints, mocks, `--parallel` — with the `composer
-remove` as the only change to the project.
+`RefreshDatabase`, Laravel's own constraints, mocks, `--parallel`. Laravel and testbench
+require `phpunit/phpunit`, so do **not** remove it; `->phpunitCompatibility()` keeps Laravel's
+own `TestCase` running on Crucible. A package using the `orchestra/testbench` meta package
+should switch to `testbench-core`, which the doctor reports.
 
 ### Checking the migration
 
@@ -915,12 +917,13 @@ remove` as the only change to the project.
 ./vendor/bin/crucible doctor
 ```
 
-It reports what still needs attention: PHPUnit installed (migration mode), the
-`orchestra/testbench` meta package that requires it (switch to `testbench-core`),
-`phpstan-phpunit` or `pest-plugin-phpstan` still installed (they duplicate Crucible's extension),
-a `phpunit.xml` not yet migrated, the PHPStan extension missing or included twice, and a
-`composer.json` that disables package discovery for the bridge. It exits 1 only for a problem that
-breaks the drop-in story; migration-mode notes do not fail it.
+It reports what still needs attention: PHPUnit installed (migration mode; Laravel and
+testbench require it, so keep it), the `orchestra/testbench` meta package that requires it
+(switch to `testbench-core`), `phpstan-phpunit` still installed (the companion for real PHPUnit
+assertions in migration mode; a duplicate only without real PHPUnit), `pest-plugin-phpstan`
+still installed, a `phpunit.xml` not yet migrated, the PHPStan extension missing or included
+twice, and a `composer.json` that disables package discovery for the bridge. It exits 1 only for
+a problem that breaks the drop-in story; migration-mode notes do not fail it.
 
 On a Laravel application the package's service provider registers `php artisan test`. The bridge
 mirrors the engine's options — including `--last-failed`, `--profile`, repeated

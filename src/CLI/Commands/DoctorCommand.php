@@ -84,20 +84,41 @@ final readonly class DoctorCommand
             }
         }
 
+        // Laravel and testbench require the real PHPUnit; telling those
+        // projects to remove it breaks the framework. Migration mode is
+        // the supported route, and the aliases already run Laravel's
+        // own TestCase (D-139).
+        $framework = $installed('laravel/framework')
+            || $installed('orchestra/testbench')
+            || $installed('orchestra/testbench-core');
+
         if ($installed('phpunit/phpunit')) {
-            $line('note', 'phpunit/phpunit is installed: Crucible is in migration mode. Remove it for the drop-in aliases.');
+            $line('note', $framework
+                ? 'phpunit/phpunit is installed because Laravel/testbench requires it: keep it and use ->phpunitCompatibility() in migration mode.'
+                : 'phpunit/phpunit is installed: Crucible is in migration mode. Keep it with ->phpunitCompatibility(), or remove it for drop-in aliases.');
         }
 
         if ($installed('orchestra/testbench')) {
-            $line('warn', 'orchestra/testbench (the meta package) requires phpunit/phpunit; switch to orchestra/testbench-core and a Crucible TestCase.');
+            $line('warn', 'orchestra/testbench (the meta package) requires phpunit/phpunit; switch to orchestra/testbench-core and keep ->phpunitCompatibility().');
         } elseif ($installed('orchestra/testbench-core')) {
             $line('ok', 'orchestra/testbench-core is installed without the PHPUnit meta package.');
         }
 
         foreach (['phpstan/phpstan-phpunit', 'pestphp/pest-plugin-phpstan'] as $duplicate) {
-            if ($installed($duplicate)) {
-                $line('problem', $duplicate . ' duplicates Crucible\'s PHPStan extension — composer remove --dev ' . $duplicate);
+            if (!$installed($duplicate)) {
+                continue;
             }
+
+            // With real PHPUnit installed, phpstan-phpunit is the
+            // analyser companion for the real assertion classes, not a
+            // duplicate of Crucible's extension.
+            if ($duplicate === 'phpstan/phpstan-phpunit' && $installed('phpunit/phpunit')) {
+                $line('note', 'phpstan/phpstan-phpunit is installed: in migration mode it is the companion for the real PHPUnit assertions; keep it.');
+
+                continue;
+            }
+
+            $line('problem', $duplicate . ' duplicates Crucible\'s PHPStan extension — composer remove --dev ' . $duplicate);
         }
 
         $extension = Phpstan::extension($workingDirectory);
