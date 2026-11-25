@@ -162,8 +162,11 @@ final class RetryAndQuarantineTest extends TestCase
 
         $elapsed = (hrtime(true) - $started) / 1e9;
 
-        // Two retries at 30ms each: the pauses are real.
-        self::assertGreaterThanOrEqual(0.06, $elapsed);
+        // Two retries at 30ms each: the pauses are real. A sleep may
+        // return up to SLEEP_SLACK early on Windows' coarser timer, so
+        // the lower bound carries the same slack as the #[Retry] case
+        // below rather than assuming the wall clock never rounds down.
+        self::assertGreaterThanOrEqual((self::BACKOFF_SECONDS * 2) - (self::SLEEP_SLACK_SECONDS * 2), $elapsed);
     }
 
     public function testARetryAttributeCarriesItsOwnBackoff(): void
