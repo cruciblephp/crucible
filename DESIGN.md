@@ -7708,3 +7708,31 @@ directory is treated like a deletion. PHP selection widens to the full suite,
 the type tier stays, and every Vitest suite runs in full — each with a named
 "gitlink or directory" note. A per-file submodule diff remains a separate
 decision, with its own shallow-history fixture, rather than a guess in the core.
+
+### D-195: issue #29 — the closing disposition
+
+Feedback is input, not a specification. Each item was classified against the
+written promises before any code:
+
+- **Accepted and fixed:** W-01 (watchdog inactivity and boundary ordering),
+  R-09 (cold mutation stdout), R-11 (foreign starts), R-16 (git-option-shaped
+  references), R-13 (Vitest workspace topology), the `observed-types.json` half
+  of F-32, and four of the N-03b path sites.
+- **Accepted with their own decisions:** R-12 (gitlink changes widen, D-194),
+  and the `FailureLocation` shape (two explicit absolute-path predicates,
+  D-193).
+- **Accepted as separate design work:** R-15 (Laravel + PHPUnit migration mode;
+  the framework requires the real TestCase, so this needs a real Laravel oracle);
+  R-18 protocol hardening (no cryptographic claim); F-22 and F-34 after a
+  reproduction.
+- **Declined with reasons:** R-10 (D-022 makes `run:finish` the verdict), R-14
+  (D-080 deliberately leaves non-module shared files out), R-17 (D-179 defines
+  the incremental contract; performance), the deprecation-baseline and
+  dependency-handoff half of F-32 (outside `spec/cache-formats.md`), R-18 as a
+  security claim (tests are trusted code), F-42 and N-05 (performance, no
+  correctness claim).
+- **Not reproduced:** F-13. It is not patched or claimed fixed without a
+  reproduction.
+
+The issue can close on this record; R-15 remains the live design question and
+must not be folded into a cleanup patch.
