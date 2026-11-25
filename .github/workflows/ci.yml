@@ -292,7 +292,7 @@ jobs:
       - name: Install Crucible into the Livewire oracle
         run: |
           cd livewire-oracle
-          composer config repositories.crucible path ..
+          composer config repositories.crucible '{"type":"path","url":"..","options":{"symlink":false}}'
           composer require --dev --no-interaction --no-progress 'cruciblephp/crucible:@dev'
 
       - name: Laravel migration parity, refusing to skip

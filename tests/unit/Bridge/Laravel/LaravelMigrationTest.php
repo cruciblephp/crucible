@@ -117,8 +117,8 @@ final class LaravelMigrationTest extends TestCase
 
             self::assertNotFalse($xml, 'PHPUnit produced no JUnit report.');
 
-            $cases    = $xml->xpath('//testcase') ?: [];
-            $failures = $xml->xpath('//failure | //error') ?: [];
+            $cases    = $xml->xpath('//testcase') ?? [];
+            $failures = $xml->xpath('//failure | //error') ?? [];
 
             self::assertCount(3, $cases);
             self::assertCount(0, $failures, 'The PHPUnit oracle did not pass every probe.');
@@ -142,7 +142,7 @@ final class LaravelMigrationTest extends TestCase
         $outcomes = [];
 
         foreach (explode("\n", $events) as $line) {
-            $decoded = is_string($line) && $line !== '' ? json_decode($line, true) : null;
+            $decoded = $line !== '' ? json_decode($line, true) : null;
 
             if (is_array($decoded) && ($decoded['event'] ?? null) === 'test:finish' && is_string($decoded['outcome'] ?? null)) {
                 $outcomes[] = $decoded['outcome'];
