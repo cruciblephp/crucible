@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-24 (D-001..D-189, 1.4.3). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-25 (D-001..D-190, 1.4.4). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -9,6 +9,46 @@ observable behavior targets **drop-in compatibility with PHPUnit 13 suites**. PH
 *specification* — never the *source*: no code, templates, doc comments, or message text are
 copied from it or from any other project. Sole copyright over every line is a project
 invariant.
+
+---
+
+## v1.4.4 — 2026-11-25
+
+An eleven-finding audit from Thomas (lekoala) as #28: places where a green or complete-looking
+run could be narrower than its plan, or where a rewrite could lose the previous copy. The shared
+rule is that a verdict may only describe work actually done.
+
+- **Narrowed plans are not complete.** `--last-failed` was missing from the CLI half of D-071's
+  `fullSuite`, so a run that selected only the previous failures emitted `complete: true` and
+  the snapshot/property pruners deleted entries for tests it did not run.
+- **Real PHPUnit class outcomes.** `setUpBeforeClass()` on a real PHPUnit-descended class throws
+  `PHPUnit\Framework\SkippedTest`/`IncompleteTest`; the before-all catch now recognizes both.
+  Verified against the real `phpunit` oracle, not an imitation of its exception classes.
+- **Cross-package Vitest selection.** An in-root module is now offered to the sibling suites'
+  `related` set; Vitest's graph decides whether any test there reaches it. D-080's old
+  in-root narrowing is superseded.
+- **Type suites survive dependency changes.** `composer.json`/`composer.lock` and `.stub` files
+  are type-analysis inputs, so a dependency bump no longer drops the type tier.
+- **Configuration and bootstrap helpers are environment.** Project files gained by the active
+  configuration or bootstrap are added to the impact environment set.
+- **Coverage workers cannot silently lose data.** A worker with no driver logs the reason and
+  runs nothing; a missing artifact is a failed run, not a smaller merge.
+- **Spawn failure and stop-on parity.** A null worker clears `accounted`, and the resolved
+  stop-on policy rides the worker manifest while the supervisor halts dispatch.
+- **Atomic state writes.** A shared `AtomicFile` writes beside and renames over the result
+  cache, property database, snapshots, inline-snapshot source, coverage maps, dependency index,
+  manifest and mutation journal.
+- **Hung units get a verdict.** `->watchdog($seconds)` (default 600, `0` disables) terminates a
+  silent worker unit and reports its unfinished tests errored.
+- **Documentation and fixtures.** The impact rule (deletions/manifests/environment widen;
+  undeclared non-PHP changes select nothing and exit 0; watch widens) is stated as implemented,
+  the JS and stop-on sections describe the new behavior, and the listing fixture no longer
+  writes a tracked cache. D-190.
+
+Proven against the real oracles: all 19 conformance fixtures conform and the phpunit/mockery compatibility tier of
+`composer analyse:oracles` is clean (the Laravel/Livewire, phpcpd and Pest tiers skip by name
+without their oracles). Full gate: 2034 tests, 1984 passed, 0 failed, 0 errors, 0 risky, 49 skipped
+(optional oracles), 1 untested.
 
 ---
 

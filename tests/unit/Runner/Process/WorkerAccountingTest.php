@@ -125,6 +125,44 @@ final class WorkerAccountingTest extends TestCase
         self::assertFalse($this->completed($events), 'An early stop is not a complete run.');
     }
 
+    public function testACliStopOnFailureHaltsParallelDispatch(): void
+    {
+        $this->project(false);
+
+        // Three files, one test each: A fails, B and C pass. With two
+        // slots A and B are already running when A fails; C must never
+        // be dispatched. Before the policy rode the manifest, the
+        // supervisor could not see the CLI flag and ran C too.
+        $this->writeTest('AStopsTest', <<<'PHP'
+            public function testStops(): void
+            {
+                self::assertSame(1, 2);
+            }
+            PHP);
+        $this->writeTest('BPassesTest', <<<'PHP'
+            public function testPasses(): void
+            {
+                self::assertTrue(true);
+            }
+            PHP);
+        $this->writeTest('CPassesTest', <<<'PHP'
+            public function testPasses(): void
+            {
+                self::assertTrue(true);
+            }
+            PHP);
+
+        [$exit, $events] = $this->crucible(['--parallel', '2', '--stop-on-failure']);
+
+        self::assertSame(1, $exit);
+        self::assertNull(
+            $this->outcomeOf($events, 'tests/CPassesTest.php::testPasses'),
+            'A unit dispatched after the failure ignored --stop-on-failure.',
+        );
+        self::assertFalse($this->completed($events), 'A stop-on halt is not a complete run.');
+        self::assertSame([], $this->errorIds($events), 'The undispatched unit is a cancellation, not a lost result.');
+    }
+
     public function testAProviderIdTheWorkerCouldNotReproduceFailsTheRun(): void
     {
         $this->project(false);

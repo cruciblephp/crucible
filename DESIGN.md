@@ -7535,3 +7535,82 @@ in write order, offset growth, a frame with the text that preceded it, and the k
 ✓ CI runs `php crucible --parallel 2` on Windows, because the sequential matrix never read a
 worker's output and stayed green through the v1.4.2 regression. `php crucible --filter Worker`:
 21 passed, 1 skipped (no Laravel), 1 untested (no `posix`).
+
+### D-190: the audit's eleven integrity findings, closed in one pass
+
+A post-1.4.3 audit found places where a green or complete-looking run could be
+narrower than the plan, or where a file rewrite could lose the previous copy.
+The fixes share one rule: a verdict may only describe work actually done.
+
+- **`--last-failed` is a selection.** It was missing from the CLI half of D-071's
+  `fullSuite`, so a run that selected only the previous failures emitted
+  `complete: true` and the snapshot/property pruners deleted entries belonging
+  to tests it deliberately did not run. `LastFailedRunTest` seeds both stores,
+  runs `--last-failed -u`, and asserts `complete` is absent and both survive.
+- **Class-level real-PHPUnit outcomes.** `setUpBeforeClass()` on a real
+  PHPUnit-descended class throws `PHPUnit\Framework\SkippedTest` /
+  `IncompleteTest`, which are not Crucible's own exceptions and are not aliased
+  when the package is installed. The before-all catch now asks
+  `RealPhpUnitOutcomes`, exactly as the per-test classification already did.
+  Verified against the real oracle (`phpunit-main/`): the test runs the same
+  class-level `markTestSkipped()` / `markTestIncomplete()` fixture through the
+  `phpunit` binary and through Crucible's runner, and compares the oracle's
+  skip summary with Crucible's events. It skips by name when the oracle is
+  absent, and a plain before-all exception still errors. ✓ No fixture imitates
+  PHPUnit's exception classes — the oracle is executed, never copied. CI's
+  conformance job already installs `phpunit-main/`, so it runs this test with
+  `--fail-on-skipped`: a missing oracle fails the job instead of hiding.
+- **Vitest offers in-root modules across package boundaries.** A module inside
+  suite A was never offered to suite B, so a monorepo import was skipped as
+  "no JS changes". Every in-root *module* is now added to the other suites'
+  `related` set (non-module files and environment configurations are still
+  scoped to their own suite); Vitest's own graph decides whether any test
+  there reaches it. This supersedes D-080's "an in-root source change keeps
+  the old narrowing": the narrowing is still Vitest's, but the file is no
+  longer hidden from a sibling package. `VitestImpactTest` pins both the
+  cross-root offer and the local-configuration case that must not leak.
+- **Type suites survive dependency changes.** `composer.json`/`composer.lock`
+  and `.stub` files are type-analysis inputs: a bump changes the installed
+  types even when no PHP source changed. `typesCanChange()` now keeps the
+  type suites for them, and `TypeDeletionImpactTest` runs a manifest change.
+- **Configuration/bootstrap helpers are environment.** Impact selection knew
+  the active configuration and bootstrap paths, not the project files they
+  `require`. The CLI captures the include-list delta around each require and
+  adds the project-owned additions to the environment set, so editing a helper
+  widens like editing the file that required it (`EnvironmentPathImpactTest`).
+- **Coverage cannot silently lose a worker.** A worker with no driver used to
+  run the tests and write nothing; the glob merge then judged a fraction of
+  the suite. It now logs the driver reason and exits before running, a failed
+  artifact write is an error, and the supervisor verifies that every dispatched
+  coverage worker left its artifact. A missing artifact omits `complete` and
+  adds a floor breach, so a partial merge cannot pass.
+- **A worker that never spawned is not complete.** The null-handle branch
+  reported the tests as errored but left `accounted` true; it now clears it.
+  `SupervisorAccountingTest` starts a supervisor with a missing binary.
+- **`--stop-on-*` reaches workers and halts dispatch.** The policy was only in
+  the parent's `RunnerOptions`; it now rides the worker manifest as
+  `StopOn` (one typed value shared by the runner, worker and supervisor), and
+  the supervisor stops handing units to free slots after a matching result.
+  `WorkerAccountingTest` runs three files with `--parallel 2
+  --stop-on-failure` and asserts the third is never dispatched; the manifest
+  round trip is pinned separately.
+- **Rewrites are atomic.** `AtomicFile::write()` (write beside, chmod to the
+  old mode, rename over) now backs the result cache, property-failure
+  database, `.snap` files, screenshot/actual/diff files, inline-snapshot
+  source rewrites, coverage maps and the dependency index — joining the
+  manifest and mutation journal. `AtomicFileTest` pins directory creation,
+  replacement, mode preservation and a reported failure.
+- **A hung unit has a deadline.** The supervisor's wait was only a poll
+  interval. `->watchdog($seconds)` (default 600, `0` disables) terminates a
+  unit that reports nothing and reports every unfinished test errored with the
+  watchdog reason, so CI gets a verdict instead of a hang.
+  `WorkerWatchdogTest` hangs a test under `--parallel 2`.
+
+The listing fixture no longer writes a tracked results cache
+(`--do-not-cache-result`, and fixture caches are ignored). `MANUAL.md` /
+`HELP.md` now state the actual impact rule: deletions, manifests, the active
+configuration, its bootstrap and their project includes widen; an unruled
+non-PHP change selects nothing and exits 0, while watch mode widens it. The
+JS section names the cross-package `related` offer, the stop-on paragraph says
+the supervisor stops handing out units, and `spec/cache-formats.md` records
+that every artifact is renamed over its target.

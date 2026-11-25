@@ -26,6 +26,7 @@ composer.phar
 
 # Caches
 /.crucible.cache/
+/tests/_fixtures/**/.crucible.cache/
 .phpunit.result.cache
 /.php-cs-fixer.cache
 /.pint.cache

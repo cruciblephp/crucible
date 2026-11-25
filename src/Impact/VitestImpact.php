@@ -15,6 +15,8 @@ use LucianoPereira\Crucible\Vitest\VitestSuite;
 
 use function array_fill_keys;
 use function array_keys;
+use function array_unique;
+use function array_values;
 use function basename;
 use function count;
 use function dirname;
@@ -52,6 +54,11 @@ use const PATHINFO_EXTENSION;
  *   suite's `related`, and Vitest's graph selects the suites that
  *   actually import it; measured on Vitest 5.1.0, a suite whose graph
  *   does not contain it exits 0 with no affected files.
+ * - a module inside one suite root may still be imported by another
+ *   (`packages/ui/src/Button.tsx` is inside `packages/ui`, but the
+ *   `packages/app` suite imports it). Every in-root module is offered
+ *   to the other suites too; a suite that does not resolve it is
+ *   narrowed to nothing by Vitest, exactly as for a shared file.
  *
  * An ordinary in-root source change keeps the `related` path, and a
  * change under no suite root that is neither a module nor one of those
@@ -162,7 +169,34 @@ final readonly class VitestImpact
                 continue;
             }
 
-            $related = [...$inRoot[$index], ...$shared];
+            // A change in another suite's root may still be imported by
+            // this one (a monorepo package boundary is not a module
+            // boundary). Offer it; Vitest's own graph decides whether
+            // any test here reaches it.
+            $elsewhere = [];
+
+            foreach ($inRoot as $owner => $files) {
+                if ($owner === $index) {
+                    continue;
+                }
+
+                foreach ($files as $file) {
+                    // A non-module file in another suite's root (its own
+                    // vitest config, a README) cannot be imported here.
+                    // Only a module crosses the package boundary.
+                    $absolute = self::canonical($file);
+
+                    if (self::isModule($absolute) && !self::isEnvironment($absolute)) {
+                        $elsewhere[$file] = true;
+                    }
+                }
+            }
+
+            $related = array_values(array_unique([
+                ...$inRoot[$index],
+                ...$shared,
+                ...array_keys($elsewhere),
+            ]));
 
             if ($related === []) {
                 $notes[] = sprintf('Impact: Vitest suite %s — no JS changes, skipped.', $suite->directory);
@@ -171,17 +205,24 @@ final readonly class VitestImpact
             }
 
             $scoped[] = $suite->relatedTo($related);
-            $notes[]  = $inRoot[$index] === []
-                ? sprintf(
-                    'Impact: Vitest suite %s — %d shared change(s) outside its root, asking Vitest which tests they reach.',
-                    $suite->directory,
-                    count($shared),
-                )
-                : sprintf(
+
+            $notes[] = match (true) {
+                $inRoot[$index] !== [] => sprintf(
                     'Impact: Vitest suite %s — %d changed file(s), running related.',
                     $suite->directory,
                     count($related),
-                );
+                ),
+                $elsewhere !== [] => sprintf(
+                    'Impact: Vitest suite %s — %d change(s) outside its own root, asking Vitest which tests they reach.',
+                    $suite->directory,
+                    count($related),
+                ),
+                default => sprintf(
+                    'Impact: Vitest suite %s — %d shared change(s) outside its root, asking Vitest which tests they reach.',
+                    $suite->directory,
+                    count($shared),
+                ),
+            };
         }
 
         return [$scoped, $notes];

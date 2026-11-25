@@ -10,19 +10,17 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Impact;
 
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 
 use function array_map;
 use function file_get_contents;
-use function file_put_contents;
 use function hash_file;
 use function is_array;
-use function is_dir;
 use function is_file;
 use function is_string;
 use function json_decode;
 use function json_encode;
-use function mkdir;
 use function rtrim;
 use function str_starts_with;
 use function strlen;
@@ -30,7 +28,6 @@ use function substr;
 
 use const DIRECTORY_SEPARATOR;
 use const JSON_THROW_ON_ERROR;
-use const LOCK_EX;
 
 /**
  * Per-file invalidation for the dependency graph, keyed on content hash.
@@ -241,10 +238,6 @@ final class DependencyIndex
             return;
         }
 
-        if (!is_dir($this->directory) && !mkdir($this->directory, 0o777, true) && !is_dir($this->directory)) {
-            return;
-        }
-
         $portable = [];
 
         foreach ($this->fresh as $file => $entry) {
@@ -276,11 +269,7 @@ final class DependencyIndex
             ];
         }
 
-        file_put_contents(
-            $this->path(),
-            json_encode($portable, JSON_THROW_ON_ERROR),
-            LOCK_EX,
-        );
+        AtomicFile::write($this->path(), json_encode($portable, JSON_THROW_ON_ERROR));
     }
 
     private function hash(string $file): ?string

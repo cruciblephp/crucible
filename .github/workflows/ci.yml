@@ -212,6 +212,12 @@ jobs:
       - name: composer conformance
         run: composer conformance
 
+      # The real PHPUnit class-level outcome comparison needs the same
+      # oracle. --fail-on-skipped makes a missing oracle a failed job,
+      # not a green one that proved nothing.
+      - name: Real PHPUnit class-level outcomes
+        run: php crucible --fail-on-skipped tests/unit/Runner/RealPhpUnitClassOutcomeTest.php
+
       # The compatibility tier of the static analysis needs the same two
       # oracles, so it runs where they already are. Named explicitly, so
       # a tier whose oracle failed to install fails the job instead of

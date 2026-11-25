@@ -48,6 +48,7 @@ final readonly class Configuration
      * @param int                    $retriggerPort    0 = an ephemeral port
      * @param bool                   $beStrictAboutOutputDuringTests a test printing output it did not expect settles risky (D-155)
      * @param list<CoverageTarget>   $coverageTargets named coverage slices; a target's own `min` wins over --coverage-min, which wins over --min
+     * @param int                    $watchdogSeconds a worker unit that reports nothing for this long is terminated and its unfinished tests errored; 0 = no watchdog
      */
     public function __construct(
         public array $testSuites,
@@ -104,5 +105,6 @@ final readonly class Configuration
         public int $retriggerPort = 0,
         public bool $beStrictAboutOutputDuringTests = false,
         public array $coverageTargets = [],
+        public int $watchdogSeconds = 600,
     ) {}
 }

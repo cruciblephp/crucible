@@ -39,7 +39,7 @@ final class ListingTest extends TestCase
     private function crucible(string $arguments): array
     {
         exec(sprintf(
-            'cd %s && %s %s %s 2>&1',
+            'cd %s && %s %s --do-not-cache-result %s 2>&1',
             escapeshellarg(self::FIXTURE),
             escapeshellarg(PHP_BINARY),
             escapeshellarg(dirname(__DIR__, 3) . '/crucible'),

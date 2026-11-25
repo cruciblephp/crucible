@@ -11,22 +11,19 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Runner;
 
 use LucianoPereira\Crucible\Event\Outcome;
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
 
 use function array_map;
 use function array_slice;
 use function array_unshift;
-use function dirname;
 use function file_get_contents;
-use function file_put_contents;
 use function is_array;
-use function is_dir;
 use function is_file;
 use function is_float;
 use function is_int;
 use function is_string;
 use function json_decode;
 use function json_encode;
-use function mkdir;
 
 use const JSON_PRETTY_PRINT;
 use const JSON_THROW_ON_ERROR;
@@ -113,12 +110,6 @@ final class ResultCache
 
     public function persist(string $file): void
     {
-        $directory = dirname($file);
-
-        if (!is_dir($directory)) {
-            mkdir($directory, 0o777, true);
-        }
-
         $tests = [];
 
         foreach ($this->tests as $id => $entry) {
@@ -128,7 +119,7 @@ final class ResultCache
             ];
         }
 
-        file_put_contents($file, json_encode(
+        AtomicFile::write($file, json_encode(
             ['version' => self::VERSION, 'tests' => $tests],
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
         ));

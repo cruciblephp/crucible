@@ -125,15 +125,16 @@ final class VitestEnvironmentImpactTest extends TestCase
 
         self::assertSame(0, $exit);
 
-        $argv = $this->argv('app');
+        foreach (['app', 'web'] as $suite) {
+            $argv = $this->argv($suite);
 
-        self::assertNotNull($argv);
-        self::assertSame('related', $argv[0]);
-        self::assertTrue(
-            array_filter($argv, static fn(string $argument): bool => str_ends_with(WorkingDirectory::portable($argument), 'src/cart.js')) !== [],
-            'The changed module is not in vitest related: ' . implode(' ', $argv),
-        );
-        self::assertNull($this->argv('web'));
+            self::assertNotNull($argv, $suite . ' was not offered the change.');
+            self::assertSame('related', $argv[0]);
+            self::assertTrue(
+                array_filter($argv, static fn(string $argument): bool => str_ends_with(WorkingDirectory::portable($argument), 'src/cart.js')) !== [],
+                'The changed module is not in ' . $suite . '\'s vitest related: ' . implode(' ', $argv),
+            );
+        }
     }
 
     public function testADeletionRunsEverySuiteInFull(): void

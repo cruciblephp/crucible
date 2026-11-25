@@ -27,6 +27,7 @@ use function is_file;
 use function is_resource;
 use function is_string;
 use function json_decode;
+use function json_encode;
 use function mkdir;
 use function proc_close;
 use function proc_open;
@@ -154,6 +155,62 @@ final class LastFailedRunTest extends TestCase
             $this->ranIds($events),
         );
         self::assertStringContainsString('No failed tests in the last recorded run', $stdout);
+    }
+
+    public function testALastFailedRunKeepsArtifactsOfTestsItDidNotRun(): void
+    {
+        // Record a failing test and a passing one: --last-failed will
+        // select only the failure, exactly like --filter or --dirty.
+        [$exit] = $this->crucible();
+        self::assertSame(1, $exit);
+
+        $snapshot = $this->project . '/tests/__snapshots__/PassingTest.snap';
+
+        if (!is_dir(dirname($snapshot))) {
+            mkdir(dirname($snapshot), 0o777, true);
+        }
+
+        file_put_contents($snapshot, "--- crucible snapshots ---\n\n>>> never visited\n  value\n<<<\n");
+
+        $property = $this->project . '/.crucible.cache/property-failures.json';
+
+        file_put_contents($property, json_encode([
+            'version'  => 1,
+            'failures' => ['tests/PassingTest.php::testPasses#property 0' => [[1, 2]]],
+        ], JSON_THROW_ON_ERROR));
+
+        [$exit, $events] = $this->crucible('--last-failed', '--update-snapshots');
+
+        self::assertSame(1, $exit);
+        self::assertSame(['tests/FailingTest.php::testFails'], $this->ranIds($events));
+        self::assertFalse($this->completed($events), 'A --last-failed run is a narrowed plan, never complete.');
+
+        self::assertTrue(is_file($snapshot), 'The passing test it did not run lost its snapshot.');
+
+        $stored = json_decode((string) file_get_contents($property), true);
+
+        self::assertIsArray($stored);
+        self::assertArrayHasKey(
+            'tests/PassingTest.php::testPasses#property 0',
+            is_array($stored['failures'] ?? null) ? $stored['failures'] : [],
+            'The passing test it did not run lost its property-failure entry.',
+        );
+    }
+
+    /**
+     * @param list<string> $events
+     */
+    private function completed(array $events): bool
+    {
+        foreach ($events as $line) {
+            $decoded = json_decode($line, true);
+
+            if (is_array($decoded) && ($decoded['event'] ?? null) === 'run:finish') {
+                return ($decoded['complete'] ?? false) === true;
+            }
+        }
+
+        self::fail('The run produced no run:finish event.');
     }
 
     /**

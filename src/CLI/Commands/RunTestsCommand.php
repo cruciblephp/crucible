@@ -61,6 +61,7 @@ use LucianoPereira\Crucible\Extension\AroundEachTest;
 use LucianoPereira\Crucible\Extension\Check;
 use LucianoPereira\Crucible\Extension\CheckRunner;
 use LucianoPereira\Crucible\Extension\Extension;
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
 use LucianoPereira\Crucible\Filesystem\OutputFile;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Impact\ChangedFiles;
@@ -132,6 +133,7 @@ use function file_put_contents;
 use function fopen;
 use function fwrite;
 use function get_declared_classes;
+use function get_included_files;
 use function getcwd;
 use function glob;
 use function htmlspecialchars;
@@ -189,6 +191,15 @@ final class RunTestsCommand
         $postRun       = new PostRunReport($this->clockFor($options));
         $eventStreamTo = $options->logEventsJson;
 
+        // What the configuration and bootstrap load is part of the run's
+        // environment: a helper they require defines what discovery and
+        // the tests see, so editing it must widen impact selection just
+        // like editing the configuration itself. Captured as a delta
+        // around each require, never as "every loaded file", because
+        // Crucible's own classes are loaded here too.
+        $includedBeforeConfiguration = get_included_files();
+        $environmentIncludes         = [];
+
         try {
             // --no-configuration runs against no crucible.php at all: no
             // suites, so nothing to discover. It exists to prove the file is
@@ -204,6 +215,12 @@ final class RunTestsCommand
         }
 
         $configuration = $loaded->configuration;
+
+        $environmentIncludes = $this->projectIncludes(
+            $includedBeforeConfiguration,
+            get_included_files(),
+            $workingDirectory->path,
+        );
 
         $coverageTargets = CoverageTargetSet::resolve(
             $configuration->coverageTargets,
@@ -241,7 +258,18 @@ final class RunTestsCommand
 
         $overrides = $this->overrides($options, $workingDirectory);
 
+        $includedBeforeBootstrap = get_included_files();
+
         $this->applyPhpSettings($configuration, $workingDirectory, $overrides, $options->includePaths);
+
+        $environmentIncludes = array_values(array_unique([
+            ...$environmentIncludes,
+            ...$this->projectIncludes(
+                $includedBeforeBootstrap,
+                get_included_files(),
+                $workingDirectory->path,
+            ),
+        ]));
 
         // Observed in this process alone: a worker's calls never reach it.
         if ($options->observeTypes) {
@@ -749,7 +777,7 @@ final class RunTestsCommand
             // here and one there is how a relative --configuration
             // came to never match (D-036).
             /** @var list<non-empty-string> $environment */
-            $environment = [$loaded->path];
+            $environment = [$loaded->path, ...$environmentIncludes];
 
             $configuredBootstrap = $options->bootstrap ?? $configuration->bootstrap;
 
@@ -1031,6 +1059,7 @@ final class RunTestsCommand
             && $options->testIdFilterFile === null
             && $options->testFilesFile === null
             && $options->paths === []
+            && !$options->lastFailed
             && !$options->flakes;
 
         // Obsolete-snapshot pruning (D-071): subscription-gated to
@@ -1226,6 +1255,8 @@ final class RunTestsCommand
                 return $delta;
             };
 
+        $missingCoverageArtifacts = 0;
+
         // A JS-only run (D-080) has no PHP group to parallelize or
         // isolate: the sequential runner opens the stream, the folded
         // Vitest suite fills it. Only PHP groups drive the supervisor.
@@ -1241,7 +1272,7 @@ final class RunTestsCommand
             // Named throughout: the supervisor takes two dozen arguments
             // and a new one inserted mid-list would otherwise shift every
             // argument after it into the wrong parameter, silently.
-            $summary = (new Supervisor(
+            $supervisor = new Supervisor(
                 emitter: $emitter,
                 inProcessRunner: $runner,
                 history: $cache,
@@ -1252,6 +1283,7 @@ final class RunTestsCommand
                 order: $order,
                 seed: $seed,
                 parallel: $parallel,
+                watchdogSeconds: $configuration->watchdogSeconds,
                 retries: $options->retries,
                 coverageDirectory: $coverageDirectory,
                 updateSnapshots: $options->updateSnapshots,
@@ -1267,13 +1299,16 @@ final class RunTestsCommand
                 dependencyValues: $dependencyValues,
                 paths: $options->paths,
                 noExtensions: $options->noExtensions,
-                stopOnConfigured: $runnerOptions->stopsOnAnyOutcome(),
+                stopOn: $runnerOptions->stopOn(),
                 fullDiscovery: $workerDiscovery->fullDiscovery,
                 onlySuites: $options->testsuite,
                 exceptSuites: $options->excludeTestsuite,
                 suffixes: $options->testSuffixes,
                 preload: $workerDiscovery->preload,
-            ))->run($groups, $afterTests);
+            );
+
+            $summary                  = $supervisor->run($groups, $afterTests);
+            $missingCoverageArtifacts = $supervisor->missingCoverageArtifacts();
         } else {
             $summary = $runner->run($groups, $afterTests);
         }
@@ -1291,6 +1326,13 @@ final class RunTestsCommand
 
         $coverageFloorBreaches = [];
 
+        if ($missingCoverageArtifacts > 0) {
+            $coverageFloorBreaches[] = sprintf(
+                'Coverage: %d worker artifact(s) are missing; the result describes only part of the run and cannot meet a floor.',
+                $missingCoverageArtifacts,
+            );
+        }
+
         if ($collector instanceof CoverageCollector) {
             $reported = $postRun->reportCoverage(
                 $collector,
@@ -1301,7 +1343,10 @@ final class RunTestsCommand
                 $coverageTargets,
             );
 
-            $coverageFloorBreaches = $postRun->coverageTargetFloors($reported, $coverageTargets, $options->minCoverage);
+            $coverageFloorBreaches = [
+                ...$coverageFloorBreaches,
+                ...$postRun->coverageTargetFloors($reported, $coverageTargets, $options->minCoverage),
+            ];
 
             // Named targets answer one by one; the pooled total is still
             // what a run with no names (or a bare path) is judged on.
@@ -1389,6 +1434,48 @@ final class RunTestsCommand
     private function clockFor(CliOptions $options): Clock
     {
         return $options->reproducible ? SourceDateEpoch::clock() : new SystemClock();
+    }
+
+    /**
+     * Project files a require added to PHP's include list, canonical and
+     * native, so a configuration or bootstrap helper joins the
+     * environment paths impact selection widens on.
+     *
+     * @param list<string> $before get_included_files() before the require
+     * @param list<string> $after  get_included_files() after it
+     *
+     * @return list<non-empty-string>
+     */
+    private function projectIncludes(array $before, array $after, string $projectRoot): array
+    {
+        $known = [];
+
+        foreach ($before as $file) {
+            $known[$file] = true;
+        }
+
+        $root   = rtrim(WorkingDirectory::native($projectRoot), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        $inside = [];
+
+        foreach ($after as $file) {
+            if (isset($known[$file])) {
+                continue;
+            }
+
+            $real = realpath($file);
+
+            if ($real === false) {
+                continue;
+            }
+
+            $native = WorkingDirectory::native($real);
+
+            if (str_starts_with($native, $root)) {
+                $inside[$native] = true;
+            }
+        }
+
+        return array_keys($inside);
     }
 
     /**
@@ -1528,15 +1615,22 @@ final class RunTestsCommand
 
     /**
      * A path the type tier reads: PHP source (a type test asserts
-     * something about it), or PHPStan's own configuration — the three
+     * something about it), PHPStan's own configuration — the three
      * names it looks for, `phpstan.neon`, `phpstan.neon.dist` and
-     * `phpstan.dist.neon`, plus the `.neon` files they include.
+     * `phpstan.dist.neon`, plus the `.neon` files they include —
+     * the Composer manifests that change which types are installed,
+     * and the `.stub` files PHPStan loads in place of them.
      */
     private function isTypeAnalysisInput(string $path): bool
     {
+        $name = basename($path);
+
         return str_ends_with($path, '.php')
             || str_ends_with($path, '.neon')
-            || str_ends_with($path, '.neon.dist');
+            || str_ends_with($path, '.neon.dist')
+            || str_ends_with($path, '.stub')
+            || $name === 'composer.json'
+            || $name === 'composer.lock';
     }
 
     /**
@@ -1870,6 +1964,15 @@ final class RunTestsCommand
 
         $runnerOptions = RunnerOptions::fromConfiguration(
             $configuration,
+            stopOnDefect: $manifest->stopOn->defect,
+            stopOnError: $manifest->stopOn->error,
+            stopOnFailure: $manifest->stopOn->failure,
+            stopOnRisky: $manifest->stopOn->risky,
+            stopOnSkipped: $manifest->stopOn->skipped,
+            stopOnIncomplete: $manifest->stopOn->incomplete,
+            stopOnDeprecation: $manifest->stopOn->deprecation,
+            stopOnNotice: $manifest->stopOn->notice,
+            stopOnWarning: $manifest->stopOn->warning,
             projectDirectories: $this->projectDirectories($configuration, $workingDirectory),
             workingDirectory: $workingDirectory,
             deprecationBaseline: $manifest->overrides->ignoreBaseline === true
@@ -1921,13 +2024,25 @@ final class RunTestsCommand
         if ($manifest->coverageArtifact !== null) {
             $driver = DriverFactory::detect($manifest->coverageBranch, $manifest->pathCoverage);
 
-            if (!is_string($driver)) {
-                $scope = $postRun->coverageScope($configuration, $workingDirectory, $manifest->overrides->coverageFilter);
+            // The parent already detected a driver; a worker that cannot
+            // must not run the tests and write no artifact — the merge
+            // would see fewer files and the coverage floor would judge a
+            // fraction of the suite as though it were all of it.
+            if (is_string($driver)) {
+                fwrite(STDERR, 'Coverage: ' . $driver . PHP_EOL);
 
-                if ($scope !== []) {
-                    $collector = new CoverageCollector($driver, $scope, $postRun->testScope($configuration, $workingDirectory));
-                }
+                return 2;
             }
+
+            $scope = $postRun->coverageScope($configuration, $workingDirectory, $manifest->overrides->coverageFilter);
+
+            if ($scope === []) {
+                fwrite(STDERR, 'Coverage: the configured source scope is empty; this worker cannot collect.' . PHP_EOL);
+
+                return 2;
+            }
+
+            $collector = new CoverageCollector($driver, $scope, $postRun->testScope($configuration, $workingDirectory));
         }
 
         // Buffer user echoes away from the protocol stream; the
@@ -1959,7 +2074,11 @@ final class RunTestsCommand
         }
 
         if ($collector instanceof CoverageCollector) {
-            file_put_contents($manifest->coverageArtifact, $collector->data()->toJson());
+            if (!AtomicFile::write($manifest->coverageArtifact, $collector->data()->toJson())) {
+                fwrite(STDERR, sprintf('Coverage: cannot write %s.', $manifest->coverageArtifact) . PHP_EOL);
+
+                return 2;
+            }
         }
 
         if ($manifest->dependencyArtifact !== null) {

@@ -10,13 +10,13 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Snapshot;
 
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
 use PhpToken;
 
 use function array_map;
 use function count;
 use function explode;
 use function file_get_contents;
-use function file_put_contents;
 use function in_array;
 use function is_file;
 use function str_contains;
@@ -93,7 +93,7 @@ final class InlineSnapshotWriter
                 }
             }
 
-            file_put_contents($file, $source);
+            AtomicFile::write($file, $source);
         }
 
         self::$pending = [];

@@ -24,8 +24,9 @@ use LucianoPereira\Crucible\Metadata\MetadataCollection;
  * Measured rather than interrupted. The spec aborts the test mid-flight
  * with a pcntl alarm; Crucible judges the duration it already records,
  * so the budget needs no extension, holds identically inside a worker,
- * and the message says what actually happened. A test that hangs
- * forever is a hang either way — no alarm survives a blocking syscall.
+ * and the message says what actually happened. A test that blocks past
+ * every budget is the supervisor watchdog's case (D-190), not this
+ * class's: a sequential process has no second process to kill.
  */
 final readonly class TimeLimit
 {

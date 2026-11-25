@@ -187,6 +187,22 @@ final class TypeDeletionImpactTest extends TestCase
         );
     }
 
+    public function testAComposerManifestChangeKeepsTheTypeSuite(): void
+    {
+        $this->requirePhpstan();
+
+        // A dependency bump changes which types are installed, so the
+        // assertions must run even though no PHP source changed. Before
+        // the manifest was an analysis input, the PHP tier widened on
+        // composer.json while the type tier was dropped.
+        file_put_contents($this->project . '/composer.json', "{\"require\": {}}\n");
+
+        [$exit, , $finished] = $this->crucible(['--dirty']);
+
+        self::assertSame(0, $exit);
+        self::assertSame('pass', $this->outcomeOf($finished, self::TYPE_ID), 'The type suite was dropped on a dependency manifest change.');
+    }
+
     public function testAnUnrelatedEditLeavesTheTypeSuiteOut(): void
     {
         file_put_contents($this->project . '/README.md', "edited\n");

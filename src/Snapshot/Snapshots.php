@@ -13,12 +13,12 @@ namespace LucianoPereira\Crucible\Snapshot;
 use LucianoPereira\Crucible\Assert\Assert;
 use LucianoPereira\Crucible\Assert\Exporter;
 use LucianoPereira\Crucible\Exceptions\ConfigurationException;
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Test\TestId;
 
 use function base64_encode;
 use function file_get_contents;
-use function file_put_contents;
 use function hash;
 use function htmlspecialchars;
 use function is_dir;
@@ -294,7 +294,7 @@ final class Snapshots
                 mkdir($imageDirectory, 0o777, true);
             }
 
-            file_put_contents($imageBase . '.png', $png);
+            AtomicFile::write($imageBase . '.png', $png);
 
             Assert::countSatisfiedAssertion();
 
@@ -338,7 +338,7 @@ final class Snapshots
             return null;
         }
 
-        file_put_contents($imageBase . '.actual.png', $actual);
+        AtomicFile::write($imageBase . '.actual.png', $actual);
 
         $reference = base64_encode((string) file_get_contents($referenceFile));
         $current   = base64_encode($actual);
@@ -374,7 +374,7 @@ final class Snapshots
 
         $diffFile = $imageBase . '.diff.html';
 
-        file_put_contents($diffFile, $html);
+        AtomicFile::write($diffFile, $html);
 
         return $diffFile;
     }

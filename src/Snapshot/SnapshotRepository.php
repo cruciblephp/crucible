@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Snapshot;
 
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 
 use function array_keys;
@@ -17,12 +18,9 @@ use function basename;
 use function dirname;
 use function explode;
 use function file_get_contents;
-use function file_put_contents;
 use function implode;
-use function is_dir;
 use function is_file;
 use function ksort;
-use function mkdir;
 use function rtrim;
 use function str_ends_with;
 use function str_replace;
@@ -110,13 +108,7 @@ final class SnapshotRepository
 
             ksort($merged);
 
-            $directory = dirname($file);
-
-            if (!is_dir($directory)) {
-                mkdir($directory, 0o777, true);
-            }
-
-            file_put_contents($file, self::render($merged));
+            AtomicFile::write($file, self::render($merged));
 
             $this->entries[$file] = $merged;
         }

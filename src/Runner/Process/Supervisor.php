@@ -28,12 +28,14 @@ use LucianoPereira\Crucible\Event\TestStarted;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 use LucianoPereira\Crucible\Isolation\GlobalStateExport;
 use LucianoPereira\Crucible\Runner\ResultCache;
+use LucianoPereira\Crucible\Runner\StopOn;
 use LucianoPereira\Crucible\Runner\TestRunner;
 use LucianoPereira\Crucible\Runner\TimingOverhead;
 use LucianoPereira\Crucible\Test\TestDefinition;
 use LucianoPereira\Crucible\Test\TestGroup;
 use LucianoPereira\Crucible\Test\TestId;
 
+use function array_key_first;
 use function array_map;
 use function array_shift;
 use function array_sum;
@@ -101,6 +103,13 @@ final class Supervisor
     private bool $accounted = true;
 
     /**
+     * Workers that were expected to leave a coverage artifact and did
+     * not. The merge is by glob, so a missing file is otherwise just
+     * less data — and less data can pass a floor.
+     */
+    private int $missingCoverageArtifacts = 0;
+
+    /**
      * @param non-empty-string  $crucibleBinary
      * @param non-empty-string  $configurationPath
      * @param ?int<0, max>      $retries           the run's resolved retry budget (G4), carried into every manifest
@@ -112,7 +121,8 @@ final class Supervisor
      * @param DependencyValues  $dependencyValues  shared with the in-process runner, so a prerequisite that ran here reaches a dependent that runs in a worker
      * @param list<non-empty-string> $paths        the run's test paths (D-152), carried into every manifest so a worker discovers what the parent did
      * @param bool              $noExtensions     CLI --no-extensions, carried into every manifest (D-172) so a worker registers no configured extension either — the around-test role included
-     * @param bool              $stopOnConfigured  a stop-on option is active, so a worker's early halt is an acknowledged cancellation
+     * @param StopOn            $stopOn            the resolved stop-on policy: carried into every worker and used to halt dispatch
+     * @param int               $watchdogSeconds   a unit that reports nothing for this long is terminated; 0 = no watchdog
      * @param bool                   $fullDiscovery every worker repeats the parent's whole discovery (D-180); the default, because only a parent that watched its own discovery can say a worker need not
      * @param ?list<non-empty-string> $onlySuites
      * @param list<non-empty-string>  $exceptSuites
@@ -130,6 +140,7 @@ final class Supervisor
         private readonly ExecutionOrder $order = ExecutionOrder::Declared,
         private readonly int $seed = 0,
         private readonly int $parallel = 1,
+        private readonly int $watchdogSeconds = 600,
         private readonly ?int $retries = null,
         private readonly ?string $coverageDirectory = null,
         private readonly bool $updateSnapshots = false,
@@ -145,7 +156,7 @@ final class Supervisor
         private readonly DependencyValues $dependencyValues = new DependencyValues(),
         private readonly array $paths = [],
         private readonly bool $noExtensions = false,
-        private readonly bool $stopOnConfigured = false,
+        private readonly StopOn $stopOn = new StopOn(),
         private readonly bool $fullDiscovery = true,
         private readonly ?array $onlySuites = null,
         private readonly array $exceptSuites = [],
@@ -475,14 +486,28 @@ final class Supervisor
 
         $exported = null;
 
+        // A result matching the stop-on policy ends dispatch: units
+        // already running finish, but no new slot starts a unit after
+        // the test that asked the run to stop.
+        $halted = false;
+
         /** @var array<int, ?non-empty-string> $artifactOf worker object id => where it writes its values */
         $artifactOf = [];
+
+        /** @var array<int, ?non-empty-string> $coverageArtifactOf worker object id => where it writes coverage */
+        $coverageArtifactOf = [];
 
         /** @var array<int, bool> $isolatedOf worker object id => its unit asked for its own process */
         $isolatedOf = [];
 
-        while ($units !== [] || $active !== []) {
-            while ($units !== [] && count($active) < $slots) {
+        /** @var array<int, int> $startedAt worker object id => hrtime(true) at dispatch */
+        $startedAt = [];
+
+        /** @var array<int, true> $timedOut worker object id => the watchdog terminated it */
+        $timedOut = [];
+
+        while ((!$halted && $units !== []) || $active !== []) {
+            while (!$halted && $units !== [] && count($active) < $slots) {
                 // A unit whose prerequisites have not been produced yet
                 // waits for them, so long as something is still running
                 // that might produce them. When nothing is active the
@@ -536,6 +561,10 @@ final class Supervisor
                     $globalState = $exported->toJson();
                 }
 
+                $coverageArtifact = $this->coverageDirectory !== null
+                    ? $this->coverageDirectory . '/worker-' . bin2hex(random_bytes(6)) . '.json'
+                    : null;
+
                 $worker = WorkerProcess::spawn(
                     $this->crucibleBinary,
                     $this->workingDirectory,
@@ -547,9 +576,8 @@ final class Supervisor
                         $this->parallel > 1 ? $slot : null,
                         $this->parallel > 1 ? $runToken . '_' . $slot : null,
                         $this->retries,
-                        $this->coverageDirectory !== null
-                            ? $this->coverageDirectory . '/worker-' . bin2hex(random_bytes(6)) . '.json'
-                            : null,
+                        $this->stopOn,
+                        $coverageArtifact,
                         $this->updateSnapshots,
                         $this->coverageBranch,
                         $this->strictCoverage,
@@ -583,7 +611,8 @@ final class Supervisor
                 }
 
                 if (!$worker instanceof WorkerProcess) {
-                    $freeSlots[] = $slot;
+                    $freeSlots[]     = $slot;
+                    $this->accounted = false;
                     $this->reportMissing($wanted, [], 'The worker process for this test could not be started.');
 
                     continue;
@@ -591,14 +620,16 @@ final class Supervisor
 
                 $key = spl_object_id($worker);
 
-                $active[$key]         = $worker;
-                $finished[$key]       = [];
-                $expectedCounts[$key] = $wanted;
-                $plannedCounts[$key]  = null;
-                $reportedTotals[$key] = null;
-                $slotOf[$key]         = $slot;
-                $artifactOf[$key]     = $artifact;
-                $isolatedOf[$key]     = $planned->isolated;
+                $active[$key]             = $worker;
+                $finished[$key]           = [];
+                $expectedCounts[$key]     = $wanted;
+                $plannedCounts[$key]      = null;
+                $reportedTotals[$key]     = null;
+                $slotOf[$key]             = $slot;
+                $artifactOf[$key]         = $artifact;
+                $coverageArtifactOf[$key] = $coverageArtifact;
+                $isolatedOf[$key]         = $planned->isolated;
+                $startedAt[$key]          = hrtime(true);
             }
 
             if ($active === []) {
@@ -606,6 +637,19 @@ final class Supervisor
             }
 
             $this->await($active);
+
+            if ($this->watchdogSeconds > 0) {
+                $now = hrtime(true);
+
+                foreach ($active as $key => $worker) {
+                    if (isset($timedOut[$key]) || $now - $startedAt[$key] < $this->watchdogSeconds * 1_000_000_000) {
+                        continue;
+                    }
+
+                    $timedOut[$key] = true;
+                    $worker->terminate();
+                }
+            }
 
             foreach ($active as $key => $worker) {
                 // stdout carries only user output: discarding it
@@ -685,6 +729,15 @@ final class Supervisor
                         }
 
                         $this->tallyIssues($event);
+
+                        $kinds = array_map(
+                            static fn($issue): IssueKind => $issue->kind,
+                            $event->issues,
+                        );
+
+                        if ($this->stopOn->matches($event->outcome, $kinds)) {
+                            $halted = true;
+                        }
                     }
                 }
 
@@ -710,14 +763,17 @@ final class Supervisor
                 if (!$worker->hasFinished()) {
                     $this->accounted = false;
 
-                    $this->reportMissing(
-                        $expectedCounts[$key],
-                        $finished[$key],
-                        'The worker process running this test exited unexpectedly.'
+                    $reason = isset($timedOut[$key])
+                        ? sprintf(
+                            'The worker made no progress for %d seconds and was terminated by the watchdog.',
+                            $this->watchdogSeconds,
+                        ) . ($worker->stderrTail() !== '' ? ' Worker stderr: ' . $worker->stderrTail() : '') . $logNote
+                        : 'The worker process running this test exited unexpectedly.'
                             . $this->signalNote($worker->signal())
                             . ($worker->stderrTail() !== '' ? ' Worker stderr: ' . $worker->stderrTail() : '')
-                            . $logNote,
-                    );
+                            . $logNote;
+
+                    $this->reportMissing($expectedCounts[$key], $finished[$key], $reason);
                 } elseif ($missing !== []) {
                     // The handshake said the worker finished. Either it
                     // ran fewer tests than the plan named (rediscovery
@@ -726,7 +782,7 @@ final class Supervisor
                     // emitted. Only the last is acknowledged, and only
                     // when the worker's own account matches what arrived
                     // AND it had planned the whole unit.
-                    $acknowledgedStop = $this->stopOnConfigured
+                    $acknowledgedStop = $this->stopOn->any()
                         && $reportedTotals[$key] !== null
                         && $reportedTotals[$key] === array_sum($finished[$key])
                         && $plannedCounts[$key] === array_sum($expectedCounts[$key]);
@@ -742,6 +798,19 @@ final class Supervisor
                                 . $logNote,
                         );
                     }
+                }
+
+                $coverageArtifact = $coverageArtifactOf[$key] ?? null;
+
+                if ($coverageArtifact !== null && !is_file($coverageArtifact)) {
+                    $this->accounted = false;
+                    $this->missingCoverageArtifacts++;
+
+                    fwrite(STDERR, sprintf(
+                        'Coverage: the worker for %s wrote no artifact to %s; the coverage floor cannot be judged against the whole run.' . PHP_EOL,
+                        $expectedCounts[$key] === [] ? 'its unit' : array_key_first($expectedCounts[$key]),
+                        $coverageArtifact,
+                    ));
                 }
 
                 $freeSlots[] = $slotOf[$key];
@@ -762,7 +831,10 @@ final class Supervisor
                     $reportedTotals[$key],
                     $slotOf[$key],
                     $artifactOf[$key],
+                    $coverageArtifactOf[$key],
                     $isolatedOf[$key],
+                    $startedAt[$key],
+                    $timedOut[$key],
                 );
             }
         }
@@ -978,6 +1050,16 @@ final class Supervisor
         }
 
         return $note . '.';
+    }
+
+    /**
+     * How many dispatched units left no coverage artifact. The caller
+     * turns a non-zero count into a failed run, because a partial merge
+     * must never be judged as the whole suite.
+     */
+    public function missingCoverageArtifacts(): int
+    {
+        return $this->missingCoverageArtifacts;
     }
 
     private function tally(Outcome $outcome): void

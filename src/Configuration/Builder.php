@@ -38,6 +38,7 @@ use LucianoPereira\Crucible\Vitest\VitestSuite;
 use function array_is_list;
 use function array_values;
 use function is_string;
+use function max;
 use function sprintf;
 use function str_contains;
 
@@ -99,6 +100,8 @@ final class Builder
     private ?int $maxIndirectDeprecations       = null;
 
     private RetryPolicy $retries;
+
+    private int $watchdogSeconds = 600;
 
     private BrowserConfiguration $browser;
 
@@ -639,6 +642,27 @@ final class Builder
     }
 
     /**
+     * A worker that stops reporting for this many seconds is terminated
+     * and every test it had not finished is reported errored — a hung
+     * test becomes a verdict instead of a run that never ends.
+     *
+     *     ->watchdog(600)
+     *
+     * The watchdog is per unit (one worker process), because a worker
+     * says nothing while one of its tests blocks. `0` disables it; the
+     * default is ten minutes. A sequential run cannot use it — there is
+     * no second process to kill — so run CI with `--parallel`.
+     *
+     * @param int<0, max> $seconds
+     */
+    public function watchdog(int $seconds): self
+    {
+        $this->watchdogSeconds = max(0, $seconds);
+
+        return $this;
+    }
+
+    /**
      * Crucible-native (growth G4): known-flaky tests whose failures do
      * not affect the exit code. Ids are `file::name` (a dataset
      * suffix `#name` pins one row). The tests still run and report;
@@ -1033,6 +1057,7 @@ final class Builder
             retriggerPort: $this->retriggerPort,
             beStrictAboutOutputDuringTests: $this->beStrictAboutOutputDuringTests,
             coverageTargets: $this->coverageTargets,
+            watchdogSeconds: $this->watchdogSeconds,
         );
     }
 }

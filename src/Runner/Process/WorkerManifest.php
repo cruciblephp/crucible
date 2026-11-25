@@ -12,6 +12,7 @@ namespace LucianoPereira\Crucible\Runner\Process;
 
 use LucianoPereira\Crucible\Configuration\ExecutionOrder;
 use LucianoPereira\Crucible\Configuration\Overrides;
+use LucianoPereira\Crucible\Runner\StopOn;
 use LucianoPereira\Crucible\Test\TestDefinition;
 use LucianoPereira\Crucible\Test\TestGroup;
 
@@ -45,6 +46,7 @@ final readonly class WorkerManifest
      * @param ?positive-int     $testToken       ParaTest-compatible worker-slot number (TEST_TOKEN)
      * @param ?non-empty-string $uniqueTestToken run-unique per-slot token (UNIQUE_TEST_TOKEN)
      * @param ?int<0, max>      $retries         the run's resolved retry budget (G4); null = configuration decides
+     * @param StopOn            $stopOn          the resolved stop-on policy, so a CLI flag reaches the worker as a configured one does
      * @param ?non-empty-string $coverageArtifact where this worker writes its CoverageData JSON (D-041); null = no coverage
      * @param bool              $coverageBranch   collect branch coverage in the window (D-062, xdebug only)
      * @param bool              $pathCoverage     also collect path analysis (--path-coverage, xdebug only)
@@ -73,6 +75,7 @@ final readonly class WorkerManifest
         public ?int $testToken = null,
         public ?string $uniqueTestToken = null,
         public ?int $retries = null,
+        public StopOn $stopOn = new StopOn(),
         public ?string $coverageArtifact = null,
         public bool $updateSnapshots = false,
         public bool $coverageBranch = false,
@@ -108,6 +111,7 @@ final readonly class WorkerManifest
             'testToken'          => $this->testToken,
             'uniqueTestToken'    => $this->uniqueTestToken,
             'retries'            => $this->retries,
+            'stopOn'             => $this->stopOn->toArray(),
             'overrides'          => $this->overrides->toArray(),
             'includePaths'       => $this->includePaths,
             'coverageArtifact'   => $this->coverageArtifact,
@@ -239,6 +243,7 @@ final readonly class WorkerManifest
         $testToken       = $decoded['testToken'] ?? null;
         $uniqueTestToken = $decoded['uniqueTestToken'] ?? null;
         $retries         = $decoded['retries'] ?? null;
+        $stopOn          = StopOn::fromArray(is_array($decoded['stopOn'] ?? null) ? $decoded['stopOn'] : []);
         $includePaths    = [];
 
         foreach (is_array($decoded['includePaths'] ?? null) ? $decoded['includePaths'] : [] as $path) {
@@ -272,6 +277,7 @@ final readonly class WorkerManifest
             is_int($testToken) && $testToken >= 1 ? $testToken : null,
             is_string($uniqueTestToken) && $uniqueTestToken !== '' ? $uniqueTestToken : null,
             is_int($retries) && $retries >= 0 ? $retries : null,
+            $stopOn,
             is_string($coverageArtifact) && $coverageArtifact !== '' ? $coverageArtifact : null,
             ($decoded['updateSnapshots'] ?? false) === true,
             ($decoded['coverageBranch'] ?? false) === true,

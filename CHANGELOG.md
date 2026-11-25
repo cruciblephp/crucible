@@ -2,6 +2,23 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.4.4 — 2026-11-25
+
+Thanks to Thomas (lekoala) for the #28 audit, the reproductions and the investigation notes.
+
+- Fixed `--last-failed` claiming `complete`, which let snapshot and property-failure pruning delete stored data for tests the run deliberately did not run
+- Fixed a class-level `markTestSkipped()`/`markTestIncomplete()` from a real PHPUnit-descended class erroring every test instead of skipping the class; verified by running the same fixture through the real `phpunit` binary and Crucible
+- Fixed Vitest impact selection hiding a module inside one suite root from the sibling suite that imports it
+- Fixed type suites being dropped when `composer.json`, `composer.lock` or a `.stub` file changes
+- Fixed impact selection ignoring project files required by the active configuration or bootstrap
+- Fixed a coverage worker without a driver silently collecting nothing: it now logs the reason and runs nothing, and every dispatched worker must leave an artifact or the run fails
+- Fixed a worker that never spawned still publishing `complete:true`
+- Fixed `--stop-on-*` under `--parallel`: the resolved policy now rides the worker manifest and the supervisor stops handing out units after a matching result
+- Added `->watchdog($seconds)` (default 600, `0` disables): a worker unit that reports nothing is terminated and its unfinished tests errored
+- Made cache, snapshot, inline-snapshot, coverage-map and dependency-index rewrites atomic through one `AtomicFile` helper
+- The listing fixture no longer writes a tracked results cache, and the impact documentation now states the actual widen/select-nothing rule, including the watch-mode difference. D-190
+- Full gate: 2034 tests, 1984 passed, 0 failed, 0 errors, 0 risky, 49 skipped (optional oracles), 1 untested; all 19 conformance fixtures conform; the phpunit/mockery compatibility tier of `composer analyse:oracles` clean
+
 ## v1.4.3 — 2026-11-24
 
 Thanks to Thomas (lekoala) for the #27 report, bisect and Windows measurements.

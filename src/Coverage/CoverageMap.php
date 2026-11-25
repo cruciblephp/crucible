@@ -10,21 +10,18 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Coverage;
 
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
 use LucianoPereira\Crucible\Test\TestId;
 
 use function array_keys;
-use function dirname;
 use function file_get_contents;
-use function file_put_contents;
 use function in_array;
 use function is_array;
-use function is_dir;
 use function is_file;
 use function is_string;
 use function json_decode;
 use function json_encode;
 use function ksort;
-use function mkdir;
 use function str_starts_with;
 use function strlen;
 use function substr;
@@ -127,13 +124,7 @@ final readonly class CoverageMap
      */
     public static function save(string $file, array $edges, array $hashes = []): void
     {
-        $directory = dirname($file);
-
-        if (!is_dir($directory)) {
-            mkdir($directory, 0o777, true);
-        }
-
-        file_put_contents($file, json_encode(
+        AtomicFile::write($file, json_encode(
             ['version' => self::VERSION, 'edges' => $edges, 'hashes' => $hashes],
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
         ));

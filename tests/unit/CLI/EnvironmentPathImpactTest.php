@@ -72,17 +72,20 @@ final class EnvironmentPathImpactTest extends TestCase
         $root = sys_get_temp_dir() . '/crucible-environment-paths-' . uniqid();
 
         mkdir($root . '/config', 0o777, true);
+        mkdir($root . '/shared', 0o777, true);
         mkdir($root . '/tests/Unit', 0o777, true);
 
         $real          = realpath($root);
         $this->project = $real === false ? $root : $real;
 
-        $configuration = <<<'PHP'
+        $configuration = static fn(string $helper): string => <<<PHP
             <?php
 
             declare(strict_types=1);
 
-            use LucianoPereira\Crucible\Configuration\Crucible;
+            use LucianoPereira\\Crucible\\Configuration\\Crucible;
+
+            require {$helper};
 
             return Crucible::configure()
                 ->testSuite('unit', 'tests/Unit')
@@ -90,10 +93,12 @@ final class EnvironmentPathImpactTest extends TestCase
                 ->build();
             PHP;
 
-        file_put_contents($this->project . '/crucible.php', $configuration);
-        file_put_contents($this->project . '/config/crucible.php', $configuration);
-        file_put_contents($this->project . '/config/other.php', $configuration);
-        file_put_contents($this->project . '/bootstrap.php', "<?php\n\n// the project bootstrap\n");
+        file_put_contents($this->project . '/crucible.php', $configuration("__DIR__ . '/shared/config-helper.php'"));
+        file_put_contents($this->project . '/config/crucible.php', $configuration("dirname(__DIR__) . '/shared/config-helper.php'"));
+        file_put_contents($this->project . '/config/other.php', $configuration("dirname(__DIR__) . '/shared/config-helper.php'"));
+        file_put_contents($this->project . '/bootstrap.php', "<?php\n\nrequire __DIR__ . '/shared/bootstrap-helper.php';\n");
+        file_put_contents($this->project . '/shared/config-helper.php', "<?php\n\n// required by the configuration\n");
+        file_put_contents($this->project . '/shared/bootstrap-helper.php', "<?php\n\n// required by the bootstrap\n");
 
         file_put_contents($this->project . '/tests/Unit/AlphaTest.php', $this->test('AlphaTest', 'testAlpha'));
         file_put_contents($this->project . '/tests/Unit/BetaTest.php', $this->test('BetaTest', 'testBeta'));
@@ -160,6 +165,26 @@ final class EnvironmentPathImpactTest extends TestCase
     public function testAConfiguredBootstrapEditWidensTheSelection(): void
     {
         $this->edit('bootstrap.php');
+
+        [$exit, $stdout, $finished] = $this->crucible(['--dirty']);
+
+        self::assertSame(0, $exit);
+        $this->assertWidened($stdout, $finished);
+    }
+
+    public function testAHelperRequiredByTheConfigurationWidensTheSelection(): void
+    {
+        $this->edit('shared/config-helper.php');
+
+        [$exit, $stdout, $finished] = $this->crucible(['--dirty']);
+
+        self::assertSame(0, $exit);
+        $this->assertWidened($stdout, $finished);
+    }
+
+    public function testAHelperRequiredByTheBootstrapWidensTheSelection(): void
+    {
+        $this->edit('shared/bootstrap-helper.php');
 
         [$exit, $stdout, $finished] = $this->crucible(['--dirty']);
 

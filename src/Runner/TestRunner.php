@@ -56,7 +56,6 @@ use LucianoPereira\Crucible\Test\TestDefinition;
 use LucianoPereira\Crucible\Test\TestGroup;
 use Throwable;
 
-use function array_any;
 use function array_map;
 use function array_reverse;
 use function count;
@@ -197,7 +196,10 @@ final readonly class TestRunner
             // PHPUnit reports it: every test is skipped, not errored. ✓ PHPUnit
             // 13.4.8: setUpBeforeClass() calling markTestSkipped() or
             // markTestIncomplete() prints S and counts every test as skipped.
-            $skipped = $throwable instanceof SkippedTestError || $throwable instanceof IncompleteTestError;
+            $skipped = $throwable instanceof SkippedTestError
+                || $throwable instanceof IncompleteTestError
+                || RealPhpUnitOutcomes::isSkipped($throwable)
+                || RealPhpUnitOutcomes::isIncomplete($throwable);
             $outcome = $skipped ? Outcome::Skipped : Outcome::Errored;
             $reason  = $skipped && $throwable->getMessage() !== '' ? $throwable->getMessage() : null;
 
@@ -260,24 +262,7 @@ final readonly class TestRunner
      */
     private function shouldStop(Outcome $outcome, array $issues = []): bool
     {
-        $byOutcome = match ($outcome) {
-            Outcome::Errored    => $this->options->stopOnError || $this->options->stopOnDefect,
-            Outcome::Failed     => $this->options->stopOnFailure || $this->options->stopOnDefect,
-            Outcome::Risky      => $this->options->stopOnRisky || $this->options->stopOnDefect,
-            Outcome::Skipped    => $this->options->stopOnSkipped,
-            Outcome::Incomplete => $this->options->stopOnIncomplete,
-            default             => false,
-        };
-
-        if ($byOutcome) {
-            return true;
-        }
-
-        return array_any($issues, fn(IssueKind $kind): bool => match ($kind) {
-            IssueKind::Deprecation => $this->options->stopOnDeprecation,
-            IssueKind::Notice      => $this->options->stopOnNotice,
-            IssueKind::Warning     => $this->options->stopOnWarning,
-        });
+        return $this->options->stopOn()->matches($outcome, $issues);
     }
 
     /**

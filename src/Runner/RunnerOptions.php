@@ -63,21 +63,12 @@ final readonly class RunnerOptions
     ) {}
 
     /**
-     * Whether any stop-on switch can halt a run after a test. A worker
-     * that stops early and account for every result it emitted was
-     * cancelled on purpose, not lost (D-022).
+     * The resolved stop-on policy, in the one shape every consumer
+     * shares (the runner, the worker manifest, the supervisor).
      */
-    public function stopsOnAnyOutcome(): bool
+    public function stopOn(): StopOn
     {
-        return $this->stopOnDefect
-            || $this->stopOnError
-            || $this->stopOnFailure
-            || $this->stopOnRisky
-            || $this->stopOnSkipped
-            || $this->stopOnIncomplete
-            || $this->stopOnDeprecation
-            || $this->stopOnNotice
-            || $this->stopOnWarning;
+        return StopOn::fromRunnerOptions($this);
     }
 
     /**

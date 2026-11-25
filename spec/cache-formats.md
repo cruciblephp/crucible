@@ -7,7 +7,8 @@
 > Each file is JSON with an integer `version`. A reader that finds a version it does not know
 > reads the file as empty, never as an error: a stale or foreign cache must not fail a run or an
 > analysis. Paths are relative to the project root, with `/` separators. Hashes are SHA-256 of
-> the file's bytes, lowercase hex.
+> the file's bytes, lowercase hex. Every file below is written beside its target and renamed
+> over it, so a reader never sees half of one.
 
 ## manifest.json
 

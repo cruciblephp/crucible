@@ -50,9 +50,13 @@ stops the run with exit 2. Unknown options are errors, never ignored. A CLI opti
 ### By what changed
 
 These narrow the run to the tests a change puts in doubt. A test is selected when the
-transitive closure of the file declaring it intersects the change set; anything that cannot
-be reasoned about — a deletion, a changed `composer.json` — widens back to the full suite
-rather than risking a test that silently did not run.
+transitive closure of the file declaring it intersects the change set. A deletion, a changed
+`composer.json`/`composer.lock`, the active configuration, its bootstrap, or a file either
+requires widens back to the full suite rather than risking a test that silently did not run.
+
+A change the graph cannot reach and no impact rule claims selects nothing: it is named, the
+run says “No tests are affected”, and exits 0. Watch mode widens those changes to a full run
+instead — see the manual.
 
 | Option | What it does |
 |---|---|
@@ -452,8 +456,8 @@ The last three read what a test *emitted*, not how it ended: a passing test that
 deprecation still stops the run under `--stop-on-deprecation`, which is the reason to have
 it. Each has a configuration twin — `->stopOnRisky()` and the rest.
 
-Stopping is the in-process runner's, so under `--parallel` the workers already dispatched
-finish their unit. That is true of `--stop-on-defect` today and has not changed.
+Under `--parallel` the units already dispatched finish their current unit, and no new
+unit is handed to a free slot after the result that asked the run to stop.
 
 `--update-baseline` adds the run's deprecations to the baseline file, so the
 existing ones stop failing and new ones still do.
@@ -614,8 +618,10 @@ The time budgets are the spec's: one second for `#[Small]`, ten for `#[Medium]`,
 `#[Large]`, and `--default-time-limit` for a test that declares no size. Crucible *measures*
 rather than interrupts — the spec aborts the test mid-flight with a `pcntl` alarm — so the
 budget needs no extension, holds identically inside a worker, and the reason states the
-duration actually observed. A test that hangs forever is a hang either way: no alarm survives
-a blocking syscall.
+duration actually observed. A blocked test is covered by a second, separate deadline: under
+`--parallel` (or process isolation) the supervisor terminates a unit that reports nothing for
+`->watchdog($seconds)` (default 600, `0` disables), and its unfinished tests are errored. A
+sequential run has no second process to kill, so there it can only measure.
 
 `--disallow-test-output` needs the output itself, so a test's output is now captured, reported
 as a `test:output` event, and written back out — capturing it never means losing it. Under the

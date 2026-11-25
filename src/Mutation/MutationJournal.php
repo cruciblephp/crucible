@@ -10,12 +10,13 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Mutation;
 
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
+
 use function count;
 use function dirname;
 use function explode;
 use function fclose;
 use function file_get_contents;
-use function file_put_contents;
 use function fopen;
 use function fwrite;
 use function is_array;
@@ -27,8 +28,6 @@ use function json_decode;
 use function json_encode;
 use function md5;
 use function mkdir;
-use function rename;
-use function unlink;
 
 use const JSON_THROW_ON_ERROR;
 
@@ -191,11 +190,7 @@ final class MutationJournal
             }
         }
 
-        $partial = $this->path . '.partial';
-
-        if (@file_put_contents($partial, $kept) === false || !@rename($partial, $this->path)) {
-            @unlink($partial);
-        }
+        AtomicFile::write($this->path, $kept);
     }
 
     /**

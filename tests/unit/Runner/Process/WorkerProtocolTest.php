@@ -22,6 +22,7 @@ use LucianoPereira\Crucible\Metadata\MetadataCollection;
 use LucianoPereira\Crucible\Runner\Process\EventParser;
 use LucianoPereira\Crucible\Runner\Process\WorkerManifest;
 use LucianoPereira\Crucible\Runner\Process\WorkUnit;
+use LucianoPereira\Crucible\Runner\StopOn;
 use LucianoPereira\Crucible\Test\TestDefinition;
 use LucianoPereira\Crucible\Test\TestGroup;
 use LucianoPereira\Crucible\Test\TestId;
@@ -98,6 +99,23 @@ final class WorkerProtocolTest extends TestCase
         // "absent" would run the repair pass its parent skipped.
         $this->assertFalse($decoded->overrides->resolveDependencies);
         $this->assertNull($decoded->overrides->backupGlobals, 'an override nobody set must stay unset');
+    }
+
+    public function testTheStopOnPolicySurvivesTheManifest(): void
+    {
+        $manifest = new WorkerManifest(
+            '/project/crucible.php',
+            [new WorkUnit('tests/FooTest.php')],
+            stopOn: new StopOn(failure: true, deprecation: true),
+        );
+
+        $decoded = WorkerManifest::fromJson($manifest->toJson());
+
+        self::assertInstanceOf(WorkerManifest::class, $decoded, 'The manifest did not survive its JSON round trip.');
+        self::assertTrue($decoded->stopOn->failure, 'A CLI --stop-on-failure must reach the worker.');
+        self::assertTrue($decoded->stopOn->deprecation);
+        self::assertFalse($decoded->stopOn->skipped);
+        self::assertFalse($decoded->stopOn->defect);
     }
 
     public function testGarbageManifestsParseToNull(): void

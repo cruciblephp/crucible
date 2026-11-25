@@ -95,6 +95,7 @@ Some settings worth knowing early:
 | `->strict()` | Turn on every fail-on switch at once |
 | `->executionOrder(ExecutionOrder::Defects)` | Failures first on every run |
 | `->retries(2, Backoff::Exponential)` | Re-run failures; a pass on retry is **flaky**, not a pass |
+| `->watchdog(600)` | Terminate a worker that reports nothing for this many seconds; `0` turns it off (default 600) |
 | `->quarantine('tests/Flaky.php::sometimes')` | A known-flaky test whose failure does not affect the exit code |
 | `->aroundEachTest(...)` | Wrap every test in a callable, in the process that runs it (see §14) |
 | `->impactRule('resources/js', ['browser'])` | Files the dependency graph cannot reach (see §8) |
@@ -461,8 +462,16 @@ the selection it runs the full selection, as Vitest does; it needs the result ca
 their own `--last-failed` at the same time.
 
 A test is selected when the transitive closure of the file declaring it intersects the
-change set. Anything that cannot be reasoned about — a deletion, a changed `composer.json` —
-widens back to the full suite rather than risking a test that silently did not run.
+change set. A deletion, a change to `composer.json`/`composer.lock`, the configuration file
+Crucible loaded, its bootstrap, or a file either of them requires widens back to the full
+suite rather than risking a test that silently did not run.
+
+Everything else the graph cannot reach is **named, not guessed at**. A changed non-PHP file
+that no impact rule claims — and a changed PHP file no test's closure reaches — selects
+nothing: the run prints what it could not account for, says “No tests are affected by the
+given changes”, and exits 0. That is the CLI rule. **Watch mode is deliberately broader**:
+there, a changed file outside every dependency graph widens to a full run, because a watcher
+that left the screen green after an unclassifiable edit would prove nothing.
 
 ### Files the graph cannot reach
 
@@ -540,7 +549,10 @@ target is judged on its own slice, so a passing pooled total cannot hide a modul
 
 pcov 1.0.12, the version the distributions ship, works on every supported PHP from 1.1.5 on.
 If a worker process is killed during a coverage run, its tests say which signal killed it and
-which driver was loaded, so a crashing extension doesn't look like a crashing test.
+which driver was loaded, so a crashing extension doesn't look like a crashing test. A worker
+that cannot load the driver writes the reason and runs nothing, and every dispatched coverage
+worker must leave its artifact: a missing one fails the run rather than judging a fraction of
+the suite as though it were the whole.
 
 ---
 
@@ -655,7 +667,9 @@ without a reason declares nothing, and a marker that covers no mutant is reporte
 A normal `crucible` run then also runs Vitest and folds every JS test into the same report,
 tally and exit code. Under `--changed` the JS suite narrows through `vitest related`, letting
 Vitest's own module graph decide — Crucible orchestrates rather than reimplementing a second
-dependency walk.
+dependency walk. A changed module inside one suite's root is offered to the other suites too:
+a package boundary is not necessarily an import boundary, and Vitest decides whether any test
+there reaches it.
 
 The suite is named `vitest`, and selected by that name:
 

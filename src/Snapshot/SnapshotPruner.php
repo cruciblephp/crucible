@@ -15,13 +15,13 @@ use LucianoPereira\Crucible\Event\Listener;
 use LucianoPereira\Crucible\Event\Outcome;
 use LucianoPereira\Crucible\Event\RunFinished;
 use LucianoPereira\Crucible\Event\TestFinished;
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
 use LucianoPereira\Crucible\Filesystem\WorkingDirectory;
 
 use function array_keys;
 use function count;
 use function dirname;
 use function file_get_contents;
-use function file_put_contents;
 use function glob;
 use function is_dir;
 use function is_file;
@@ -120,7 +120,7 @@ final class SnapshotPruner implements Listener
             }
 
             if ($kept !== []) {
-                file_put_contents($snap, SnapshotRepository::render($kept));
+                AtomicFile::write($snap, SnapshotRepository::render($kept));
                 $this->removeIfEmpty(substr($snap, 0, -5));
 
                 continue;

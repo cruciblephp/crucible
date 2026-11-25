@@ -10,22 +10,18 @@ declare(strict_types=1);
 
 namespace LucianoPereira\Crucible\Coverage;
 
+use LucianoPereira\Crucible\Filesystem\AtomicFile;
 use LucianoPereira\Crucible\Version;
 
 use function file_get_contents;
-use function file_put_contents;
 use function hash_file;
 use function is_array;
-use function is_dir;
 use function is_file;
 use function is_int;
 use function is_string;
 use function json_decode;
 use function json_encode;
 use function ksort;
-use function mkdir;
-use function rename;
-use function unlink;
 
 use const JSON_PRETTY_PRINT;
 use const JSON_THROW_ON_ERROR;
@@ -63,19 +59,12 @@ final class CacheManifest
 
         ksort($artifacts);
 
-        if (!is_dir($directory)) {
-            mkdir($directory, 0o777, true);
-        }
-
-        $partial = $directory . '/' . self::FILE . '.partial';
-        $json    = json_encode(
+        $json = json_encode(
             ['version' => self::VERSION, 'crucible' => Version::NUMBER, 'artifacts' => $artifacts],
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
         );
 
-        if (@file_put_contents($partial, $json . "\n") === false || !@rename($partial, $directory . '/' . self::FILE)) {
-            @unlink($partial);
-        }
+        AtomicFile::write($directory . '/' . self::FILE, $json . "\n");
     }
 
     /**

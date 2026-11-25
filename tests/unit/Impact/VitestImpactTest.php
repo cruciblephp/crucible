@@ -85,8 +85,8 @@ final class VitestImpactTest extends TestCase
 
     public function testEachSuiteIsScopedIndependently(): void
     {
-        $inVitest = $this->root() . '/src/Vitest/VitestReport.php';
-        $inImpact = $this->root() . '/src/Impact/VitestImpact.php';
+        $inVitest = $this->root() . '/src/Vitest/VitestReport.tsx';
+        $inImpact = $this->root() . '/src/Impact/VitestImpact.tsx';
 
         [$suites] = VitestImpact::select(
             [new VitestSuite('src/Vitest'), new VitestSuite('src/Impact')],
@@ -94,10 +94,31 @@ final class VitestImpactTest extends TestCase
             new WorkingDirectory($this->root()),
         );
 
+        // Each suite is offered both in-root changes: a package boundary
+        // is not a module boundary, and Vitest's graph decides whether
+        // the other package's file reaches any test here.
         self::assertSame(
-            [['src/Vitest', [$inVitest]], ['src/Impact', [$inImpact]]],
+            [['src/Vitest', [$inVitest, $inImpact]], ['src/Impact', [$inImpact, $inVitest]]],
             array_map(static fn(VitestSuite $suite): array => [$suite->directory, $suite->related], $suites),
         );
+    }
+
+    public function testAChangeInsideOneSuiteRootIsOfferedToTheOther(): void
+    {
+        $button = $this->root() . '/packages/ui/src/Button.tsx';
+
+        [$suites, $notes] = VitestImpact::select(
+            [new VitestSuite('packages/ui'), new VitestSuite('packages/app')],
+            new ChangedFiles([$button]),
+            new WorkingDirectory($this->root()),
+        );
+
+        self::assertSame(
+            [['packages/ui', [$button]], ['packages/app', [$button]]],
+            array_map(static fn(VitestSuite $suite): array => [$suite->directory, $suite->related], $suites),
+            'The app suite imports a module that lives inside the ui suite root.',
+        );
+        self::assertStringContainsString('outside its own root', $notes[1]);
     }
 
     public function testARootLockfileRunsEverySuiteInFull(): void
