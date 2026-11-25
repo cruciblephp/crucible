@@ -2,6 +2,11 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## v1.4.5 — 2026-11-25
+
+- Fixed the v1.4.4 Windows gate: the atomic-file mode-preservation assertion is POSIX-only; Windows synthesises permission bits, so the test now skips by its OS requirement there. No runtime change
+- Full gate: 2034 tests, 0 failed, 0 errors, 0 risky on Linux; all 19 conformance fixtures conform; the phpunit/mockery compatibility tier of `composer analyse:oracles` clean
+
 ## v1.4.4 — 2026-11-25
 
 Thanks to Thomas (lekoala) for the #28 audit, the reproductions and the investigation notes.

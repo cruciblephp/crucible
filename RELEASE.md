@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-25 (D-001..D-190, 1.4.4). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-25 (D-001..D-190, 1.4.5). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -9,6 +9,16 @@ observable behavior targets **drop-in compatibility with PHPUnit 13 suites**. PH
 *specification* — never the *source*: no code, templates, doc comments, or message text are
 copied from it or from any other project. Sole copyright over every line is a project
 invariant.
+
+---
+
+## v1.4.5 — 2026-11-25
+
+A test-only follow-up to v1.4.4. The atomic-file mode-preservation assertion assumed POSIX mode
+bits; Windows reports synthesised permissions, so the new test failed the Windows gate. It now
+carries the same POSIX-only requirement as the other mode-bit tests. No runtime change.
+
+Full gate: 2034 tests, 0 failed, 0 errors, 0 risky on Linux; all 19 conformance fixtures conform.
 
 ---
 

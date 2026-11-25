@@ -203,7 +203,7 @@ and defects-first scheduling, VMVM-style state isolation, Ekstazi-style impact s
 
 ## Credits
 
-Crucible 1.4.4 includes work from [Thomas (lekoala)](https://github.com/lekoala), who tested a
+Crucible 1.4.5 includes work from [Thomas (lekoala)](https://github.com/lekoala), who tested a
 Symfony 8.1 / Doctrine / PostgreSQL suite against Crucible, reported what broke in
 [issue #2](https://github.com/cruciblephp/crucible/issues/2), the Windows `--parallel` hang in
 [issue #27](https://github.com/cruciblephp/crucible/issues/27), and the #28 audit: the reports

@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace LucianoPereira\Crucible\Tests\Filesystem;
 
 use LucianoPereira\Crucible\Attributes\CoversClass;
+use LucianoPereira\Crucible\Attributes\RequiresOperatingSystem;
 use LucianoPereira\Crucible\Filesystem\AtomicFile;
 use LucianoPereira\Crucible\Framework\TestCase;
 
@@ -75,6 +76,7 @@ final class AtomicFileTest extends TestCase
         self::assertFalse(is_file($file . '.partial'));
     }
 
+    #[RequiresOperatingSystem('^(?!WIN)')]
     public function testItKeepsTheExistingMode(): void
     {
         mkdir($this->directory, 0o777, true);
