@@ -7625,7 +7625,10 @@ documented limitation or a preference. The five clear ones:
   dispatch, so two healthy 1.5 s tests under `->watchdog(2)` were killed for
   taking 3 s in total. Every event frame now renews the deadline. The existing
   hang test still fails the run; a new two-slow-tests case proves a unit whose
-  total exceeds the budget survives when each gap does not.
+  total exceeds the budget survives when each gap does not. The deadline is
+  also checked only after the readable frames have been processed: a frame
+  already in the pipe is activity, and checking first could kill a healthy
+  worker exactly at the boundary.
 - **The cold mutation worker drains stdout.** The supervisor drains every
   worker's stdout because it is user output and an undrained pipe fills; the
   cold mutant executor did not, so a mutant printing more than a pipe buffer

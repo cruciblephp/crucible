@@ -642,19 +642,6 @@ final class Supervisor
 
             $this->await($active);
 
-            if ($this->watchdogSeconds > 0) {
-                $now = hrtime(true);
-
-                foreach ($active as $key => $worker) {
-                    if (isset($timedOut[$key]) || $now - $lastActivity[$key] < $this->watchdogSeconds * 1_000_000_000) {
-                        continue;
-                    }
-
-                    $timedOut[$key] = true;
-                    $worker->terminate();
-                }
-            }
-
             foreach ($active as $key => $worker) {
                 // stdout carries only user output: discarding it
                 // keeps the pipe from filling, and its readiness is what
@@ -867,6 +854,23 @@ final class Supervisor
                     $startedCounts[$key],
                     $timedOut[$key],
                 );
+            }
+
+            // Check only after the readable work has been processed: a
+            // frame sitting in the pipe is activity, and terminating
+            // before reading it would kill a healthy worker at the
+            // deadline boundary.
+            if ($this->watchdogSeconds > 0) {
+                $now = hrtime(true);
+
+                foreach ($active as $key => $worker) {
+                    if (isset($timedOut[$key]) || $now - $lastActivity[$key] < $this->watchdogSeconds * 1_000_000_000) {
+                        continue;
+                    }
+
+                    $timedOut[$key] = true;
+                    $worker->terminate();
+                }
             }
         }
     }

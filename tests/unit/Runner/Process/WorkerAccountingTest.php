@@ -142,6 +142,9 @@ final class WorkerAccountingTest extends TestCase
         $this->writeTest('BPassesTest', <<<'PHP'
             public function testPasses(): void
             {
+                // Keep the slot busy long enough for A to report its
+                // failure before the supervisor considers dispatching C.
+                usleep(500_000);
                 self::assertTrue(true);
             }
             PHP);

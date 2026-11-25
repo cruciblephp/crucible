@@ -6,7 +6,7 @@ Every release, as it ships. RELEASE.md is the full record of what shipped, each 
 
 Thanks to Thomas (lekoala) for the #29 follow-up review.
 
-- Fixed the watchdog to measure inactivity, not total unit time: a unit whose tests keep reporting now survives a total longer than `->watchdog()`
+- Fixed the watchdog to measure inactivity, not total unit time, and to check the deadline only after reading pending frames: a unit reporting normally survives both a total longer than `->watchdog()` and a finish at the boundary
 - Fixed the cold mutation worker blocking on a mutant that floods stdout: the executor now drains stdout on every poll
 - Fixed a foreign `test:start` reaching the event stream and allowing a duplicate synthetic start; starts are counted against the unit like finishes
 - Refused a `--changed=<ref>` value that starts with `-` instead of passing it to git as an option
