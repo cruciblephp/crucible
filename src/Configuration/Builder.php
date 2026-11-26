@@ -1077,7 +1077,6 @@ final class Builder
             vitest: $this->vitestSuites,
             typeTests: $this->typeTestSuites,
             impactRules: $this->impactRules,
-            environmentFiles: $this->environmentFiles,
             reportFormats: $this->reportFormats,
             subscribers: $this->subscribers,
             progressViews: $this->progressViews,
@@ -1086,6 +1085,7 @@ final class Builder
             beStrictAboutOutputDuringTests: $this->beStrictAboutOutputDuringTests,
             coverageTargets: $this->coverageTargets,
             watchdogSeconds: $this->watchdogSeconds,
+            environmentFiles: $this->environmentFiles,
         );
     }
 }
