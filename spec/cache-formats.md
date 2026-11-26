@@ -85,6 +85,14 @@ Which source files each test file executed, at file granularity.
 - `edges`: test file ⇒ the source files its tests executed, in the order first seen.
 - `hashes`: as in `coverage-lines.json`.
 
+A coverage run **unions** the edges it observed into this map. It never removes an
+edge for a test file it did not execute, and it never replaces an entry with a
+shorter one: at file granularity a `--filter`ed method is indistinguishable from a
+file that merely covered fewer lines, so replacing would drop the methods that did
+not run. A test file whose file no longer exists is dropped. Over-selection is the
+accepted direction; the map is a growing union of observed edges, not a snapshot of
+the last run. A hash the run did not read keeps its previous value.
+
 Version 1 had no `hashes` and is read as empty.
 
 ## observed-types.json, version 1

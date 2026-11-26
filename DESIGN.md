@@ -7764,3 +7764,34 @@ application with PHPUnit 12.5.45, the existing migration mode already carries it
 The old text in D-186 that treats `phpstan/phpstan-phpunit` as an unconditional duplicate is
 superseded by this entry for the real-PHPUnit case. `pest-plugin-phpstan` keeps its duplicate
 warning. #30 is the design record this replaces with a measured, gated path.
+
+### D-198: a partial coverage run unions into the impact map
+
+`PostRunReport` saved `coverage-map.json` from the current run's `$collected` data. A
+`--filter`ed, `--changed` or `--coverage-filter`ed run therefore replaced the whole map
+with its subset, erasing the observed edges of every test it did not execute — a future
+`--changed` could then select fewer tests than the evidence supported. The same failure
+mode was measured in `phpunit-tia`: a `--filter`ed run deleted live tests' cached results
+because they "did not report", and the suite oscillated between 17 s and 2:16 on a 5,768
+test Laravel suite.
+
+`CoverageMap::merge()` now reads the existing map, unions this run's edges into each test
+file's entry, drops only a test file whose file no longer exists, and merges the hashes
+the run read over the previous ones. `CoverageMap::read()` exposes edges and hashes
+together; `load()` remains edges-only for the impact path. The cache shape is
+unchanged, so the version stays 2; the semantics are in `spec/cache-formats.md`.
+
+Why union, not replace: the map is file-level (D-036/D-041). A `--filter`ed method and a
+whole-file run that covered fewer lines are indistinguishable here, so replacing an entry
+would drop the edges of the methods that did not run. Over-selection is the accepted cost,
+and it is the direction D-036 already chose. Rejected: replacing the entry for every test
+file that ran (the audit's wording) — it under-selects on a method filter; pruning by
+absence — the `phpunit-tia` bug; a "complete run" flag as the only gate — a complete run
+can still skip tests, and a source-filtered run is partial in a second dimension. Per-test
+edges would make replacement safe, but that is a separate decision.
+
+✓ `CacheFormatsTest`: a partial run keeps the test files it did not run; a partial run
+unions within a test file instead of replacing it; a merge drops a vanished test file; a
+run that observed nothing keeps the map. Three of the four fail against the previous
+`save()` behaviour. `spec/cache-formats.md` states the union and the deleted-file rule;
+this entry amends D-041's "every coverage run refreshes" to "unions what it observed".

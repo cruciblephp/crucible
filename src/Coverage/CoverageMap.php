@@ -37,9 +37,15 @@ use const JSON_UNESCAPED_SLASHES;
  * with its static edges — static analysis cannot see through dynamic
  * container lookups; execution can. File-level on both axes, the
  * Ekstazi granularity, project-relative so the file survives moves.
- * Refreshed whenever a coverage run happens; corrupt = empty, never
+ * Updated whenever a coverage run happens; corrupt = empty, never
  * a failed run. Version 2 adds each source file's SHA-256 beside the
  * edges (spec/cache-formats.md); a version 1 map reads as empty.
+ *
+ * A partial run unions what it observed into the map (D-198). It never
+ * replaces an entry, because a `--filter`ed method is indistinguishable
+ * from a file that merely covered fewer lines at this granularity;
+ * dropping is only safe per test id. A test file that no longer exists
+ * is dropped, because its edges cannot select anything.
  */
 final readonly class CoverageMap
 {
@@ -77,24 +83,26 @@ final readonly class CoverageMap
     }
 
     /**
-     * @return array<string, list<string>>
+     * The whole map: the edges and the source hashes recorded beside them.
+     *
+     * @return array{edges: array<string, list<string>>, hashes: array<string, string>}
      */
-    public static function load(string $file): array
+    public static function read(string $file): array
     {
         if (!is_file($file)) {
-            return [];
+            return ['edges' => [], 'hashes' => []];
         }
 
         $contents = file_get_contents($file);
 
         if ($contents === false) {
-            return [];
+            return ['edges' => [], 'hashes' => []];
         }
 
         $decoded = json_decode($contents, true);
 
         if (!is_array($decoded) || ($decoded['version'] ?? null) !== self::VERSION) {
-            return [];
+            return ['edges' => [], 'hashes' => []];
         }
 
         $edges = [];
@@ -115,7 +123,73 @@ final readonly class CoverageMap
             $edges[$testFile] = $list;
         }
 
-        return $edges;
+        $hashes = [];
+
+        foreach (is_array($decoded['hashes'] ?? null) ? $decoded['hashes'] : [] as $sourceFile => $hash) {
+            if (is_string($sourceFile) && $sourceFile !== '' && is_string($hash) && $hash !== '') {
+                $hashes[$sourceFile] = $hash;
+            }
+        }
+
+        return ['edges' => $edges, 'hashes' => $hashes];
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public static function load(string $file): array
+    {
+        return self::read($file)['edges'];
+    }
+
+    /**
+     * Fold this run's observed edges into the existing map (D-198).
+     *
+     * A partial run must not erase what it did not execute. An entry is
+     * unioned rather than replaced: at file granularity a filtered method
+     * is indistinguishable from a file that covered fewer lines, and
+     * dropping is only safe per test id. A test file that no longer
+     * exists is dropped — its edges cannot select anything — and a hash
+     * the run did not read keeps its previous value.
+     *
+     * @param array<string, list<string>> $edges
+     * @param array<string, string>       $hashes
+     * @param callable(string): bool      $exists
+     */
+    public static function merge(string $file, array $edges, array $hashes, callable $exists): void
+    {
+        $existing = self::read($file);
+        $merged   = $existing['edges'];
+
+        foreach ($edges as $testFile => $sourceFiles) {
+            $list = $merged[$testFile] ?? [];
+
+            foreach ($sourceFiles as $sourceFile) {
+                if (!in_array($sourceFile, $list, true)) {
+                    $list[] = $sourceFile;
+                }
+            }
+
+            $merged[$testFile] = $list;
+        }
+
+        foreach (array_keys($merged) as $testFile) {
+            if (!$exists($testFile)) {
+                unset($merged[$testFile]);
+            }
+        }
+
+        ksort($merged);
+
+        $mergedHashes = $existing['hashes'];
+
+        foreach ($hashes as $sourceFile => $hash) {
+            $mergedHashes[$sourceFile] = $hash;
+        }
+
+        ksort($mergedHashes);
+
+        self::save($file, $merged, $mergedHashes);
     }
 
     /**

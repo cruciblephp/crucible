@@ -25,6 +25,7 @@ use function glob;
 use function hash;
 use function hash_file;
 use function is_dir;
+use function is_file;
 use function json_decode;
 use function mkdir;
 use function rmdir;
@@ -50,13 +51,16 @@ final class CacheFormatsTest extends TestCase
         $this->root = sys_get_temp_dir() . '/crucible-cache-formats-' . uniqid();
 
         mkdir($this->root . '/src', 0o777, true);
+        mkdir($this->root . '/tests', 0o777, true);
         file_put_contents($this->root . '/src/A.php', "<?php\n\nreturn 1;\n");
         file_put_contents($this->root . '/src/B.php', "<?php\n\nreturn 2;\n");
+        file_put_contents($this->root . '/tests/ATest.php', "<?php\n");
+        file_put_contents($this->root . '/tests/BTest.php', "<?php\n");
     }
 
     protected function tearDown(): void
     {
-        foreach (['/src/*', '/cache/*'] as $pattern) {
+        foreach (['/src/*', '/tests/*', '/cache/*'] as $pattern) {
             $files = glob($this->root . $pattern);
 
             foreach ($files === false ? [] : $files as $file) {
@@ -64,7 +68,7 @@ final class CacheFormatsTest extends TestCase
             }
         }
 
-        foreach ([$this->root . '/src', $this->root . '/cache', $this->root] as $directory) {
+        foreach ([$this->root . '/src', $this->root . '/tests', $this->root . '/cache', $this->root] as $directory) {
             if (is_dir($directory)) {
                 rmdir($directory);
             }
@@ -120,6 +124,88 @@ final class CacheFormatsTest extends TestCase
         file_put_contents($file, '{"version": 1, "edges": {"tests/ATest.php": ["src/A.php"]}}');
 
         self::assertSame([], CoverageMap::load($file));
+    }
+
+    public function testAPartialCoverageRunKeepsTestFilesItDidNotRun(): void
+    {
+        $file = $this->root . '/cache/coverage-map.json';
+        mkdir($this->root . '/cache');
+
+        CoverageMap::save(
+            $file,
+            ['tests/ATest.php' => ['src/A.php'], 'tests/BTest.php' => ['src/B.php']],
+            ['src/A.php'       => hash('sha256', 'a'), 'src/B.php' => hash('sha256', 'b')],
+        );
+
+        CoverageMap::merge(
+            $file,
+            ['tests/ATest.php'         => ['src/A.php', 'src/B.php']],
+            ['src/A.php'               => hash('sha256', 'a2')],
+            fn(string $testFile): bool => is_file($this->root . '/' . $testFile),
+        );
+
+        self::assertSame(
+            ['tests/ATest.php' => ['src/A.php', 'src/B.php'], 'tests/BTest.php' => ['src/B.php']],
+            CoverageMap::load($file),
+        );
+
+        self::assertSame(
+            ['src/A.php' => hash('sha256', 'a2'), 'src/B.php' => hash('sha256', 'b')],
+            CoverageMap::read($file)['hashes'],
+        );
+    }
+
+    public function testAPartialCoverageRunUnionsWithinATestFile(): void
+    {
+        $file = $this->root . '/cache/coverage-map.json';
+        mkdir($this->root . '/cache');
+
+        CoverageMap::save($file, ['tests/ATest.php' => ['src/A.php', 'src/B.php']]);
+
+        CoverageMap::merge(
+            $file,
+            ['tests/ATest.php' => ['src/A.php']],
+            [],
+            fn(string $testFile): bool => is_file($this->root . '/' . $testFile),
+        );
+
+        self::assertSame(['tests/ATest.php' => ['src/A.php', 'src/B.php']], CoverageMap::load($file));
+    }
+
+    public function testAMergeDropsATestFileThatNoLongerExists(): void
+    {
+        $file = $this->root . '/cache/coverage-map.json';
+        mkdir($this->root . '/cache');
+
+        CoverageMap::save($file, ['tests/ATest.php' => ['src/A.php'], 'tests/BTest.php' => ['src/B.php']]);
+
+        unlink($this->root . '/tests/BTest.php');
+
+        CoverageMap::merge(
+            $file,
+            ['tests/ATest.php' => ['src/A.php']],
+            [],
+            fn(string $testFile): bool => is_file($this->root . '/' . $testFile),
+        );
+
+        self::assertSame(['tests/ATest.php' => ['src/A.php']], CoverageMap::load($file));
+    }
+
+    public function testACoverageRunThatObservedNothingKeepsTheMap(): void
+    {
+        $file = $this->root . '/cache/coverage-map.json';
+        mkdir($this->root . '/cache');
+
+        CoverageMap::save($file, ['tests/ATest.php' => ['src/A.php']]);
+
+        CoverageMap::merge(
+            $file,
+            [],
+            [],
+            fn(string $testFile): bool => is_file($this->root . '/' . $testFile),
+        );
+
+        self::assertSame(['tests/ATest.php' => ['src/A.php']], CoverageMap::load($file));
     }
 
     public function testTheManifestListsEachArtifactWithItsFormatAndDigest(): void

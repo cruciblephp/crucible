@@ -2,6 +2,10 @@
 
 Every release, as it ships. RELEASE.md is the full record of what shipped, each entry traced to its decision record.
 
+## Unreleased
+
+- A partial coverage run now unions the observed impact map instead of replacing it: a filtered, impact-narrowed or source-filtered run keeps the edges of every test it did not execute, and only a test file that no longer exists is dropped. D-198
+
 ## v1.4.6 — 2026-11-25
 
 Thanks to Thomas (lekoala) for the #29 follow-up review.

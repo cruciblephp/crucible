@@ -52,6 +52,7 @@ use function file_get_contents;
 use function file_put_contents;
 use function glob;
 use function is_dir;
+use function is_file;
 use function is_string;
 use function max;
 use function printf;
@@ -333,7 +334,17 @@ final readonly class PostRunReport
 
         $lines = TestLineMap::fromData($collected, $workingDirectory->path);
 
-        CoverageMap::save($cache . '/coverage-map.json', CoverageMap::fromData($collected, $workingDirectory->path), $lines->hashes);
+        // Union, never replace (D-198): a filtered, impact-narrowed or
+        // source-filtered run collected only part of the suite, and
+        // rewriting the whole map from it would erase the observed edges
+        // of every test it did not execute. A vanished test file is the
+        // one entry a run may drop.
+        CoverageMap::merge(
+            $cache . '/coverage-map.json',
+            CoverageMap::fromData($collected, $workingDirectory->path),
+            $lines->hashes,
+            static fn(string $testFile): bool => is_file($workingDirectory->absolute($testFile)),
+        );
         CacheManifest::record($cache, 'coverage-map.json', CoverageMap::VERSION);
 
         // The per-test line map (D-047): the mutation query's data,
