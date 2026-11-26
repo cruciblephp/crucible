@@ -1,6 +1,6 @@
 # Crucible PHP — Released capability
 
-_As of 2026-11-25 (D-001..D-196, 1.4.6). Every entry traces to a `DESIGN.md` decision
+_As of 2026-11-26 (D-001..D-199, 1.5.0). Every entry traces to a `DESIGN.md` decision
 record (D-0xx), written before merge. This file is the record of what **shipped** — which is
 now everything that was scoped; `DESIGN.md` holds the reasoning._
 
@@ -11,6 +11,23 @@ copied from it or from any other project. Sole copyright over every line is a pr
 invariant.
 
 ---
+
+## v1.5.0 — 2026-11-26
+
+The accepted items from Thomas (lekoala)'s #31 comparison, and the boundary that keeps the
+engine framework-agnostic.
+
+- **Partial coverage runs union the impact map.** D-198. A `--filter`ed, `--changed` or
+  `--coverage-filter`ed run used to replace the whole map with its subset, erasing the observed
+  edges of every test it did not execute. It now unions per test file, drops only a test file
+  whose file no longer exists, and merges the hashes it read. The cache shape is unchanged (v2).
+- **An environment file is declared, not inferred.** D-199. `->environmentFile('path')` is a
+  repeatable declaration in `crucible.php`; a change to the file widens impact selection and is
+  named by watch. Crucible does not read, parse or create it. The engine has no
+  `.env.testing`/`.env.test` hardcode and no framework detection; the project declares its file.
+  `->env()` remains the value/guard, including `force: true` for destructive tests.
+- **The #31 disposition.** D-197. #1 accepted and fixed; #7 rejected as a default; #2 open; the
+  rest rejected for the near future.
 
 ## v1.4.6 — 2026-11-25
 
