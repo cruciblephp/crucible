@@ -7765,6 +7765,44 @@ The old text in D-186 that treats `phpstan/phpstan-phpunit` as an unconditional 
 superseded by this entry for the real-PHPUnit case. `pest-plugin-phpstan` keeps its duplicate
 warning. #30 is the design record this replaces with a measured, gated path.
 
+### D-197: issue #31 — the closing disposition
+
+The PHPUnit 14 comparison was triaged against the written contract, not treated as a
+backlog. The audit's authority is PHPUnit 14 `main`; Crucible's compatibility target is
+PHPUnit 13 (`Version.php`), and several "gaps" are deliberate decisions (D-036, D-041,
+D-191). PHPUnit 14's TIA is still an open draft, and `phpunit-tia` is a PHPUnit 13
+extension, so a 14 conformance plan is not a promise that moved.
+
+- **Accepted and fixed:** #1 — a partial coverage run must not erase the observed impact
+  map; D-198, with four regression cases.
+- **Rejected:** #7 — `.env`/`.env.*` as PHP impact environment. The application's
+  environment is explicit: `crucible.php`, `->env()`, the bootstrap. Crucible does not read
+  framework config files, and the engine is XML-free (DESIGN.md "No XML, no legacy"; D-024).
+  Hardcoding `.env.testing`/`.env.test` in `ImpactSelection` imports Laravel/Symfony
+  conventions into the engine. The Laravel probe is real — a `.env.testing` edit flips a
+  probe test and `--related` selects 0 of 5 — but the fix belongs in the project's explicit
+  environment configuration, not in the engine. This is the `f0dfc83` shape: an issue names
+  a file outside the written contract, so the change is reverted rather than the rule
+  widened.
+- **Open, no code:** #2 — whether the observed map should carry an environment fingerprint.
+  Needs a reproduction and a decision; not implemented.
+- **Rejected for the near future:** per-test granularity (#3) — D-036/D-041 chose file
+  level Ekstazi granularity deliberately, and it over-selects rather than false-greens;
+  `--strict-impact` (#4) — the CLI narrowing is documented in `MANUAL.md`/`HELP.md` and
+  D-191, so a new mode is a feature, not a bug; `--record-impact` (#5) — the observed half
+  exists, and the confirmed defect was #1; watch scope beyond environment/manifests (#6) —
+  no written promise, and rule-glob scope is a separate shape; persistent workers (#8),
+  cold scheduling (#9), `--parallel auto` (#10) and crash retry (#14) — performance or
+  convenience, no measurement, and PHPUnit 14's pool is an unreleased draft;
+  `--explain-impact` (#11) — useful, no safety payoff; a PHPUnit 14 compatibility plan
+  (#12) — 13 is the deliberate target and Pest 5 ships TIA on 13.2; a benchmark matrix
+  (#13) — evidence hygiene; the manifest already carries a direct Pest 5.2.1 comparison,
+  and `phpcpd` is a direct PHPUnit 11.5 run, slower but not claimed otherwise.
+- **Not reproduced:** the audit supplied code reading, not a run. #1 is the one item with a
+  measured analogue in another project (`phpunit-tia` PR #1: 5,768 tests, alternating 17 s
+  and 2:16 runs because a partial run pruned live tests); the Crucible regression is the
+  unit test in D-198.
+
 ### D-198: a partial coverage run unions into the impact map
 
 `PostRunReport` saved `coverage-map.json` from the current run's `$collected` data. A
