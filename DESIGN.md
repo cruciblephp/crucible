@@ -7833,3 +7833,31 @@ unions within a test file instead of replacing it; a merge drops a vanished test
 run that observed nothing keeps the map. Three of the four fail against the previous
 `save()` behaviour. `spec/cache-formats.md` states the union and the deleted-file rule;
 this entry amends D-041's "every coverage run refreshes" to "unions what it observed".
+
+### D-199: an environment file is declared, not inferred
+
+Framework `.env` conventions are not part of Crucible's contract. The engine is XML-free
+and the environment is explicit: `crucible.php`, `->env()`, the bootstrap. Measured in the
+Laravel oracle: with `APP_ENV=testing`, Laravel loads **`.env.testing` instead of `.env`**;
+it does not read `.env.local` or `.env.testing.local`. Symfony's `Dotenv::bootEnv()` layers
+`.env`, `.env.local`, `.env.$APP_ENV` and `.env.$APP_ENV.local` (documented; no Symfony
+oracle installed here). An exported value wins over the file, and `->env()` without force
+respects that (D-151). The differences are exactly why a hardcoded default is wrong.
+
+`->environmentFile('path')` declares a file the application loads. A change to it widens
+impact selection and is named by watch; Crucible does not read, parse, create or choose it.
+The list is explicit and repeatable, and `->env()` remains the way to define values —
+including the destructive-test guard, `->env('DB_DATABASE', ':memory:', force: true)`.
+
+Rejected: hardcoded `.env.testing`/`.env.test` (Laravel replaces, Symfony layers, the
+`.local` variants differ, and the engine should not know either framework); framework
+detection; `.env.crucible` (the application does not read it, and a loader would duplicate
+Dotenv and diverge from `artisan`/`bin/console`); a generator command (user state, secrets,
+an `APP_ENV` guess, outside the cache contract). This is the `f0dfc83` shape: a file is
+declared by the project, not inferred by the engine. It is the explicit surface D-197
+said the fix belongs in.
+
+✓ `BuilderTest` pins the declared list and its order/deduplication.
+✓ `EnvironmentPathImpactTest`: a declared `.env.testing` edit widens to the full suite; an
+undeclared `.env.testing` edit still selects nothing, so the engine does not know the
+convention.

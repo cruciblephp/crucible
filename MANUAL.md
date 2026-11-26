@@ -99,6 +99,7 @@ Some settings worth knowing early:
 | `->quarantine('tests/Flaky.php::sometimes')` | A known-flaky test whose failure does not affect the exit code |
 | `->aroundEachTest(...)` | Wrap every test in a callable, in the process that runs it (see §14) |
 | `->impactRule('resources/js', ['browser'])` | Files the dependency graph cannot reach (see §8) |
+| `->environmentFile('.env.testing')` | A file the application loads whose change widens impact/watch; Crucible never reads or creates it (see §8) |
 | `->browser(enabled: true)` | The browser tier (see §10) |
 | `->vitest('resources/js')` | Fold a JavaScript suite into the same run (see §12) |
 
@@ -466,6 +467,12 @@ change set. A deletion, a change to `composer.json`/`composer.lock`, the configu
 Crucible loaded, its bootstrap, or a file either of them requires widens back to the full
 suite rather than risking a test that silently did not run.
 
+A project can also name a file the application loads with `->environmentFile('path')` —
+`.env.testing` for Laravel, `.env.test` for Symfony, or any other file. A change to it
+widens the same way, and watch names it too. The declaration is a trigger, not a loader:
+Crucible does not read, parse or create the file. Use `->env()` for values, including the
+destructive-test guard.
+
 Everything else the graph cannot reach is **named, not guessed at**. A changed non-PHP file
 that no impact rule claims — and a changed PHP file no test's closure reaches — selects
 nothing: the run prints what it could not account for, says “No tests are affected by the
@@ -487,6 +494,9 @@ Declare those:
 Rules are **additive**: they can add groups to a selection, never remove them, so a missing
 rule is never worse than having none. A rule naming a group no test carries is reported
 rather than silently doing nothing.
+
+A file the application loads as environment is different: it widens to the full suite, not
+to named groups. Declare it with `->environmentFile('path')`.
 
 ### Letting a build tool drive
 

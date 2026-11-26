@@ -37,6 +37,7 @@ use LucianoPereira\Crucible\Vitest\VitestSuite;
 
 use function array_is_list;
 use function array_values;
+use function in_array;
 use function is_string;
 use function max;
 use function sprintf;
@@ -131,6 +132,9 @@ final class Builder
 
     /** @var list<ImpactRule> */
     private array $impactRules = [];
+
+    /** @var list<non-empty-string> */
+    private array $environmentFiles = [];
 
     /** @var list<CoverageTarget> */
     private array $coverageTargets = [];
@@ -905,6 +909,29 @@ final class Builder
     }
 
     /**
+     * Declare a file the application loads as part of its environment.
+     *
+     * The declaration is a trigger, not a loader: a change to the file
+     * widens impact selection and is named by watch, while the application
+     * still reads it. Crucible never reads, parses or creates it. Repeatable.
+     *
+     *     ->environmentFile('.env.testing')   // Laravel
+     *     ->environmentFile('.env.test')      // Symfony
+     *
+     * Use {@see env()} for values; this method only names a file.
+     *
+     * @param non-empty-string $path project-relative, or absolute
+     */
+    public function environmentFile(string $path): self
+    {
+        if (!in_array($path, $this->environmentFiles, true)) {
+            $this->environmentFiles[] = $path;
+        }
+
+        return $this;
+    }
+
+    /**
      * Register a report-format plugin by class-string + params — the
      * report-format extension surface, deliberately kept separate from
      * {@see extension()} above: a class-string + reflection-read
@@ -1050,6 +1077,7 @@ final class Builder
             vitest: $this->vitestSuites,
             typeTests: $this->typeTestSuites,
             impactRules: $this->impactRules,
+            environmentFiles: $this->environmentFiles,
             reportFormats: $this->reportFormats,
             subscribers: $this->subscribers,
             progressViews: $this->progressViews,

@@ -5,6 +5,7 @@ Every release, as it ships. RELEASE.md is the full record of what shipped, each 
 ## Unreleased
 
 - A partial coverage run now unions the observed impact map instead of replacing it: a filtered, impact-narrowed or source-filtered run keeps the edges of every test it did not execute, and only a test file that no longer exists is dropped. D-198
+- Added `->environmentFile('path')` to declare a file the application loads as impact environment: a change widens selection and watch. Crucible does not read or create it; `->env()` remains the way to define values. D-199
 
 ## v1.4.6 — 2026-11-25
 

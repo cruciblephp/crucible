@@ -70,6 +70,13 @@ final class WatchCommand
             $files[] = $workingDirectory->absolute($file);
         }
 
+        // Files the project declared as environment (D-199): they may live
+        // outside the suite/source roots, so name them. A missing path is
+        // kept; the watcher sees it when it appears.
+        foreach ($configuration->environmentFiles as $file) {
+            $files[] = $workingDirectory->absolute($file);
+        }
+
         // The JavaScript tier (D-081): watch each configured Vitest
         // suite too, and tell the session its roots — a change under one
         // is in the JS graph, re-run through `--related` (where D-080

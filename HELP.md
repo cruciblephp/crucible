@@ -78,6 +78,11 @@ A rule is **additive**: it can only add groups to the selection, never remove th
 missing rule is never worse than having none. A rule naming a group no test carries is
 reported rather than silently doing nothing.
 
+A file the application loads as environment — `.env.testing` (Laravel), `.env.test`
+(Symfony) — is declared with `->environmentFile('path')`. A change to it widens to the
+full suite and is named by watch; Crucible does not read or create it. Use `->env()` for
+values.
+
 ### Narrowing further
 
 | Option | What it does |

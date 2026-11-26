@@ -154,4 +154,15 @@ final class BuilderTest extends TestCase
 
         $this->assertSame('second.xml', $configuration->subscribers['custom']['params']['output']);
     }
+
+    public function testEnvironmentFilesAreDeclaredInOrderWithoutDuplicates(): void
+    {
+        $configuration = Crucible::configure()
+            ->environmentFile('.env.testing')
+            ->environmentFile('.env.test')
+            ->environmentFile('.env.testing')
+            ->build();
+
+        $this->assertSame(['.env.testing', '.env.test'], $configuration->environmentFiles);
+    }
 }

@@ -777,7 +777,7 @@ final class RunTestsCommand
             // here and one there is how a relative --configuration
             // came to never match (D-036).
             /** @var list<non-empty-string> $environment */
-            $environment = [$loaded->path, ...$environmentIncludes];
+            $environment = [$loaded->path, ...$environmentIncludes, ...$configuration->environmentFiles];
 
             $configuredBootstrap = $options->bootstrap ?? $configuration->bootstrap;
 

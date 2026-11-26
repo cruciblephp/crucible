@@ -36,6 +36,7 @@ use function proc_open;
 use function realpath;
 use function rmdir;
 use function scandir;
+use function str_replace;
 use function stream_get_contents;
 use function symlink;
 use function sys_get_temp_dir;
@@ -192,6 +193,37 @@ final class EnvironmentPathImpactTest extends TestCase
         $this->assertWidened($stdout, $finished);
     }
 
+    public function testADeclaredEnvironmentFileEditWidensTheSelection(): void
+    {
+        $this->declareEnvironmentFile('.env.testing');
+
+        file_put_contents($this->project . '/.env.testing', "APP_ENV=testing
+");
+        $this->git('add crucible.php .env.testing');
+        $this->git('commit -q -m env');
+        $this->edit('.env.testing');
+
+        [$exit, $stdout, $finished] = $this->crucible(['--dirty']);
+
+        self::assertSame(0, $exit);
+        $this->assertWidened($stdout, $finished);
+    }
+
+    public function testAnUndeclaredEnvironmentFileDoesNotWidenTheSelection(): void
+    {
+        file_put_contents($this->project . '/.env.testing', "APP_ENV=testing
+");
+        $this->git('add .env.testing');
+        $this->git('commit -q -m env');
+        $this->edit('.env.testing');
+
+        [$exit, $stdout, $finished] = $this->crucible(['--dirty']);
+
+        self::assertSame(0, $exit);
+        self::assertSame([], array_column($finished, 'id'), 'An undeclared environment file selected tests.');
+        self::assertStringContainsString('No tests are affected', $stdout);
+    }
+
     public function testARelativeBootstrapOptionEditWidensTheSelection(): void
     {
         $this->edit('bootstrap.php');
@@ -235,6 +267,18 @@ final class EnvironmentPathImpactTest extends TestCase
     {
         self::assertSame(self::BOTH, array_column($finished, 'id'), 'The environment edit did not run the full suite.');
         self::assertStringContainsString($reason, $stdout);
+    }
+
+    private function declareEnvironmentFile(string $file): void
+    {
+        $path   = $this->project . '/crucible.php';
+        $source = (string) file_get_contents($path);
+
+        file_put_contents($path, str_replace(
+            "->bootstrap('bootstrap.php')",
+            "->bootstrap('bootstrap.php')\n    ->environmentFile('" . $file . "')",
+            $source,
+        ));
     }
 
     private function edit(string $file): void
