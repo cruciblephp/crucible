@@ -203,6 +203,10 @@ and defects-first scheduling, VMVM-style state isolation, Ekstazi-style impact s
 
 **v1 is in maintenance: bug fixes only.** No new features land on the 1.x line.
 
+The PHPUnit and Pest shapes exist so tests already written keep running. They are
+maintained for bug fixes and runtime compatibility, not as a downstream mirror of those
+projects' future. New work goes to v2.
+
 **v2 is the native Crucible shape**, not another compatibility target. It is a proposal,
 not a commitment: literate documents whose markers are also the report, co-located
 attribute tests, a static-contract tier, and a PHPUnit/Pest bridge frozen at the versions
