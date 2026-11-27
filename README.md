@@ -11,14 +11,19 @@ suites, engineered like the best runners of other ecosystems.**
 
 **v1 is in maintenance: bug fixes only.** No new features land on the 1.x line.
 
-The PHPUnit and Pest shapes exist so tests already written keep running. They are
-maintained for bug fixes and runtime compatibility, not as a downstream mirror of those
-projects' future. New work goes to v2.
+**v1's drop-in mode was a proof, not a direction.** To show that one engine could run
+real suites unchanged (Monolog, phpcpd, a Laravel app), v1 stands in for PHPUnit and
+Mockery: it aliases their class names and declares stand-ins for their classes when the
+real package is absent. That proved the engine. It is also Crucible occupying other
+projects' namespaces, and that is not how Crucible should work with them.
 
-**v2 is the native Crucible shape**, not another compatibility target. It is a proposal,
-not a commitment: short tests in the same file as the code, Markdown docs that are both
-the test and its report, and a PHPUnit/Pest bridge frozen at the versions it already supports. [proposal-v2.md](proposal-v2.md) explains the change and what is
-still open.
+**v2 is a proposal, and it breaks that on purpose.** Crucible defines only its own
+namespace: no aliases, no stand-in classes, nothing in `vendor/`. A suite that needs real
+PHPUnit or Pest keeps them, and Crucible runs the real binary and folds its results into
+the same run, as it already does for Vitest. A suite that moves to the engine keeps
+PHPUnit's or Pest's way of writing tests and imports Crucible's own names. v2 also adds
+code samples in Markdown docs that run as tests and stamp their own results.
+[proposal-v2.md](proposal-v2.md) explains the change.
 
 ```bash
 composer require --dev cruciblephp/crucible

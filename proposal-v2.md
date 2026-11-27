@@ -12,8 +12,8 @@ run, with one report, one cache and one schedule.
 
 v2 adds what was not there when that design was written:
 
-- **Tests in Markdown.** A PHP sample in a doc page is a test, and the output block
-  under it is its assertion. The docs cannot drift from the code.
+- **Tests in Markdown.** A code sample in a doc page is a test, in PHP, JavaScript,
+  TypeScript or Vue, and the output block under it is its assertion. The docs cannot drift from the code.
 - **Markers.** A comment that names a test, in a page or in PHP code. A marker proves
   the test exists and lets it be run; in a page it also shows the result. It is a
   comment, so it costs nothing in production.
@@ -22,9 +22,45 @@ v2 adds what was not there when that design was written:
 - **The stamped page.** A page is its own report: the samples, their results, a
   changelog and the stamp of the last run, in one self-contained file.
 
-v1 is in maintenance and takes fixes only (README). v2 is therefore the next package
-line. Nothing in it breaks a v1 suite: every dialect keeps running unchanged, and the
-major marks the line where new work lands.
+- **Orchestrated suites.** A suite that needs real PHPUnit or Pest runs on the real
+  binary, and its results join the same run, as Vitest's already do.
+
+v1 is in maintenance and takes fixes only (README). v2 is the next package line, and it
+is a major because of one deliberate break, below.
+
+## Own namespace only
+
+v1's drop-in mode stands in for PHPUnit and Mockery: it aliases their class names
+(`src/Compat/PhpUnitCompatibility.php`, `MockeryCompatibility.php`) and declares
+stand-ins for their classes (`src/Compat/Stubs/`) when the real package is absent (D-019).
+That was the proof that one engine runs real suites unchanged: Monolog, phpcpd, a Laravel
+app. It is not the direction.
+
+**v2 rule: Crucible defines only its own namespace.**
+
+- No `class_alias` into `PHPUnit\`, `Pest\` or `Mockery\`, and no stand-in classes.
+- No global functions standing in for Pest's (`test()`, `it()`, `expect()`): the pest
+  dialect's functions live in Crucible's namespace too.
+- Nothing written to, or claimed at, a vendor path; no Composer `replace` or `provide`.
+- When a suite needs a real package, the real package runs, openly.
+
+A PHPUnit- or Pest-style suite then has two honest paths:
+
+- **Stay on the real runner.** The suite is orchestrated (below). Its tests do not change.
+- **Move to the engine.** The phpunit and pest dialects keep their way of writing a test,
+  but the test imports Crucible's own names, such as
+  `use LucianoPereira\Crucible\PhpUnit\TestCase;` or
+  `use function LucianoPereira\Crucible\Pest\{test, expect};`. That is one import per
+  file, a mechanical rewrite a migration command can do, in the way
+  `crucible compat-check --auto-fix` already rewrites known coupling patterns. The
+  dialect stays the same test written PHPUnit's or Pest's way; it no longer carries
+  their names.
+
+Mockery is a library, not a runner. It works unchanged in an orchestrated suite; on the
+engine, Crucible calls Mockery's public teardown from its own lifecycle hook instead of
+aliasing its classes.
+
+1.x keeps drop-in mode, with fixes only.
 
 ## Prior art: Hallmark
 
@@ -55,13 +91,16 @@ D-014 declined test methods inside production classes, because PHP has no dead-c
 elimination. v2 keeps that decision: markers give code a link to its tests without
 shipping test code.
 
+v1's drop-in mode does not carry over: see "Own namespace only".
+
 ## The pieces
 
 | Piece | Where | What it is | Written by |
 |---|---|---|---|
 | Inline test | docblock / attribute | `#[Check]` row or `@crucible` doctest (v1) | a person |
-| Markdown test | `README.md`, `docs/*.md` | a `php` block and the `text` block under it | a person |
+| Markdown test | `README.md`, `docs/*.md` | a code block and the `text` block under it | a person |
 | Test file | `tests/` | any dialect | a person |
+| Orchestrated suite | `tests/` | a suite run by the real PHPUnit, Pest or Vitest binary | a person |
 | Marker | a page or a PHP comment | a reference to a test by id | a person; Crucible fills it in a page |
 | Binding | `crucible.php` | which pages and code belong together | a person |
 | Stamp and changelog | the page | the last run and the history of its outcomes | Crucible |
@@ -95,15 +134,14 @@ ERROR: card declined
 
 The rules, taken from what Hallmark already proves:
 
-- **A `php` block is a test.** It runs as a plain script, in its own process, with the
-  project's bootstrap. No test vocabulary appears in the docs: a reader can copy the
-  sample as it is.
+- **A fenced code block is a test.** It runs through the runner for its language (below).
+  No test vocabulary appears in the docs: a reader can copy the sample as it is.
 - **Each sample stands alone.** There is no shared setup between samples, as in
   Hallmark: a sample a reader copies must work on its own.
 - **The `text` block under it is the assertion.** The sample's output must match it.
   It is written by a person and never generated, so it is a real claim, not a snapshot.
-- **Without a `text` block, the claim is that it runs.** Exit code 0 and nothing on
-  stderr, the same smoke claim a bare `#[Check]` makes.
+- **Without a `text` block, the claim is that it runs.** No error and nothing on stderr,
+  the same smoke claim a bare `#[Check]` makes.
 - **Volatile values are normalized.** Dates and times by default. A project declares
   more in `crucible.php` with `->normalize(pattern, placeholder)`. Nothing else may move
   between runs.
@@ -114,8 +152,64 @@ The rules, taken from what Hallmark already proves:
   ` ```php test=fingers-crossed `, is `docs/handlers.md::fingers-crossed` and keeps its
   id when lines move. Only a named block can be the target of a marker or have its own
   changelog line.
-- **Samples are type-checked.** `crucible lint-inline` analyses `php` blocks through the
-  same shadow files it already uses for doctests.
+- **PHP samples are type-checked.** `crucible lint-inline` analyses `php` blocks through
+  the same shadow files it already uses for doctests.
+
+### Runners by language
+
+The shape is the same in every language: the block, the output block under it, ids,
+markers and the stamp. Only what runs the block depends on its fence, the D-008 model of
+one engine with many frontends:
+
+| Fence | Runs through |
+|---|---|
+| `php` | a plain PHP script in its own process, with the project's bootstrap |
+| `js`, `ts`, `vue` | the project's Vitest suite, `->vitest(...)` (D-079) |
+| any other language | a runner a plugin registers for that language (D-098) |
+
+- **JavaScript is orchestrated, not reimplemented** (D-079). The sample runs inside the
+  project's own Vitest setup, so its imports, aliases, `.vue` transforms and Vite config
+  work as they do in the app. Its result lands on the same event stream, tally and stamp
+  as the PHP samples.
+- **Markers cross languages.** A docblock in a `.ts` file can name a PHP sample, and a PHP
+  docblock can name a Vue one.
+- **Never a silent pass.** A block whose runner is configured but cannot start (Vitest not
+  installed, say) is an errored test, never a skip (D-079, D-183). A block in a language
+  with no runner is prose, and the stamp counts it on its own (`3 not runnable`), so it
+  is visible rather than dropped.
+
+## Orchestrated suites
+
+A suite can run on the engine, in any dialect, or on the real binary that owns it:
+
+```php
+->testSuite('unit', 'tests/Unit')                                // the engine, any dialect
+->testSuite('feature', 'tests/Feature', runner: Runner::PhpUnit) // the real vendor/bin/phpunit
+->testSuite('legacy', 'tests/Legacy', runner: Runner::Pest)      // the real vendor/bin/pest
+->vitest('resources/js')                                         // already orchestrated (D-079)
+```
+
+This is D-079's rule applied to PHP: **orchestrate, not reimplement**. Crucible spawns the
+real binary, reads its TeamCity output, and translates each test onto the one event
+stream: the same tally, report, exit code, markers and stamps. TeamCity output is
+line-based, streamable and already what IDEs consume, so it is the stable contract, as
+Vitest's JSON is; reading it keeps "No XML". Its location hints carry the test's file, so
+an orchestrated test gets a normal `path::name` id and a marker can name it.
+
+- **Laravel bound to PHPUnit.** The framework's `TestCase` extends the real PHPUnit one,
+  so that suite is orchestrated. Crucible integrates through what it owns, its bootstrap,
+  its configuration and `php artisan test` (D-029), never by changing vendor code.
+- **What an orchestrated suite gets:** results, the tally, file-level impact selection
+  (Crucible passes the selected files), markers and stamps.
+- **What it does not get:** the engine's own features, such as global-state isolation,
+  flaky classification, per-test coverage edges and Crucible's scheduling. The choice is
+  made per suite in the configuration, so nothing degrades silently.
+- **Never a silent pass** (D-079, D-183). A configured binary that is missing, or that
+  reports no tests, is an errored test, not a green run.
+
+The engine stays the product. D-008 contrasts Crucible with wrapping PHPUnit, and that
+still holds: orchestration is how Crucible works with a real runner a suite depends on,
+not a replacement for the engine.
 
 ## Markers
 
@@ -184,6 +278,8 @@ changes.
   edges and the bindings, so a change in `src/Handler/` selects `docs/handlers.md`
   even when no sample names the changed class. When uncertain, run more, never select
   less.
+- **JavaScript samples narrow the Vitest way.** A changed `.vue` file selects through
+  `vitest related` (D-080), and the page's binding adds its edge as for PHP.
 - **An unbound page is bound to all of `->source()`,** so any source change selects
   it. That over-selects; it never false-greens.
 - **`--docs --check` checks every page's fingerprint** whatever `--changed` selected,
@@ -229,8 +325,9 @@ page's results depend on, shown as 12 hex characters:
 - the page's samples and expected outputs;
 - the bound source files;
 - every test file a marker in the page names;
-- the environment, as D-036 defines it: `crucible.php`, the bootstrap,
-  `composer.lock` and every `->environmentFile()`.
+- the environment, as the existing rules define it: `crucible.php`, the bootstrap,
+  `composer.lock` and every `->environmentFile()` (D-036), and for JavaScript samples the
+  lockfile and the Vite and Vitest workspace files (D-192).
 
 It is computed from files, not from git, so anyone can recompute it from a checkout.
 
@@ -306,7 +403,6 @@ premise.
 - `test:` and `run:` are the only marker names Crucible adds.
 - On the first run a marker's closing `<!--/-->` is written if it is missing, as sigilmd
   does. That is the only write outside a marker body.
-- No TT2, no `+++` frontmatter, no new template language.
 
 ## Git flow
 
@@ -318,18 +414,22 @@ Push, wait for CI on that exact commit, then tag. Never rewrite a published tag.
 
 ## Non-goals
 
-- Test methods inside production classes (D-014 stands).
-- Writing anywhere but marker bodies in a page (and a missing closing marker): never a
-  sample, an expected output, a PHP file or the configuration.
-- Generated expected output.
-- Test vocabulary in doc samples.
-- Shared setup between samples.
-- A page that needs the configuration, a log or CI to be read.
-- CI committing to the repository.
-- Reading `phpunit.xml` or `.env`; the environment is explicit (`crucible.php`,
-  `->env()`, `->environmentFile()`).
-- TT2, `+++` frontmatter, or a new template language.
-- v2 engine code before the decision entry.
+- **Not a documentation site.** Pages stay Markdown in the repository. Crucible runs and
+  stamps them; any site tool renders them.
+- **Not snapshot testing.** No command records or refreshes expected output. A changed
+  `text` block is a decision a person makes.
+- **Not a notebook.** Samples do not share state or run in order. Each one is a program
+  a reader can copy.
+- **Not a coverage claim.** A binding says which code a page documents, for selection
+  and the fingerprint. It does not say the page covers that code.
+- **Not a history store.** A page keeps the changelog its retention rule allows. Full
+  history belongs to git and the optional run log.
+- **No test code in production classes.** The expectation Vitest's in-source tests
+  create; D-014 stands, and markers are the link instead.
+- **Not a wrapper.** Orchestration runs the real binary for a suite that depends on it;
+  it does not replace the engine, and engine features are not emulated on top of it.
+- **Not a replacement for test files.** Anything that boots an application or needs more
+  than one program stays in `tests/`.
 
 ## Gate
 
@@ -341,6 +441,11 @@ Push, wait for CI on that exact commit, then tag. Never rewrite a published tag.
 3. Stamp a page through a failing and then a passing run; rerun and get a byte-identical
    page.
 4. Edit a bound source file without restamping and see `--docs --check` fail.
-5. Run sigilmd's fixtures through the PHP grammar against the Perl script.
+5. Run one `vue` sample through a real Vitest project and fold it into the same stamp;
+   remove Vitest and see the sample error, not skip.
+6. Run a Laravel app's feature suite orchestrated on real PHPUnit beside an engine suite:
+   one tally, one exit code, with no alias, stand-in class or vendor change. Remove the
+   binary and see an errored test.
+7. Run sigilmd's fixtures through the PHP grammar against the Perl script.
 
 Then write the `D-xxx`; only then code.
