@@ -24,6 +24,12 @@ v2 adds what was not there when that design was written:
 
 - **Orchestrated suites.** A suite that needs real PHPUnit or Pest runs on the real
   binary, and its results join the same run, as Vitest's already do.
+- **Run only when conditions change.** A test whose world has not changed since it last
+  passed is not run again; its result is reused, and said to be reused.
+- **Redundant tests found.** Suites that agents grow by thousands get a report of the
+  tests that add nothing, for a person to collapse or remove.
+- **Editors.** A VS Code extension and Vim/Neovim integration, both reading the one event
+  stream.
 
 v1 is in maintenance and takes fixes only (README). v2 is the next package line, and it
 is a major because of one deliberate break, below.
@@ -391,6 +397,90 @@ Monolog's JSON reads it: `INFO` for a green run, `ERROR` for a red one, the tota
 changes in `context`. Crucible writes the shape and does not depend on Hallmark. The
 page never reads the log.
 
+## Run only when conditions change: the result cache
+
+The real cost of a test suite is running tests that will pass again: every run re-proves
+passes that nothing could have changed, and agents add tests by the thousand. Selection
+(`--changed`, `--related`) narrows a run against a git ref; it answers "what did this diff
+touch", not "has this test's world changed since it last passed". RESEARCH.md §3 already
+names the missing half from Pest 5's TIA: reuse stored results for tests a change does
+not reach.
+
+**Every test carries a fingerprint of its world:**
+
+- its own file;
+- the transitive closure of what it depends on, the static edges (D-036) and the
+  observed coverage edges (D-041);
+- the environment, the same set the pages use (`crucible.php`, the bootstrap,
+  `composer.lock`, `->environmentFile()`, and the JavaScript lockfile and workspace files
+  for Vitest).
+
+When the fingerprint matches the test's last **pass**, the test is not run and the pass is
+reused. No git ref is needed: it works on any run, the way build systems cache test
+results.
+
+The rules, because a false green is the worst outcome:
+
+- **Only a pass is reused.** A failure, an error or a skip always runs again.
+- **A reused result is never shown as a fresh one.** The report, the tally and the stamp
+  count them apart: `1,200 passed (1,140 reused, 60 ran)`.
+- **Never cached:** a test classified as flaky; a test with no observed edges yet; a test
+  in an orchestrated suite, whose dependency closure Crucible cannot see; a test that opts
+  out.
+- **A release run is fresh.** `--fresh` ignores the cache, and the CI run on the exact
+  commit that gets tagged uses it. Reuse is for the local loop, agents and pull requests,
+  not for the proof behind a tag.
+
+This decision also closes issue #31's #2, fingerprinting the observed map: that
+fingerprint is the core of the cache.
+
+## Redundant tests
+
+A suite that grows by thousands of generated tests needs a way to find the tests that add
+nothing. This is research before code: the area is well studied, and it has a known trap.
+(Citations to be checked against publisher pages before they enter RESEARCH.md.)
+
+- **Test-suite reduction** keeps a minimal subset that covers the same requirements
+  (Harrold, Gupta and Soffa, ACM TOSEM, 1993).
+- **The trap:** reducing by coverage alone can lose fault detection (Rothermel et al.,
+  STVR, 2002). Two tests that cover the same lines are not the same test.
+- **The stronger signal is mutation subsumption** (Kurtz, Ammann et al., 2014): if test A
+  kills every mutant that test B kills, B is a candidate. Crucible already has the data,
+  through `crucible mutate` and `crucible mutation-index`.
+
+**`crucible redundant` reports; it never deletes.**
+
+| Finding | Signal | Suggested action |
+|---|---|---|
+| Subsumed test | its covered lines **and** its killed mutants are a subset of another test's | review, likely remove |
+| Structural duplicate | the same body apart from literals | collapse into one `table()` or dataset |
+| Test with no claim | no assertion, or only ones that are always true | remove, or give it a claim |
+| Duplicate description | the same name twice in one file | rename |
+
+The last two are the lint rules RESEARCH.md §3 notes in Pest's PHPStan plugin, built
+once for every dialect. The report is text and JSON, so an agent can act on it; a person
+approves every removal. Fewer, denser tests also make the cache sharper.
+
+## Editors
+
+v2 ships a **VS Code extension** and **Vim/Neovim integration**. Both read the event stream
+(D-009, `--log-events-json`), the versioned contract that already exists, so each is a
+thin client with no test logic of its own.
+
+- **VS Code:** an extension on the Testing API: the test explorer, run and debug from the
+  gutter, reused results shown apart from fresh ones, a marker in a docblock shown as a
+  CodeLens with its test's result, and a Markdown page's stamp.
+- **Vim:** a `vim-test` strategy for the plain command, and a reporter in quickfix form
+  (`file:line: message`).
+- **Neovim:** a `neotest` adapter that reads the same stream.
+
+What the core adds so that both work:
+
+- `--list-tests` as JSON (today it lists lines or XML);
+- a `file:line` location on every test in every dialect, including Markdown samples and
+  orchestrated tests, whose TeamCity location hints carry it;
+- running a test by `file:line` and by marker.
+
 ## The grammar
 
 The marker grammar is sigilmd's, reimplemented in PHP. sigilmd is its behavioral spec:
@@ -426,6 +516,9 @@ Push, wait for CI on that exact commit, then tag. Never rewrite a published tag.
   history belongs to git and the optional run log.
 - **No test code in production classes.** The expectation Vitest's in-source tests
   create; D-014 stands, and markers are the link instead.
+- **Not a substitute for a fresh run.** Reused results speed up the loop; a release is
+  proved by a fresh run.
+- **Not automatic deletion.** Redundancy findings are suggestions; a person removes tests.
 - **Not a wrapper.** Orchestration runs the real binary for a suite that depends on it;
   it does not replace the engine, and engine features are not emulated on top of it.
 - **Not a replacement for test files.** Anything that boots an application or needs more
@@ -446,6 +539,12 @@ Push, wait for CI on that exact commit, then tag. Never rewrite a published tag.
 6. Run a Laravel app's feature suite orchestrated on real PHPUnit beside an engine suite:
    one tally, one exit code, with no alias, stand-in class or vendor change. Remove the
    binary and see an errored test.
-7. Run sigilmd's fixtures through the PHP grammar against the Perl script.
+7. Run a suite twice with no change and see every pass reused and counted as reused;
+   change one dependency and see exactly its tests run; run `--fresh` and see everything
+   run.
+8. Run `crucible redundant` on a real suite and check each finding by hand before trusting
+   the tool.
+9. Drive one run from VS Code and one from Neovim on the same stream.
+10. Run sigilmd's fixtures through the PHP grammar against the Perl script.
 
 Then write the `D-xxx`; only then code.
