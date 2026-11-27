@@ -16,9 +16,8 @@ maintained for bug fixes and runtime compatibility, not as a downstream mirror o
 projects' future. New work goes to v2.
 
 **v2 is the native Crucible shape**, not another compatibility target. It is a proposal,
-not a commitment: literate documents whose markers are also the report, co-located
-attribute tests, a static-contract tier, and a PHPUnit/Pest bridge frozen at the versions
-it already supports. [proposal-v2.md](proposal-v2.md) explains the change and what is
+not a commitment: short tests in the same file as the code, Markdown docs that are both
+the test and its report, and a PHPUnit/Pest bridge frozen at the versions it already supports. [proposal-v2.md](proposal-v2.md) explains the change and what is
 still open.
 
 ```bash

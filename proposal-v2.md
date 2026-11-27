@@ -3,145 +3,344 @@
 **Status:** proposal, not a decision. No v2 code lands until a `D-xxx` records the
 contract. This document is input for that decision; it is not a roadmap.
 
-## Why a major
+## The idea
 
-v1's promise is parity: a PHPUnit 13 suite runs unchanged. v2's thesis is different:
+Crucible is one engine with several dialects (D-008). PHPUnit, Pest, the crucible
+dialect and the inline dialect are not compatibility layers. They are different ways to
+write the same test: each compiles to the same `TestDefinition`, and they mix in one
+run, with one report, one cache and one schedule.
 
-> The native Crucible shape is the primary API. PHPUnit/Pest compatibility is a
-> migration substrate, frozen at PHPUnit 13 / Pest 5, not a downstream mirror.
+v2 adds what was not there when that design was written:
 
-The old shapes exist so tests already written and working keep running. They are
-maintained for runtime/bug compatibility, not for upstream's future features. New
-work goes to the native shape; a project that wants PHPUnit 14 or Pest 6 features
-migrates, it does not wait for the bridge to mirror them.
+- **Tests in Markdown.** A PHP sample in a doc page is a test, and the output block
+  under it is its assertion. The docs cannot drift from the code.
+- **Markers.** A comment that names a test, in a page or in PHP code. A marker proves
+  the test exists and lets it be run; in a page it also shows the result. It is a
+  comment, so it costs nothing in production.
+- **Binding in `crucible.php`.** Which pages and which code belong together is declared
+  in the configuration, never inferred.
+- **The stamped page.** A page is its own report: the samples, their results, a
+  changelog and the stamp of the last run, in one self-contained file.
 
-## The native tiers
+v1 is in maintenance and takes fixes only (README). v2 is therefore the next package
+line. Nothing in it breaks a v1 suite: every dialect keeps running unchanged, and the
+major marks the line where new work lands.
 
-| Tier | Shape | Production execution | Notes |
+## Prior art: Hallmark
+
+When Crucible's dialect model was designed, [Hallmark](https://github.com/cruciblephp/hallmark)
+did not exist. It now does this by hand, in one PHPUnit test
+(`tests/Docs/DocsSamplesTest.php`):
+
+- 55 `php` blocks in the README and `docs/*.md`. Each runs as a plain script in its own
+  process.
+- 40 `text` blocks. The one under a sample is the expected output; dates are normalized,
+  nothing else may move.
+- 17 `<!-- not run: ... -->` comments, some naming the test that holds the sample
+  instead. That is already a marker, but free text that nothing checks.
+
+v2 makes that pattern a dialect: the same rules, discovered by Crucible, with stable
+ids, checked markers and a stamped report.
+
+## What v1 already has
+
+In-file tests already ship as the inline dialect (`MANUAL.md` §3, D-014/D-035):
+
+- `#[Check(args, returns:, throws:)]` — constant input/output rows on a function or
+  method, private methods included.
+- `@crucible expect(...)` — one-expression doctests in a docblock. They execute.
+- `crucible lint-inline` — PHPStan over the doctests through shadow files.
+
+D-014 declined test methods inside production classes, because PHP has no dead-code
+elimination. v2 keeps that decision: markers give code a link to its tests without
+shipping test code.
+
+## The pieces
+
+| Piece | Where | What it is | Written by |
 |---|---|---|---|
-| Static contract | docblock + PHPStan plugin | none | types and constants only |
-| Mild in-code | `@crucible expect(...)` comment | none | one expression; `save_comments` caveat |
-| Literate docs | Markdown + sigilmd markers | none | the document is the test and the report |
-| Attribute | `#[Test]` method beside the code | none | private access; method/metadata footprint |
-| Separate file | the existing suite shape | none | integration and legacy |
+| Inline test | docblock / attribute | `#[Check]` row or `@crucible` doctest (v1) | a person |
+| Markdown test | `README.md`, `docs/*.md` | a `php` block and the `text` block under it | a person |
+| Test file | `tests/` | any dialect | a person |
+| Marker | a page or a PHP comment | a reference to a test by id | a person; Crucible fills it in a page |
+| Binding | `crucible.php` | which pages and code belong together | a person |
+| Stamp and changelog | the page | the last run and the history of its outcomes | Crucible |
 
-The tiers are deliberate: static analysis proves types; a doctest proves a value; a
-document proves an example; an attribute test proves behaviour with private access;
-a separate file is the integration surface.
+Crucible writes in exactly one place: marker bodies in a page (and a marker's missing
+closing `<!--/-->`, as sigilmd does). It never writes a sample, an expected output, a
+PHP file or the configuration.
 
-## Literate docs: the sigilmd grammar
+## Markdown tests
 
-No TT2, no `+++` frontmatter, no new template language. The document shape is
-[sigilmd](https://github.com/lucianofedericopereira/sigilmd)'s marker grammar,
-reimplemented in PHP (no Perl/CPAN dependency):
-
-- `<!-- [[ name ]] -->` declares a table; the body is the string-only TOML subset
-  (`key = "value"`, `#` comments; no arrays, numbers, booleans or nested tables).
-- `<!-- [[ $table.key ]] -->` inserts a value; `<!-- [[ @table.key ]] -->` reads a
-  project-relative file; references chain by juxtaposition.
-- `<!--/-->` closes a marker body; reruns replace only the body; `check` fails when
-  regeneration would differ.
-
-The same document is the test and the report:
+What a person writes, in `docs/handlers.md`:
 
 ````md
-<!-- [[ test ]] -->
-title = "Cart totals"
-suite = "docs"
-tags = "cart,money"
-<!--/-->
+`FingersCrossedHandler` holds a request's records and writes them only if one reaches
+its activation level:
 
-A cart with two items totals the sum.
+```php test=fingers-crossed
+$stream = new StreamHandler('php://stdout');
+$stream->setFormatter(new LineFormatter("%level_name%: %message%\n"));
+$log = new Logger('app', [new FingersCrossedHandler($stream, activationLevel: Level::Error)]);
 
-```php
-$cart = new Cart();
-$cart->add(1);
-$cart->add(2);
+$log->debug('cart loaded');
+$log->error('card declined');
 ```
 
-Total: <!-- [[ $cart.total ]] -->3<!--/-->
+```text
+DEBUG: cart loaded
+ERROR: card declined
+```
 ````
 
-The runner executes the block, produces `cart.total`, and writes it between the
-markers. `crucible --docs --check` fails in CI if the document is stale. The source
-stays prose; only marker bodies change, so the diff is reviewable and idempotent.
+The rules, taken from what Hallmark already proves:
 
-## Static contracts
+- **A `php` block is a test.** It runs as a plain script, in its own process, with the
+  project's bootstrap. No test vocabulary appears in the docs: a reader can copy the
+  sample as it is.
+- **Each sample stands alone.** There is no shared setup between samples, as in
+  Hallmark: a sample a reader copies must work on its own.
+- **The `text` block under it is the assertion.** The sample's output must match it.
+  It is written by a person and never generated, so it is a real claim, not a snapshot.
+- **Without a `text` block, the claim is that it runs.** Exit code 0 and nothing on
+  stderr, the same smoke claim a bare `#[Check]` makes.
+- **Volatile values are normalized.** Dates and times by default. A project declares
+  more in `crucible.php` with `->normalize(pattern, placeholder)`. Nothing else may move
+  between runs.
+- **`<!-- not run: reason -->` skips a block** that is not a program (a signature, a
+  config excerpt). The reason is required.
+- **Ids.** A block is `docs/handlers.md::line 12` by its line, in the same
+  `path::name` shape as every other test id (D-010). A named block,
+  ` ```php test=fingers-crossed `, is `docs/handlers.md::fingers-crossed` and keeps its
+  id when lines move. Only a named block can be the target of a marker or have its own
+  changelog line.
+- **Samples are type-checked.** `crucible lint-inline` analyses `php` blocks through the
+  same shadow files it already uses for doctests.
 
-PHPStan is incremental, parallel and cached per file; a static tier rides that same
-run, not a second execution path.
+## Markers
+
+A marker names a test by its id. The syntax is sigilmd's own `name: key=value` form
+(`<!--[[ badge: id=... ]]-->`), not a new one:
+
+```md
+<!--[[ test: id=tests/PHPUnit/AssertLogTest.php::testItWarnsOnRetry ]]-->
+```
 
 ```php
 /**
- * @crucible expect(Cart::total(1, 2))->toBeInt()
- * @crucible expect($name)->toBeString()
+ * Writes the held records once one reaches the activation level.
+ *
+ * [[ test: id=docs/handlers.md::fingers-crossed ]]
  */
+final class FingersCrossedHandler
 ```
 
-`toBe('b')` is **not** a static test in general; it is a doctest or an attribute test.
-Static analysis proves types and constant expressions, not arbitrary runtime values.
-Do not call a static assertion a test if it never runs; call it a contract.
+- **It proves the test exists.** A marker naming an id that does not exist is a hard
+  error, so a renamed or deleted test cannot leave a dangling claim. Hallmark's
+  "`tests/PHPUnit/AssertLogTest.php` holds it" becomes a checked reference.
+- **It is checked on every run.** Source discovery already pre-filters `->source()`
+  files for `#[Check]` and `@crucible`; it also looks for `[[ test:`, so a PHP marker is
+  validated without a separate step.
+- **It runs the test.** `crucible --marker src/Handler/FingersCrossedHandler.php` runs
+  every test marked in that file, through the normal runner.
+- **In a page, it shows the result.** Crucible fills a page marker with the test's
+  outcome. A marker in PHP is a reference only and is never written: Crucible does not
+  write into source files.
 
-## Attributes and overhead
+## Binding in `crucible.php`
 
-PHP attributes are available now; 8.6 is not required. A co-located `#[Test]` method
-gives private access and no separate file.
+Neither the page nor the marker names the source it belongs to. The binding is declared
+in the configuration, the same "declared, not inferred" rule as `->environmentFile()`
+(D-199):
 
-The honest overhead:
+```php
+return Crucible::configure()
+    ->bootstrap('vendor/autoload.php')
+    ->source(include: ['src'])
+    ->docs('README.md', 'docs/')
+    ->bind('docs/handlers.md', 'src/Handler/')
+    ->bind('docs/formatters.md', 'src/Formatter/')
+    ->changelogKeeps(Keep::sinceRelease()->atLeast(5));
+```
 
-- **Execution:** zero in production; the method is not called.
-- **Compile/opcache:** method opcodes and attribute metadata; real, proportional to
-  the test code. A strip step is the only way to zero footprint.
-- **Discovery:** a short ctags-style prefilter (`str_contains`/token pass) finds
-  candidates; parse only those. Test-time only.
-- **Comments:** zero execution; docblock text is retained only with
-  `opcache.save_comments=1`. With `save_comments=0`, reflection loses the doctest;
-  the runner must read source or require the setting.
-- **Helpers:** a test-only helper is production code unless marked/grouped; a strip
-  rule must know it. Individual method attributes cannot strip a shared helper.
+- `->docs()` names the pages that are discovered as Markdown tests and stamped.
+- `->bind(page, source)` declares the code a page documents. Both sides must exist.
+- A page without a binding is bound to everything under `->source()`.
+- **A binding is per file.** A directory is allowed because it is a set of files; a
+  class or a method is not. File level is the granularity D-036/D-041 chose, and the
+  fingerprint is defined over file contents, so a method binding would need hashing
+  below the file and could no longer be recomputed from files alone. A page about one
+  class binds to that class's file.
 
-Measure before claiming: a fixture with N test methods versus N doctests, opcache
-memory and require time.
+### Impact selection
+
+Markdown pages are a new dialect, so their selection is new; no existing selection
+changes.
+
+- **A sample is scanned like any test file.** It runs as a script, so the reference
+  scanner reads it the same way and finds the classes it uses (the static half of
+  D-036).
+- **A binding adds edges, never removes them.** Selection is the union of the scanned
+  edges and the bindings, so a change in `src/Handler/` selects `docs/handlers.md`
+  even when no sample names the changed class. When uncertain, run more, never select
+  less.
+- **An unbound page is bound to all of `->source()`,** so any source change selects
+  it. That over-selects; it never false-greens.
+- **`--docs --check` checks every page's fingerprint** whatever `--changed` selected,
+  so a page selection skipped still cannot go stale on `main`.
+
+The configuration is read when a page is written. Everything a reader needs is then in
+the page itself, including its binding.
+
+## The stamped page
+
+A page is self-contained: it carries its samples, their results, its history and the
+stamp of the last run. It can be read and trusted without the configuration, a log or
+CI.
+
+The same page after `crucible --docs`:
+
+````md
+<!--[[ run: changelog ]]-->
+- 2026-11-27 · 3f9a1c2b7d40 · fingers-crossed: failed → passed
+- 2026-11-20 · 8e21f0a9c3b5 · release 2.0.0
+- 2026-11-20 · 8e21f0a9c3b5 · fingers-crossed: added, passed
+<!--/-->
+
+...the samples and their output blocks, unchanged...
+
+Holds the test: <!--[[ test: id=tests/PHPUnit/AssertLogTest.php::testItWarnsOnRetry ]]-->passed<!--/-->
+
+<!--[[ run: stamp ]]-->Crucible 2.0.0 · PHP 8.4 · sources 3f9a1c2b7d40 · binds src/Handler/ · 12 passed, 1 not run<!--/-->
+````
+
+### The stamp
+
+Every page under `->docs()` must contain a `run: stamp` marker; a page without one is a
+hard error, because without it the page cannot carry its own proof. The `run: changelog`
+marker is optional.
+
+The stamp states the last run of the page: Crucible and PHP versions, the **source
+fingerprint**, the binding and the totals.
+
+The fingerprint is a SHA-256 over the sorted paths and contents of everything the
+page's results depend on, shown as 12 hex characters:
+
+- the page's samples and expected outputs;
+- the bound source files;
+- every test file a marker in the page names;
+- the environment, as D-036 defines it: `crucible.php`, the bootstrap,
+  `composer.lock` and every `->environmentFile()`.
+
+It is computed from files, not from git, so anyone can recompute it from a checkout.
+
+### The changelog
+
+The changelog records outcomes, not runs. A line is added only when something changes:
+a named test's outcome, a test added or removed, or the totals of unnamed samples. Each
+line carries the date and the fingerprint of the run that saw the change.
+
+`crucible --docs --release 2.0.0` writes a release line. Releases are defined by the
+project, in the page, so retention needs neither git nor the network.
+
+Retention is set once, in `crucible.php`:
+
+| Rule | Keeps |
+|---|---|
+| `Keep::runs(n)` | the newest `n` change lines |
+| `Keep::since('90 days')` | lines younger than 90 days |
+| `Keep::sinceRelease()` | lines since the newest release line, and that line |
+| `->atLeast(n)` / `->atMost(n)` | a floor or a ceiling on any rule |
+
+Pruning only removes lines, and only when the page is written.
+
+### Writing and verifying
+
+- **`crucible --docs`** runs every page and every test its markers name, then writes the
+  marker bodies. It is run locally, and the page goes into the same commit as the code.
+- **A plain `crucible` run** executes the Markdown tests like any other test and never
+  writes a page.
+- **`crucible --docs --check`** is the CI command and never writes. It fails when:
+  - any outcome differs from what the page states, or
+  - the fingerprint differs from the current sources.
+
+  It compares outcomes and the fingerprint, never the runtime, so a PHP matrix verifies
+  one page. A sample whose output differs on one PHP version fails on that version:
+  the page is wrong there.
+- **A failing test is written too.** Its marker shows the failure, the changelog records
+  `passed → failed`, and the run exits non-zero. A page never hides a red result.
+- **A rerun is a no-op.** The same sources, outcomes and runtime write a byte-identical
+  page, as sigilmd does.
+
+### The promise
+
+> Every page on `main`, and at every tag, carries the stamp of a run on exactly the
+> sources it ships with, and CI proved its outcomes on that commit.
+
+This holds with the `AGENTS.md` release checklist unchanged: the page is committed with
+the code, CI runs on that exact commit, and only then is it tagged. CI never commits.
+
+### The run log
+
+The page is the record that persists. A project that also wants every run elsewhere
+turns on one more reporter, a view of the event stream like the others (D-025):
+
+```php
+->runLog('build/runs.jsonl')
+```
+
+It writes one JSON line per run in Hallmark's record shape, so any tool that reads
+Monolog's JSON reads it: `INFO` for a green run, `ERROR` for a red one, the totals and
+changes in `context`. Crucible writes the shape and does not depend on Hallmark. The
+page never reads the log.
+
+## The grammar
+
+The marker grammar is sigilmd's, reimplemented in PHP. sigilmd is its behavioral spec:
+conformance runs the real Perl script against the same fixtures (`t/fixtures`) and
+requires identical output. Perl is present on every CI runner, which is sigilmd's own
+premise.
+
+- Real markers have no space inside the comment: `<!--[[ test: id=... ]]-->`. In a
+  docblock the bare form `[[ test: id=... ]]` is used.
+- `test:` and `run:` are the only marker names Crucible adds.
+- On the first run a marker's closing `<!--/-->` is written if it is missing, as sigilmd
+  does. That is the only write outside a marker body.
+- No TT2, no `+++` frontmatter, no new template language.
 
 ## Git flow
 
-- `main` — released 1.x; tags `v1.x.y`.
-- `develop` — v2 integration; protected.
-- `feature/*` — short-lived, from `develop`, one decision per branch.
-- `release/2.0` — stabilization; tag only after CI on the exact commit.
-- `hotfix/1.x` — from `main`; tag and merge back to `develop`.
+- `main` — the current line; released work only; tags on `main`.
+- `1.x` — created from the last 1.x tag when 2.0 ships; fixes only, tagged there.
+- `feature/*` — one decision per branch, merged to `main` behind green CI.
 
-No direct pushes; PR + green CI; never rewrite a published tag. The
-`AGENTS.md` release checklist still applies.
-
-## Open questions
-
-1. sigilmd grammar parity in PHP: exact subset, error messages, `check` output.
-2. Test declaration versus report insertion: is a test a declared table, a fenced
-   block, or both?
-3. Fixtures and setup for a docs block; where `APP_ENV`/bootstrap live.
-4. Report renderer: reuse the HTML/PDF writers or delegate to the docs generator.
-5. Static analysis of docs blocks: shadow files like `lint-inline` or a dedicated
-   rule.
-6. Source rewriting: the default is no; an explicit update mode needs atomicity and
-   diff review.
-7. Overhead measurement for attributes vs doctests.
-8. Bridge support window and migration path to the native shape.
+Push, wait for CI on that exact commit, then tag. Never rewrite a published tag.
 
 ## Non-goals
 
-- PHPUnit 14 / Pest 6 feature tracking.
-- Reading `phpunit.xml` or `.env` at runtime; the environment is explicit
-  (`crucible.php`, `->env()`, `->environmentFile()`).
-- A generator command for env or docs files.
+- Test methods inside production classes (D-014 stands).
+- Writing anywhere but marker bodies in a page (and a missing closing marker): never a
+  sample, an expected output, a PHP file or the configuration.
+- Generated expected output.
+- Test vocabulary in doc samples.
+- Shared setup between samples.
+- A page that needs the configuration, a log or CI to be read.
+- CI committing to the repository.
+- Reading `phpunit.xml` or `.env`; the environment is explicit (`crucible.php`,
+  `->env()`, `->environmentFile()`).
 - TT2, `+++` frontmatter, or a new template language.
-- Rewriting source documents by default.
 - v2 engine code before the decision entry.
 
 ## Gate
 
-One prototype document with one code block, one hidden expectation and one generated
-report value. One static contract. One co-located attribute test. Measure extraction,
-analysis and render. Then write the `D-xxx`; only then code.
+1. Run Hallmark's README and `docs/` as Markdown tests and match what
+   `DocsSamplesTest` reports today: the same samples, the same skips, the same failure
+   when an output block is edited.
+2. Turn two of Hallmark's `not run` comments into markers, one in a page and one in a
+   docblock. Rename the target test and see the hard error.
+3. Stamp a page through a failing and then a passing run; rerun and get a byte-identical
+   page.
+4. Edit a bound source file without restamping and see `--docs --check` fail.
+5. Run sigilmd's fixtures through the PHP grammar against the Perl script.
 
-The pending 1.5.0 release (`->environmentFile()`) is separate from this proposal.
+Then write the `D-xxx`; only then code.
